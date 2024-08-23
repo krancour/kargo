@@ -23,28 +23,6 @@ Create chart name and version as used by the chart label.
 {{- end -}}
 
 {{/*
-Create default controlplane user regular expression with well-known service accounts
-*/}}
-{{- define "kargo.controlplane.defaultUserRegex" -}}
-{{- $list := list }}
-{{- if .Values.api.enabled }}
-{{- $list = append $list "kargo-api" }}
-{{- end }}
-{{- if .Values.controller.enabled }}
-{{- $list = append $list "kargo-controller" }}
-{{- end }}
-{{- if .Values.garbageCollector.enabled }}
-{{- $list = append $list "kargo-garbage-collector" }}
-{{- end }}
-{{- if .Values.managementController.enabled }}
-{{- $list = append $list "kargo-management-controller" }}
-{{- end }}
-{{- if $list }}
-{{- printf "^system:serviceaccount:%s:(%s)$" .Release.Namespace (join "|" $list) }}
-{{- end }}
-{{- end }}
-
-{{/*
 Common labels
 */}}
 {{- define "kargo.labels" -}}
@@ -54,9 +32,6 @@ helm.sh/chart: {{ include "kargo.chart" . }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-{{- with .Values.global.labels }}
-{{ toYaml . }}
-{{- end }}
 {{- end -}}
 
 {{/*
@@ -70,30 +45,3 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "kargo.api.labels" -}}
 app.kubernetes.io/component: api
 {{- end -}}
-
-{{- define "kargo.controller.labels" -}}
-app.kubernetes.io/component: controller
-{{- end -}}
-
-{{- define "kargo.dexServer.labels" -}}
-app.kubernetes.io/component: dex-server
-{{- end -}}
-
-{{- define "kargo.garbageCollector.labels" -}}
-app.kubernetes.io/component: garbage-collector
-{{- end -}}
-
-{{- define "kargo.managementController.labels" -}}
-app.kubernetes.io/component: management-controller
-{{- end -}}
-
-{{- define "kargo.webhooksServer.labels" -}}
-app.kubernetes.io/component: webhooks-server
-{{- end -}}
-
-{{- define "call-nested" }}
-{{- $dot := index . 0 }}
-{{- $subchart := index . 1 }}
-{{- $template := index . 2 }}
-{{- include $template (dict "Chart" (dict "Name" $subchart) "Values" (index $dot.Values $subchart) "Release" $dot.Release "Capabilities" $dot.Capabilities) }}
-{{- end }}
