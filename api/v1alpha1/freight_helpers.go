@@ -85,49 +85,39 @@ func GetFreightByAlias(
 	return &freightList.Items[0], nil
 }
 
-// IsFreightAvailable answers whether the specified Freight is available to the
-// specified Stage having the specified upstream stages. Freight is available
-// if:
-//
-//  1. No upstreamStages are specified
-//     OR
-//  2. The Freight has been verified in ANY of the specified upstream stages
-//     OR
-//  3. The Freight is approved for the specified stage
-//
-// Note: The rationale for returning true when no upstream stages are specified
-// is that some Stages have no upstream Stages (e.g. a Stage that subscribes to
-// a Warehouse), so ANY Freight is available to such a Stage.
-func IsFreightAvailable(
-	freight *Freight,
-	stage string,
-	upstreamStages []string,
-) bool {
-	if len(upstreamStages) == 0 {
-		return true
-	}
-	for _, stage := range upstreamStages {
-		if _, ok := freight.Status.VerifiedIn[stage]; ok {
-			return true
-		}
-	}
-	if stage != "" {
-		if _, ok := freight.Status.ApprovedFor[stage]; ok {
-			return true
-		}
-	}
-	return false
-}
+// // IsFreightRequested answers whether the specified Freight is requested by the
+// // specified Stage.
+// func IsFreightRequested(stage *Stage, freight *Freight) bool {
+// 	if stage == nil || freight == nil || stage.Namespace != freight.Namespace {
+// 		return false
+// 	}
+// 	for _, freightReq := range stage.Spec.RequestedFreight {
+// 		if freight.Origin.Equals(&freightReq.Origin) {
+// 			return true
+// 		}
+// 	}
+// 	return false
+// }
 
-// IsFreightRequested answers whether the specified Freight is requested by the
+// IsFreightAvailable answers whether the specified Freight is available to the
 // specified Stage.
-func IsFreightRequested(stage *Stage, freight *Freight) bool {
+func IsFreightAvailable(stage *Stage, freight *Freight) bool {
 	if stage == nil || freight == nil || stage.Namespace != freight.Namespace {
 		return false
 	}
-	for _, freightReq := range stage.Spec.RequestedFreight {
-		if freight.Origin.Equals(&freightReq.Origin) {
-			return true
+	if _, approved := freight.Status.ApprovedFor[stage.Name]; approved {
+		return true
+	}
+	for _, req := range stage.Spec.RequestedFreight {
+		if freight.Origin.Equals(&req.Origin) {
+			if req.Sources.Direct {
+				return true
+			}
+			for _, source := range req.Sources.Stages {
+				if _, verified := freight.Status.VerifiedIn[source]; verified {
+					return true
+				}
+			}
 		}
 	}
 	return false

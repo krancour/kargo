@@ -251,14 +251,7 @@ func (w *webhook) ValidateCreate(
 		)
 	}
 
-	var upstreamStages []string
-	for _, req := range stage.Spec.RequestedFreight {
-		if req.Origin.Equals(&freight.Origin) {
-			upstreamStages = req.Sources.Stages
-			break
-		}
-	}
-	if !kargoapi.IsFreightAvailable(freight, stage.Name, upstreamStages) {
+	if !kargoapi.IsFreightAvailable(stage, freight) {
 		return nil, apierrors.NewInvalid(
 			promotionGroupKind,
 			promo.Name,

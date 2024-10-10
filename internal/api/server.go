@@ -76,11 +76,8 @@ type server struct {
 		name string,
 		alias string,
 	) (*kargoapi.Freight, error)
-	isFreightAvailableFn func(
-		freight *kargoapi.Freight,
-		stage string,
-		upstreamStages []string,
-	) bool
+	isFreightRequestedFn func(*kargoapi.Stage, *kargoapi.Freight) bool
+	isFreightAvailableFn func(*kargoapi.Stage, *kargoapi.Freight) bool
 
 	// Common Promotions:
 	createPromotionFn func(
@@ -90,7 +87,11 @@ type server struct {
 	) error
 
 	// Promote downstream:
-	findDownstreamStagesFn func(ctx context.Context, stage *kargoapi.Stage) ([]kargoapi.Stage, error)
+	findDownstreamStagesFn func(
+		context.Context,
+		*kargoapi.Stage,
+		kargoapi.FreightOrigin,
+	) ([]kargoapi.Stage, error)
 
 	// QueryFreight API:
 	listFreightFn func(
@@ -173,6 +174,7 @@ func NewServer(
 	s.externalValidateProjectFn = validation.ValidateProject
 	s.getStageFn = kargoapi.GetStage
 	s.getFreightByNameOrAliasFn = kargoapi.GetFreightByNameOrAlias
+	s.isFreightRequestedFn = kargoapi.IsFreightRequested
 	s.isFreightAvailableFn = kargoapi.IsFreightAvailable
 	s.createPromotionFn = kubeClient.Create
 	s.findDownstreamStagesFn = s.findDownstreamStages

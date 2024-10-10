@@ -86,14 +86,18 @@ func (s *server) PromoteToStage(
 		return nil, connect.NewError(connect.CodeNotFound, err)
 	}
 
-	var upstreamStages []string
-	for _, req := range stage.Spec.RequestedFreight {
-		if req.Origin.Equals(&freight.Origin) {
-			upstreamStages = req.Sources.Stages
-			break
-		}
+	if !s.isFreightRequestedFn(stage, freight) {
+		return nil, connect.NewError(
+			connect.CodeInvalidArgument,
+			fmt.Errorf(
+				"Stage %q does not request Freight from origin %q",
+				stageName,
+				freight.Origin.String(),
+			),
+		)
 	}
-	if !s.isFreightAvailableFn(freight, stage.Name, upstreamStages) {
+
+	if !s.isFreightAvailableFn(stage, freight) {
 		return nil, connect.NewError(
 			connect.CodeInvalidArgument,
 			fmt.Errorf(

@@ -294,7 +294,11 @@ func TestPromoteDownstream(t *testing.T) {
 				isFreightAvailableFn: func(*kargoapi.Freight, string, []string) bool {
 					return true
 				},
-				findDownstreamStagesFn: func(context.Context, *kargoapi.Stage) ([]kargoapi.Stage, error) {
+				findDownstreamStagesFn: func(
+					context.Context,
+					*kargoapi.Stage,
+					kargoapi.FreightOrigin,
+				) ([]kargoapi.Stage, error) {
 					return nil, errors.New("something went wrong")
 				},
 			},
@@ -338,7 +342,11 @@ func TestPromoteDownstream(t *testing.T) {
 				isFreightAvailableFn: func(*kargoapi.Freight, string, []string) bool {
 					return true
 				},
-				findDownstreamStagesFn: func(context.Context, *kargoapi.Stage) ([]kargoapi.Stage, error) {
+				findDownstreamStagesFn: func(
+					context.Context,
+					*kargoapi.Stage,
+					kargoapi.FreightOrigin,
+				) ([]kargoapi.Stage, error) {
 					return nil, nil
 				},
 			},
@@ -388,7 +396,11 @@ func TestPromoteDownstream(t *testing.T) {
 				isFreightAvailableFn: func(*kargoapi.Freight, string, []string) bool {
 					return true
 				},
-				findDownstreamStagesFn: func(context.Context, *kargoapi.Stage) ([]kargoapi.Stage, error) {
+				findDownstreamStagesFn: func(
+					context.Context,
+					*kargoapi.Stage,
+					kargoapi.FreightOrigin,
+				) ([]kargoapi.Stage, error) {
 					return []kargoapi.Stage{{}}, nil
 				},
 				authorizeFn: func(
@@ -441,7 +453,11 @@ func TestPromoteDownstream(t *testing.T) {
 				isFreightAvailableFn: func(*kargoapi.Freight, string, []string) bool {
 					return true
 				},
-				findDownstreamStagesFn: func(context.Context, *kargoapi.Stage) ([]kargoapi.Stage, error) {
+				findDownstreamStagesFn: func(
+					context.Context,
+					*kargoapi.Stage,
+					kargoapi.FreightOrigin,
+				) ([]kargoapi.Stage, error) {
 					return []kargoapi.Stage{
 						{
 							Spec: kargoapi.StageSpec{
@@ -514,7 +530,11 @@ func TestPromoteDownstream(t *testing.T) {
 				isFreightAvailableFn: func(*kargoapi.Freight, string, []string) bool {
 					return true
 				},
-				findDownstreamStagesFn: func(context.Context, *kargoapi.Stage) ([]kargoapi.Stage, error) {
+				findDownstreamStagesFn: func(
+					context.Context,
+					*kargoapi.Stage,
+					kargoapi.FreightOrigin,
+				) ([]kargoapi.Stage, error) {
 					return []kargoapi.Stage{
 						{
 							Spec: kargoapi.StageSpec{

@@ -383,6 +383,7 @@ func TestValidateCreate(t *testing.T) {
 									Kind: kargoapi.FreightOriginKindWarehouse,
 									Name: "fake-warehouse",
 								},
+								Sources: kargoapi.FreightSources{Direct: true},
 							}},
 						},
 					}, nil
@@ -439,6 +440,7 @@ func TestValidateCreate(t *testing.T) {
 									Kind: kargoapi.FreightOriginKindWarehouse,
 									Name: "fake-warehouse",
 								},
+								Sources: kargoapi.FreightSources{Direct: true},
 							}},
 						},
 					}, nil

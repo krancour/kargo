@@ -6,7 +6,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -116,90 +115,132 @@ func TestGetFreightByAlias(t *testing.T) {
 	}
 }
 
-func TestIsFreightAvailable(t *testing.T) {
-	testFreight := &Freight{
-		Status: FreightStatus{
-			VerifiedIn: map[string]VerifiedStage{
-				"fake-stage-1": {},
-			},
-			ApprovedFor: map[string]ApprovedStage{
-				"fake-stage-2": {},
-			},
-		},
-	}
-	testCases := []struct {
-		name           string
-		stage          string
-		upstreamStages []string
-		available      bool
-	}{
-		{
-			name:      "no upstream Stages specified",
-			available: true,
-		},
-		{
-			name:           "verified in an upstream Stage",
-			upstreamStages: []string{"fake-stage-1"},
-			available:      true,
-		},
-		{
-			name:           "approved for Stage",
-			stage:          "fake-stage-2",
-			upstreamStages: []string{"fake-stage-3"},
-			available:      true,
-		},
-		{
-			name:           "unavailable",
-			stage:          "fake-stage-3",
-			upstreamStages: []string{"upstream-stage-2"},
-			available:      false,
-		},
-	}
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			require.Equal(
-				t,
-				testCase.available,
-				IsFreightAvailable(
-					testFreight,
-					testCase.stage,
-					testCase.upstreamStages,
-				),
-			)
-		})
-	}
-}
+// func TestIsFreightRequested(t *testing.T) {
+// 	const testNamespace = "fake-namespace"
+// 	const testWarehouse = "fake-warehouse"
 
-func TestIsFreightRequested(t *testing.T) {
+// 	scheme := runtime.NewScheme()
+// 	require.NoError(t, AddToScheme(scheme))
+
+// 	testCases := []struct {
+// 		name     string
+// 		stage    *Stage
+// 		freight  *Freight
+// 		expected bool
+// 	}{
+// 		{
+// 			name:     "Stage is nil",
+// 			expected: false,
+// 		},
+// 		{
+// 			name:     "Freight is nil",
+// 			stage:    &Stage{},
+// 			expected: false,
+// 		},
+// 		{
+// 			name: "Stage and Freight are in different namespaces",
+// 			stage: &Stage{
+// 				ObjectMeta: metav1.ObjectMeta{
+// 					Namespace: testNamespace,
+// 				},
+// 			},
+// 			freight: &Freight{
+// 				ObjectMeta: metav1.ObjectMeta{
+// 					Namespace: "wrong-namespace",
+// 				},
+// 			},
+// 			expected: false,
+// 		},
+// 		{
+// 			name: "Freight is not requested",
+// 			stage: &Stage{
+// 				ObjectMeta: metav1.ObjectMeta{
+// 					Namespace: testNamespace,
+// 				},
+// 				Spec: StageSpec{
+// 					RequestedFreight: []FreightRequest{{
+// 						Origin: FreightOrigin{
+// 							Kind: FreightOriginKindWarehouse,
+// 							Name: testWarehouse,
+// 						},
+// 					}},
+// 				},
+// 			},
+// 			freight: &Freight{
+// 				ObjectMeta: metav1.ObjectMeta{
+// 					Namespace: testNamespace,
+// 				},
+// 				Origin: FreightOrigin{
+// 					Kind: FreightOriginKindWarehouse,
+// 					Name: "wrong-warehouse",
+// 				},
+// 			},
+// 			expected: false,
+// 		},
+// 		{
+// 			name: "Freight is requested",
+// 			stage: &Stage{
+// 				ObjectMeta: metav1.ObjectMeta{
+// 					Namespace: testNamespace,
+// 				},
+// 				Spec: StageSpec{
+// 					RequestedFreight: []FreightRequest{{
+// 						Origin: FreightOrigin{
+// 							Kind: FreightOriginKindWarehouse,
+// 							Name: testWarehouse,
+// 						},
+// 					}},
+// 				},
+// 			},
+// 			freight: &Freight{
+// 				ObjectMeta: metav1.ObjectMeta{
+// 					Namespace: testNamespace,
+// 				},
+// 				Origin: FreightOrigin{
+// 					Kind: FreightOriginKindWarehouse,
+// 					Name: testWarehouse,
+// 				},
+// 			},
+// 			expected: true,
+// 		},
+// 	}
+// 	for _, testCase := range testCases {
+// 		t.Run(testCase.name, func(t *testing.T) {
+// 			require.Equal(
+// 				t,
+// 				testCase.expected,
+// 				IsFreightRequested(testCase.stage, testCase.freight),
+// 			)
+// 		})
+// 	}
+// }
+
+func TestIsFreightAvailable(t *testing.T) {
 	const testNamespace = "fake-namespace"
 	const testWarehouse = "fake-warehouse"
-
-	scheme := runtime.NewScheme()
-	require.NoError(t, AddToScheme(scheme))
 
 	testCases := []struct {
 		name     string
 		stage    *Stage
-		freight  *Freight
+		Freight  *Freight
 		expected bool
 	}{
 		{
-			name:     "Stage is nil",
+			name:     "stage is nil",
 			expected: false,
 		},
 		{
-			name:     "Freight is nil",
-			stage:    &Stage{},
+			name:     "freight is nil",
 			expected: false,
 		},
 		{
-			name: "Stage and Freight are in different namespaces",
+			name: "stage and freight are in different namespaces",
 			stage: &Stage{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testNamespace,
 				},
 			},
-			freight: &Freight{
+			Freight: &Freight{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "wrong-namespace",
 				},
@@ -207,7 +248,7 @@ func TestIsFreightRequested(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "Freight is not requested",
+			name: "stage accepts freight direct from origin",
 			stage: &Stage{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testNamespace,
@@ -218,36 +259,13 @@ func TestIsFreightRequested(t *testing.T) {
 							Kind: FreightOriginKindWarehouse,
 							Name: testWarehouse,
 						},
-					}},
-				},
-			},
-			freight: &Freight{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: testNamespace,
-				},
-				Origin: FreightOrigin{
-					Kind: FreightOriginKindWarehouse,
-					Name: "wrong-warehouse",
-				},
-			},
-			expected: false,
-		},
-		{
-			name: "Freight is requested",
-			stage: &Stage{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: testNamespace,
-				},
-				Spec: StageSpec{
-					RequestedFreight: []FreightRequest{{
-						Origin: FreightOrigin{
-							Kind: FreightOriginKindWarehouse,
-							Name: testWarehouse,
+						Sources: FreightSources{
+							Direct: true,
 						},
 					}},
 				},
 			},
-			freight: &Freight{
+			Freight: &Freight{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testNamespace,
 				},
@@ -258,13 +276,81 @@ func TestIsFreightRequested(t *testing.T) {
 			},
 			expected: true,
 		},
+		{
+			name: "freight is verified in an upstream stage",
+			stage: &Stage{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+				},
+				Spec: StageSpec{
+					RequestedFreight: []FreightRequest{{
+						Origin: FreightOrigin{
+							Kind: FreightOriginKindWarehouse,
+							Name: testWarehouse,
+						},
+						Sources: FreightSources{
+							Stages: []string{"upstream-stage"},
+						},
+					}},
+				},
+			},
+			Freight: &Freight{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+				},
+				Origin: FreightOrigin{
+					Kind: FreightOriginKindWarehouse,
+					Name: testWarehouse,
+				},
+				Status: FreightStatus{
+					VerifiedIn: map[string]VerifiedStage{
+						"upstream-stage": {},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "freight from origin not requested",
+			stage: &Stage{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+				},
+				Spec: StageSpec{
+					RequestedFreight: []FreightRequest{{
+						Origin: FreightOrigin{
+							Kind: FreightOriginKindWarehouse,
+							Name: testWarehouse,
+						},
+						Sources: FreightSources{
+							Stages: []string{"upstream-stage"},
+						},
+					}},
+				},
+			},
+			Freight: &Freight{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+				},
+				Origin: FreightOrigin{
+					Kind: FreightOriginKindWarehouse,
+					Name: "wrong-warehouse",
+				},
+				Status: FreightStatus{
+					VerifiedIn: map[string]VerifiedStage{
+						"upstream-stage": {},
+					},
+				},
+			},
+			expected: false,
+		},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			require.Equal(
 				t,
 				testCase.expected,
-				IsFreightRequested(testCase.stage, testCase.freight),
+				IsFreightAvailable(testCase.stage, testCase.Freight),
 			)
 		})
 	}
