@@ -118,3 +118,17 @@ func IsFreightAvailable(
 	}
 	return false
 }
+
+// IsFreightRequested answers whether the specified Freight is requested by the
+// specified Stage.
+func IsFreightRequested(stage *Stage, freight *Freight) bool {
+	if stage == nil || freight == nil || stage.Namespace != freight.Namespace {
+		return false
+	}
+	for _, freightReq := range stage.Spec.RequestedFreight {
+		if freight.Origin.Equals(&freightReq.Origin) {
+			return true
+		}
+	}
+	return false
+}
