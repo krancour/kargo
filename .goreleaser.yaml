@@ -1,0 +1,39 @@
+version: 2
+project_name: kargo
+builds:
+- id: kargo
+  main: ./cmd/cli
+  goos:
+  - linux
+  - darwin
+  - windows
+  goarch:
+  - amd64
+  - arm64
+  ignore:
+  - goos: windows
+    goarch: arm64
+  env:
+  - CGO_ENABLED=0
+  ldflags:
+  - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+  no_unique_dist_dir: true
+  binary: kargo-{{ .Os }}-{{ .Arch }}
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+release:
+  github:
+    owner: krancour
+    name: kargo
+# brews:
+# - name: kargo
+#   tap:
+#     owner: yourusername
+#     name: homebrew-tap
+#   formula_name: kargo
+#   commit_author:
+#     name: Your Name
+#     email: your.email@example.com
+#   commit_message: "Brew formula update for kargo version {{.Version}}"
+#   test: |
+#     assert_match "Client Version: {{.Version}}", shell_output("#{bin}/kargo version --client")
