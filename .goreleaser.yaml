@@ -18,15 +18,21 @@ builds:
   ldflags:
   - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
   no_unique_dist_dir: true
-  binary: kargo-{{ .Os }}-{{ .Arch }}
+  binary: {{ .ProjectName }}-{{ .Os }}-{{ .Arch }}
 archives:
 - format: binary
+  name_template: {{ .ProjectName }}-{{ .Os }}-{{ .Arch }}
 release:
   github:
     owner: krancour
     name: kargo
 brews:
 - name: Formula/kargo
+  description: CLI for Kargo
+  homepage: https://kargo.io
+  license: Apache-2.0
+  test: |
+    assert_match "Client Version: v#{version}", shell_output("#{bin}/kargo version --client")
   repository:
     owner: krancour
     name: homebrew-tap
