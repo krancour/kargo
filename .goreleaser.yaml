@@ -29,7 +29,7 @@ release:
 brews:
 - name: Formula/kargo
   description: CLI for Kargo
-  homepage: https://kargo.io
+  # homepage: https://kargo.io
   license: Apache-2.0
   # install: |
   #   src_dir = "src/github.com/krancour/kargo"
