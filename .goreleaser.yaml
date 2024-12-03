@@ -28,6 +28,9 @@ release:
     name: kargo
 brews:
 - name: Formula/kargo
+  description: CLI for Kargo
+  homepage: https://kargo.io
+  license: Apache
   repository:
     owner: krancour
     name: homebrew-tap
