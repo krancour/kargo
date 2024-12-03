@@ -32,3 +32,5 @@ brews:
     name: homebrew-tap
     pull_request:
       enabled: true
+      base:
+        branch: update-kargo-formula
