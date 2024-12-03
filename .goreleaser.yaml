@@ -28,9 +28,9 @@ release:
     name: kargo
 brews:
 - name: Formula/kargo
-  description: CLI for Kargo
+  # description: CLI for Kargo
   # homepage: https://kargo.io
-  license: Apache-2.0
+  # license: Apache-2.0
   # install: |
   #   src_dir = "src/github.com/krancour/kargo"
   #   (buildpath/src_dir).install buildpath.children
