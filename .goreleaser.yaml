@@ -1,0 +1,47 @@
+version: 2
+project_name: kargo
+builds:
+- id: kargo
+  main: ./cmd/cli
+  goos:
+  - darwin
+  - linux
+  - windows
+  goarch:
+  - amd64
+  - arm64
+  ignore:
+  - goos: windows
+    goarch: arm64
+  env:
+  - CGO_ENABLED=0
+  - VERSION_PACKAGE=github.com/akuity/kargo/internal/version
+  ldflags:
+  - "-s -w -X {{ .Env.VERSION_PACKAGE }}.version={{ .Version }} -X {{ .Env.VERSION_PACKAGE }}.gitCommit={{ .Commit }} -X {{ .Env.VERSION_PACKAGE }}.buildDate={{ .Date }} -X {{ .Env.VERSION_PACKAGE }}.gitTreeState={{ .Env.GIT_TREE_STATE }}"
+  no_unique_dist_dir: true
+  binary: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+archives:
+- format: binary
+  name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+release:
+  github:
+    owner: krancour
+    name: "{{ .ProjectName }}"
+brews:
+- directory: Formula
+  name: "{{ .ProjectName }}"
+  description: CLI for Kargo
+  homepage: https://kargo.io
+  license: Apache-2.0
+  install: |
+    bin.install "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}" => "{{ .ProjectName }}"
+  test: |
+    assert_match "Client Version: v#{version}", shell_output("#{bin}/{{ .ProjectName }} version --client")
+  repository:
+    owner: krancour
+    name: homebrew-tap
+    branch: "{{.ProjectName}}-{{.Version}}"
+    pull_request:
+      enabled: true
+      base:
+        branch: main
