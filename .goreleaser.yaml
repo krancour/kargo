@@ -19,7 +19,8 @@ builds:
   - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
   no_unique_dist_dir: true
   binary: kargo-{{ .Os }}-{{ .Arch }}
-archives: []
+archives:
+- format: binary
 release:
   github:
     owner: krancour
