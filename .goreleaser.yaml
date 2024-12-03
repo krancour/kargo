@@ -25,16 +25,16 @@ archives:
 release:
   github:
     owner: krancour
-    name: kargo
+    name: "{{ .ProjectName }}"
 brews:
-- name: Formula/kargo
+- name: "{{ .ProjectName }}"
   description: CLI for Kargo
   homepage: https://kargo.io
   license: Apache-2.0
   install: |
     bin.install "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}" => "{{ .ProjectName }}"
   test: |
-    assert_match "Client Version: v#{version}", shell_output("#{bin}/kargo version --client")
+    assert_match "Client Version: v#{version}", shell_output("#{bin}/{{ .ProjectName }} version --client")
   repository:
     owner: krancour
     name: homebrew-tap
