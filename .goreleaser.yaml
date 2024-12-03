@@ -26,11 +26,12 @@ release:
     owner: krancour
     name: kargo
 brews:
-- name: kargo
+- name: Formula/kargo
   repository:
     owner: krancour
     name: homebrew-tap
+    branch: "{{.ProjectName}}-{{.Version}}"
     pull_request:
       enabled: true
       base:
-        branch: update-kargo-formula
+        branch: main
