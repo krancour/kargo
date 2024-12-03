@@ -15,6 +15,7 @@ builds:
     goarch: arm64
   env:
   - CGO_ENABLED=0
+  - GOFLAGS=-buildvcs=false
   ldflags:
   - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
   no_unique_dist_dir: true
