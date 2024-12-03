@@ -17,10 +17,6 @@ jobs:
     container:
       image: golang:1.23.3-bookworm
     steps:
-    # - name: Set up Go
-    #   uses: actions/setup-go@v5
-    #   with:
-    #     go-version: stable
     - name: Checkout code
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
@@ -35,6 +31,10 @@ jobs:
       run: |
         pwd
         ls -la
+    - name: Set safe directory for Git
+      run: |
+        echo $GITHUB_WORKSPACE
+        git config --global --add safe.directory $GITHUB_WORKSPACE
     - name: Build and Publish CLI
       uses: goreleaser/goreleaser-action@v6
       with:
