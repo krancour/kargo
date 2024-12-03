@@ -25,15 +25,8 @@ release:
   github:
     owner: krancour
     name: kargo
-# brews:
-# - name: kargo
-#   tap:
-#     owner: yourusername
-#     name: homebrew-tap
-#   formula_name: kargo
-#   commit_author:
-#     name: Your Name
-#     email: your.email@example.com
-#   commit_message: "Brew formula update for kargo version {{.Version}}"
-#   test: |
-#     assert_match "Client Version: {{.Version}}", shell_output("#{bin}/kargo version --client")
+brews:
+- name: kargo
+  repository:
+    owner: krancour
+    name: homebrew-tap
