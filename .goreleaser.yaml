@@ -4,9 +4,9 @@ builds:
 - id: kargo
   main: ./cmd/cli
   goos:
-  # - linux
   - darwin
-  # - windows
+  - linux
+  - windows
   goarch:
   - amd64
   - arm64
@@ -27,7 +27,8 @@ release:
     owner: krancour
     name: "{{ .ProjectName }}"
 brews:
-- name: "{{ .ProjectName }}"
+- directory: Formula
+  name: "{{ .ProjectName }}"
   description: CLI for Kargo
   homepage: https://kargo.io
   license: Apache-2.0
