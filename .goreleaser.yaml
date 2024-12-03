@@ -4,9 +4,9 @@ builds:
 - id: kargo
   main: ./cmd/cli
   goos:
-  - linux
+  # - linux
   - darwin
-  - windows
+  # - windows
   goarch:
   - amd64
   - arm64
