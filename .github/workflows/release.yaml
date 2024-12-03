@@ -2,7 +2,7 @@ name: Release
 
 on:
   release:
-    types: 
+    types:
     - created
   schedule:
   - cron: '0 1 * * 1-5' # 1 AM UTC is 5 PM PST/ 6 PM PDT
@@ -178,26 +178,21 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: golang:1.23.4-bookworm
-    strategy:
-      matrix:
-        os: [linux, darwin, windows]
-        arch: [amd64, arm64]
-    outputs:
-      hash-linux-amd64: ${{ steps.hash.outputs.hash-linux-amd64 }}
-      hash-linux-arm64: ${{ steps.hash.outputs.hash-linux-arm64 }}
-      hash-darwin-amd64: ${{ steps.hash.outputs.hash-darwin-amd64 }}
-      hash-darwin-arm64: ${{ steps.hash.outputs.hash-darwin-arm64 }}
-      hash-windows-amd64: ${{ steps.hash.outputs.hash-windows-amd64 }}
-      hash-windows-arm64: ${{ steps.hash.outputs.hash-windows-arm64 }}
     steps:
     - name: Checkout code
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        fetch-depth: 0
     - uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
         path: /go/pkg/mod
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-go-
+    - name: Set safe directory for Git
+      run: |
+        echo $GITHUB_WORKSPACE
+        git config --global --add safe.directory $GITHUB_WORKSPACE
     - name: Install pnpm
       uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
       with:
@@ -215,27 +210,15 @@ jobs:
       run: |
         pnpm install
         NODE_ENV=production pnpm run build
-        rm -rf ../internal/api/ui
-        mv build ../internal/api/ui
-    - name: Build CLI
-      env:
-        GOFLAGS: -buildvcs=false
-        GOOS: ${{ matrix.os }}
-        GOARCH: ${{ matrix.arch }}
-        VERSION: ${{ github.ref_name }}
-        GIT_COMMIT: ${{ github.sha }}
-        GIT_TREE_STATE: clean
-      run: make build-cli
-    - name: Publish CLI
-      uses: svenstaro/upload-release-action@v2
+        mv build/* ../internal/api/ui
+    - name: Build and Publish CLI
+      uses: goreleaser/goreleaser-action@v6
       with:
-        file: bin/*
-        file_glob: true
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-    - name: Generate subject
-      id: hash
-      run: |
-        echo "hash-${{ matrix.os }}-${{ matrix.arch }}=$(sha256sum bin/kargo* | awk -F 'bin/' '{print $1 $2}'| base64 -w0)" >> "$GITHUB_OUTPUT"
+        version: v2.4.8
+        args: release --clean
+      env:
+        GIT_TREE_STATE: clean
+        GITHUB_TOKEN: ${{ secrets.TAP_PAT }}
 
   publish-unstable-cli:
     needs: publish-image
@@ -276,8 +259,7 @@ jobs:
       run: |
         pnpm install
         NODE_ENV=production pnpm run build
-        rm -rf ../internal/api/ui
-        mv build ../internal/api/ui
+        mv build/* ../internal/api/ui
     - name: Build CLI
       env:
         GOFLAGS: -buildvcs=false
