@@ -30,7 +30,11 @@ brews:
 - name: Formula/kargo
   description: CLI for Kargo
   homepage: https://kargo.io
-  license: Apache
+  license: Apache-2.0
+  install: |
+    bin.install "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}" => "{{ .ProjectName }}"
+  test: |
+    assert_match "Client Version: v#{version}", shell_output("#{bin}/kargo version --client")
   repository:
     owner: krancour
     name: homebrew-tap
