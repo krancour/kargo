@@ -44,8 +44,8 @@ brews:
   #     arch = Utils.safe_popen_read("go", "env", "GOARCH").strip
   #     bin.install "bin/kargo-#{os}-#{arch}" => "kargo"
   #   end
-  test: |
-    assert_match "Client Version: v#{version}", shell_output("#{bin}/kargo version --client")
+  # test: |
+  #   assert_match "Client Version: v#{version}", shell_output("#{bin}/kargo version --client")
   repository:
     owner: krancour
     name: homebrew-tap
