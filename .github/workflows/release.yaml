@@ -44,6 +44,9 @@ jobs:
         NODE_ENV=production pnpm run build
         rm -rf ../internal/api/ui
         mv build ../internal/api/ui
+    - name: Debug
+      run: |
+        tree -L 1
     - name: Build and Publish CLI
       uses: goreleaser/goreleaser-action@v6
       with:
