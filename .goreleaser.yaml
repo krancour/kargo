@@ -30,3 +30,5 @@ brews:
   repository:
     owner: krancour
     name: homebrew-tap
+    pull_request:
+      enabled: true
