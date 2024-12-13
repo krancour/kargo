@@ -219,6 +219,26 @@ jobs:
       env:
         GIT_TREE_STATE: clean
         GITHUB_TOKEN: ${{ secrets.TAP_PAT }}
+    - name: Hash
+      id: hash
+      run: |
+        HASHES=$(find dist -name '*.sha256' -exec cat {} + | sha256sum | awk '{print $1}')
+        echo "hashes=${HASHES}" >> $GITHUB_OUTPUT
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
+
+  provenance:
+    needs: [publish-cli]
+    if: github.event_name == 'release'
+    permissions:
+      actions: read # To read the workflow path.
+      id-token: write # To sign the provenance.
+      contents: write # To add assets to a release.
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: "${{ needs.publish-cli.outputs.hashes }}"
+      upload-assets: true # Optional: Upload to a new release
+      provenance-name: kargo-cli.intoto.jsonl
 
   publish-unstable-cli:
     needs: publish-image
@@ -288,30 +308,3 @@ jobs:
         aws cloudfront create-invalidation \
           --distribution-id="${CF_DISTRIBUTION_ID}" \
           --paths "/kargo-cli/unstable.txt"
-
-  combine_hashes:
-    needs: [publish-cli]
-    if: github.event_name == 'release'
-    runs-on: ubuntu-latest
-    outputs:
-      hashes: ${{ steps.hashes.outputs.hashes }}
-    env:
-      HASHES: ${{ toJSON(needs.publish-cli.outputs) }}
-    steps:
-    - id: hashes
-      run: |
-        echo "$HASHES" | jq -r '.[] | @base64d' | sed "/^$/d" > hashes.txt
-        echo "hashes=$(cat hashes.txt | base64 -w0)" >> "$GITHUB_OUTPUT"
-
-  provenance:
-    needs: [combine_hashes]
-    if: github.event_name == 'release'
-    permissions:
-      actions: read # To read the workflow path.
-      id-token: write # To sign the provenance.
-      contents: write # To add assets to a release.
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
-    with:
-      base64-subjects: "${{ needs.combine_hashes.outputs.hashes }}"
-      upload-assets: true # Optional: Upload to a new release
-      provenance-name: kargo-cli.intoto.jsonl
