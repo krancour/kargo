@@ -23,6 +23,10 @@ builds:
 archives:
 - format: binary
   name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+sboms:
+- artifacts: archive
+binary_signs:
+- {}
 release:
   github:
     owner: krancour
