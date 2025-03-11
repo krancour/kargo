@@ -9,6 +9,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/git"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -38,51 +39,51 @@ func (g *gitTreeClearer) Name() string {
 // RunPromotionStep implements the PromotionStepRunner interface.
 func (g *gitTreeClearer) RunPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *directive.PromotionStepContext,
+) (directive.PromotionStepResult, error) {
 	if err := g.validate(stepCtx.Config); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 	cfg, err := ConfigToStruct[builtin.GitClearConfig](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into %s config: %w", g.Name(), err)
 	}
 	return g.runPromotionStep(ctx, stepCtx, cfg)
 }
 
 // validate validates gitTreeClearer configuration against a JSON schema.
-func (g *gitTreeClearer) validate(cfg Config) error {
+func (g *gitTreeClearer) validate(cfg directive.Config) error {
 	return validate(g.schemaLoader, gojsonschema.NewGoLoader(cfg), g.Name())
 }
 
 func (g *gitTreeClearer) runPromotionStep(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	cfg builtin.GitClearConfig,
-) (PromotionStepResult, error) {
+) (directive.PromotionStepResult, error) {
 	p, err := securejoin.SecureJoin(stepCtx.WorkDir, cfg.Path)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 			"error joining path %s with work dir %s: %w",
 			cfg.Path, stepCtx.WorkDir, err,
 		)
 	}
 	workTree, err := git.LoadWorkTree(p, nil)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error loading working tree from %s: %w", cfg.Path, err)
 	}
 	// workTree.Clear() won't remove any files that aren't indexed. This is a bit
 	// of a hack to ensure that we don't have any untracked files in the working
 	// tree so that workTree.Clear() will remove everything.
 	if err = workTree.AddAll(); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error adding all files to working tree at %s: %w", cfg.Path, err)
 	}
 	if err = workTree.Clear(); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error clearing working tree at %s: %w", cfg.Path, err)
 	}
-	return PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
+	return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
 }

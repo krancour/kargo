@@ -11,25 +11,26 @@ import (
 	"github.com/stretchr/testify/require"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
 func Test_jsonUpdater_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           directive.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "path is not specified",
-			config: Config{},
+			config: directive.Config{},
 			expectedProblems: []string{
 				"(root): path is required",
 			},
 		},
 		{
 			name: "path is empty",
-			config: Config{
+			config: directive.Config{
 				"path": "",
 			},
 			expectedProblems: []string{
@@ -38,15 +39,15 @@ func Test_jsonUpdater_validate(t *testing.T) {
 		},
 		{
 			name:   "updates is null",
-			config: Config{},
+			config: directive.Config{},
 			expectedProblems: []string{
 				"(root): updates is required",
 			},
 		},
 		{
 			name: "updates is empty",
-			config: Config{
-				"updates": []Config{},
+			config: directive.Config{
+				"updates": []directive.Config{},
 			},
 			expectedProblems: []string{
 				"updates: Array must have at least 1 items",
@@ -54,8 +55,8 @@ func Test_jsonUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "key not specified",
-			config: Config{
-				"updates": []Config{{}},
+			config: directive.Config{
+				"updates": []directive.Config{{}},
 			},
 			expectedProblems: []string{
 				"updates.0: key is required",
@@ -63,8 +64,8 @@ func Test_jsonUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "key is empty",
-			config: Config{
-				"updates": []Config{{
+			config: directive.Config{
+				"updates": []directive.Config{{
 					"key": "",
 				}},
 			},
@@ -74,8 +75,8 @@ func Test_jsonUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "value not specified",
-			config: Config{
-				"updates": []Config{{}},
+			config: directive.Config{
+				"updates": []directive.Config{{}},
 			},
 			expectedProblems: []string{
 				"updates.0: value is required",
@@ -83,9 +84,9 @@ func Test_jsonUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "valid config",
-			config: Config{
+			config: directive.Config{
 				"path": "fake-path",
-				"updates": []Config{
+				"updates": []directive.Config{
 					{
 						"key":   "fake-key",
 						"value": "fake-value",
@@ -288,14 +289,14 @@ func Test_jsonUpdater_generateCommitMessage(t *testing.T) {
 func Test_jsonUpdater_runPromotionStep(t *testing.T) {
 	tests := []struct {
 		name       string
-		stepCtx    *PromotionStepContext
+		stepCtx    *directive.PromotionStepContext
 		cfg        builtin.JSONUpdateConfig
 		files      map[string]string
-		assertions func(*testing.T, string, PromotionStepResult, error)
+		assertions func(*testing.T, string, directive.PromotionStepResult, error)
 	}{
 		{
 			name: "successful run with updates",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.JSONUpdateConfig{
@@ -316,9 +317,9 @@ func Test_jsonUpdater_runPromotionStep(t *testing.T) {
 					}
 				}`,
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, directive.PromotionStepResult{
 					Status: kargoapi.PromotionPhaseSucceeded,
 					Output: map[string]any{
 						"commitMessage": "Updated config.json\n\n" +
@@ -336,7 +337,7 @@ func Test_jsonUpdater_runPromotionStep(t *testing.T) {
 		},
 		{
 			name: "failed to update file",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.JSONUpdateConfig{
@@ -345,15 +346,15 @@ func Test_jsonUpdater_runPromotionStep(t *testing.T) {
 					{Key: "app.version", Value: "1.0.1"},
 				},
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 				assert.Contains(t, err.Error(), "JSON file update failed")
 			},
 		},
 		{
 			name: "no updates provided",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.JSONUpdateConfig{
@@ -367,9 +368,9 @@ func Test_jsonUpdater_runPromotionStep(t *testing.T) {
 					}
 				}`,
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, directive.PromotionStepResult{
 					Status: kargoapi.PromotionPhaseSucceeded,
 				}, result)
 				content, err := os.ReadFile(path.Join(workDir, "config.json"))
@@ -383,7 +384,7 @@ func Test_jsonUpdater_runPromotionStep(t *testing.T) {
 		},
 		{
 			name: "handle empty JSON file",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.JSONUpdateConfig{
@@ -395,7 +396,7 @@ func Test_jsonUpdater_runPromotionStep(t *testing.T) {
 			files: map[string]string{
 				"config.json": ``,
 			},
-			assertions: func(t *testing.T, workDir string, _ PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, _ directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
 				content, err := os.ReadFile(path.Join(workDir, "config.json"))
 				require.NoError(t, err)
@@ -404,7 +405,7 @@ func Test_jsonUpdater_runPromotionStep(t *testing.T) {
 		},
 		{
 			name: "add new key to JSON",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.JSONUpdateConfig{
@@ -416,7 +417,7 @@ func Test_jsonUpdater_runPromotionStep(t *testing.T) {
 			files: map[string]string{
 				"config.json": `{"settings": {}}`,
 			},
-			assertions: func(t *testing.T, workDir string, _ PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, _ directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
 				content, err := os.ReadFile(path.Join(workDir, "config.json"))
 				require.NoError(t, err)
@@ -425,7 +426,7 @@ func Test_jsonUpdater_runPromotionStep(t *testing.T) {
 		},
 		{
 			name: "update numeric value",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.JSONUpdateConfig{
@@ -437,7 +438,7 @@ func Test_jsonUpdater_runPromotionStep(t *testing.T) {
 			files: map[string]string{
 				"config.json": `{"threshold": 10}`,
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
 				assert.Equal(t, kargoapi.PromotionPhaseSucceeded, result.Status)
 				content, err := os.ReadFile(path.Join(workDir, "config.json"))
@@ -447,7 +448,7 @@ func Test_jsonUpdater_runPromotionStep(t *testing.T) {
 		},
 		{
 			name: "update boolean value to false",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.JSONUpdateConfig{
@@ -459,7 +460,7 @@ func Test_jsonUpdater_runPromotionStep(t *testing.T) {
 			files: map[string]string{
 				"config.json": `{"features": {"existingFeature": true}}`,
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
 				assert.Equal(t, kargoapi.PromotionPhaseSucceeded, result.Status)
 				content, err := os.ReadFile(path.Join(workDir, "config.json"))

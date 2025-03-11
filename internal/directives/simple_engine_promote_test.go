@@ -18,6 +18,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/credentials"
+	"github.com/akuity/kargo/pkg/x/directive"
 )
 
 func TestSimpleEngine_Promote(t *testing.T) {
@@ -32,7 +33,7 @@ func TestSimpleEngine_Promote(t *testing.T) {
 			name: "successful promotion",
 			promoCtx: PromotionContext{
 				Project: "test-project",
-				State:   State{"existing": "state"},
+				State:   directive.State{"existing": "state"},
 			},
 			steps: []PromotionStep{
 				{Kind: "success-step"},
@@ -105,14 +106,14 @@ func TestSimpleEngine_Promote(t *testing.T) {
 			testRegistry.RegisterPromotionStepRunner(
 				&mockPromotionStepRunner{
 					name:      "success-step",
-					runResult: PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded},
+					runResult: directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded},
 				},
 				&StepRunnerPermissions{},
 			)
 			testRegistry.RegisterPromotionStepRunner(
 				&mockPromotionStepRunner{
 					name:      "error-step",
-					runResult: PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+					runResult: directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 					runErr:    errors.New("something went wrong"),
 				},
 				&StepRunnerPermissions{},
@@ -120,10 +121,10 @@ func TestSimpleEngine_Promote(t *testing.T) {
 			testRegistry.RegisterPromotionStepRunner(
 				&mockPromotionStepRunner{
 					name: "context-waiter",
-					runFunc: func(ctx context.Context, _ *PromotionStepContext) (PromotionStepResult, error) {
+					runFunc: func(ctx context.Context, _ *directive.PromotionStepContext) (directive.PromotionStepResult, error) {
 						cancel() // Cancel context immediately
 						<-ctx.Done()
-						return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, ctx.Err()
+						return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, ctx.Err()
 					},
 				},
 				&StepRunnerPermissions{},
@@ -189,7 +190,7 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 				}
 
 				// Verify state contains outputs from both steps
-				assert.Equal(t, State{
+				assert.Equal(t, directive.State{
 					"step1": map[string]any{
 						"key": "value",
 					},
@@ -226,7 +227,7 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 				}
 
 				// Verify state contains outputs from both steps
-				assert.Equal(t, State{
+				assert.Equal(t, directive.State{
 					"step1": map[string]any{
 						"key": "value",
 					},
@@ -265,7 +266,7 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 				assert.NotNil(t, result.StepExecutionMetadata[1].FinishedAt)
 
 				// Verify only second step output is in state
-				assert.Equal(t, State{
+				assert.Equal(t, directive.State{
 					"step2": map[string]any{
 						"key": "value",
 					},
@@ -292,7 +293,7 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 				assert.Contains(t, result.StepExecutionMetadata[1].Message, "something went wrong")
 
 				// Verify first step output is preserved in state
-				assert.Equal(t, State{
+				assert.Equal(t, directive.State{
 					"step1": map[string]any{
 						"key": "value",
 					},
@@ -320,7 +321,7 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 				assert.Contains(t, result.StepExecutionMetadata[1].Message, "something went wrong")
 
 				// Verify first step output is preserved in state
-				assert.Equal(t, State{
+				assert.Equal(t, directive.State{
 					"step1": map[string]any{
 						"key": "value",
 					},
@@ -445,7 +446,7 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 			testRegistry.RegisterPromotionStepRunner(
 				&mockPromotionStepRunner{
 					name: "success-step",
-					runResult: PromotionStepResult{
+					runResult: directive.PromotionStepResult{
 						Status: kargoapi.PromotionPhaseSucceeded,
 						Output: map[string]any{"key": "value"},
 					},
@@ -455,7 +456,7 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 			testRegistry.RegisterPromotionStepRunner(
 				&mockPromotionStepRunner{
 					name: "running-step",
-					runResult: PromotionStepResult{
+					runResult: directive.PromotionStepResult{
 						Status: kargoapi.PromotionPhaseRunning,
 					},
 				},
@@ -464,7 +465,7 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 			testRegistry.RegisterPromotionStepRunner(
 				&mockPromotionStepRunner{
 					name:      "error-step",
-					runResult: PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+					runResult: directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 					runErr:    errors.New("something went wrong"),
 				},
 				&StepRunnerPermissions{},
@@ -472,7 +473,7 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 			testRegistry.RegisterPromotionStepRunner(
 				&mockPromotionStepRunner{
 					name:      "terminal-error-step",
-					runResult: PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+					runResult: directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 					runErr:    &terminalError{err: errors.New("something went wrong")},
 				},
 				&StepRunnerPermissions{},
@@ -480,10 +481,10 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 			testRegistry.RegisterPromotionStepRunner(
 				&mockPromotionStepRunner{
 					name: "context-waiter",
-					runFunc: func(ctx context.Context, _ *PromotionStepContext) (PromotionStepResult, error) {
+					runFunc: func(ctx context.Context, _ *directive.PromotionStepContext) (directive.PromotionStepResult, error) {
 						cancel()
 						<-ctx.Done()
-						return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, ctx.Err()
+						return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, ctx.Err()
 					},
 				},
 				&StepRunnerPermissions{},
@@ -506,19 +507,19 @@ func TestSimpleEngine_executeStep(t *testing.T) {
 		promoCtx   PromotionContext
 		step       PromotionStep
 		reg        PromotionStepRunnerRegistration
-		assertions func(*testing.T, PromotionStepResult, error)
+		assertions func(*testing.T, directive.PromotionStepResult, error)
 	}{
 		{
 			name: "successful step execution",
 			reg: PromotionStepRunnerRegistration{
 				Runner: &mockPromotionStepRunner{
 					name: "success-step",
-					runResult: PromotionStepResult{
+					runResult: directive.PromotionStepResult{
 						Status: kargoapi.PromotionPhaseSucceeded,
 					},
 				},
 			},
-			assertions: func(t *testing.T, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, result directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
 				assert.Equal(t, kargoapi.PromotionPhaseSucceeded, result.Status)
 			},
@@ -529,13 +530,13 @@ func TestSimpleEngine_executeStep(t *testing.T) {
 			reg: PromotionStepRunnerRegistration{
 				Runner: &mockPromotionStepRunner{
 					name: "error-step",
-					runResult: PromotionStepResult{
+					runResult: directive.PromotionStepResult{
 						Status: kargoapi.PromotionPhaseErrored,
 					},
 					runErr: errors.New("something went wrong"),
 				},
 			},
-			assertions: func(t *testing.T, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, result directive.PromotionStepResult, err error) {
 				assert.ErrorContains(t, err, "failed to run step \"error-step\"")
 				assert.ErrorContains(t, err, "something went wrong")
 				assert.Equal(t, kargoapi.PromotionPhaseErrored, result.Status)
@@ -549,7 +550,14 @@ func TestSimpleEngine_executeStep(t *testing.T) {
 				kargoClient: fake.NewClientBuilder().Build(),
 			}
 
-			result, err := engine.executeStep(context.Background(), tt.promoCtx, tt.step, tt.reg, t.TempDir(), make(State))
+			result, err := engine.executeStep(
+				context.Background(),
+				tt.promoCtx,
+				tt.step,
+				tt.reg,
+				t.TempDir(),
+				make(directive.State),
+			)
 			tt.assertions(t, result, err)
 		})
 	}
@@ -561,7 +569,7 @@ func TestSimpleEngine_preparePromotionStepContext(t *testing.T) {
 		promoCtx    PromotionContext
 		step        PromotionStep
 		permissions StepRunnerPermissions
-		assertions  func(*testing.T, *PromotionStepContext, error)
+		assertions  func(*testing.T, *directive.PromotionStepContext, error)
 	}{
 		{
 			name: "successful context preparation",
@@ -576,7 +584,7 @@ func TestSimpleEngine_preparePromotionStepContext(t *testing.T) {
 				AllowKargoClient:   true,
 				AllowArgoCDClient:  true,
 			},
-			assertions: func(t *testing.T, ctx *PromotionStepContext, err error) {
+			assertions: func(t *testing.T, ctx *directive.PromotionStepContext, err error) {
 				assert.NoError(t, err)
 				assert.Equal(t, "test-project", ctx.Project)
 				assert.Equal(t, "test-stage", ctx.Stage)
@@ -591,7 +599,7 @@ func TestSimpleEngine_preparePromotionStepContext(t *testing.T) {
 			promoCtx:    PromotionContext{},
 			step:        PromotionStep{Kind: "test-step"},
 			permissions: StepRunnerPermissions{},
-			assertions: func(t *testing.T, ctx *PromotionStepContext, err error) {
+			assertions: func(t *testing.T, ctx *directive.PromotionStepContext, err error) {
 				assert.NoError(t, err)
 				assert.Nil(t, ctx.CredentialsDB)
 				assert.Nil(t, ctx.KargoClient)
@@ -615,7 +623,7 @@ func TestSimpleEngine_preparePromotionStepContext(t *testing.T) {
 				tt.step,
 				tt.permissions,
 				t.TempDir(),
-				make(State),
+				make(directive.State),
 			)
 			tt.assertions(t, stepCtx, err)
 		})

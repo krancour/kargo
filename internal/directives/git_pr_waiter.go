@@ -10,6 +10,7 @@ import (
 	"github.com/akuity/kargo/internal/controller/git"
 	"github.com/akuity/kargo/internal/credentials"
 	"github.com/akuity/kargo/internal/gitprovider"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -42,29 +43,29 @@ func (g *gitPRWaiter) Name() string {
 // RunPromotionStep implements the PromotionStepRunner interface.
 func (g *gitPRWaiter) RunPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *directive.PromotionStepContext,
+) (directive.PromotionStepResult, error) {
 	if err := g.validate(stepCtx.Config); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 	cfg, err := ConfigToStruct[builtin.GitWaitForPRConfig](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into git-wait-for-pr config: %w", err)
 	}
 	return g.runPromotionStep(ctx, stepCtx, cfg)
 }
 
 // validate validates gitPRWaiter configuration against a JSON schema.
-func (g *gitPRWaiter) validate(cfg Config) error {
+func (g *gitPRWaiter) validate(cfg directive.Config) error {
 	return validate(g.schemaLoader, gojsonschema.NewGoLoader(cfg), g.Name())
 }
 
 func (g *gitPRWaiter) runPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	cfg builtin.GitWaitForPRConfig,
-) (PromotionStepResult, error) {
+) (directive.PromotionStepResult, error) {
 	var repoCreds *git.RepoCredentials
 	creds, err := stepCtx.CredentialsDB.Get(
 		ctx,
@@ -73,7 +74,7 @@ func (g *gitPRWaiter) runPromotionStep(
 		cfg.RepoURL,
 	)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error getting credentials for %s: %w", cfg.RepoURL, err)
 	}
 	if creds != nil {
@@ -95,24 +96,24 @@ func (g *gitPRWaiter) runPromotionStep(
 	}
 	gitProv, err := gitprovider.New(cfg.RepoURL, gpOpts)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error creating git provider service: %w", err)
 	}
 
 	pr, err := gitProv.GetPullRequest(ctx, cfg.PRNumber)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error getting pull request %d: %w", cfg.PRNumber, err)
 	}
 
 	if pr.Open {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseRunning}, nil
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseRunning}, nil
 	}
 	if !pr.Merged {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseFailed},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseFailed},
 			&terminalError{err: fmt.Errorf("pull request %d was closed without being merged", cfg.PRNumber)}
 	}
-	return PromotionStepResult{
+	return directive.PromotionStepResult{
 		Status: kargoapi.PromotionPhaseSucceeded,
 		Output: map[string]any{stateKeyCommit: pr.MergeCommitSHA},
 	}, nil

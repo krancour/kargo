@@ -14,6 +14,7 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	libargocd "github.com/akuity/kargo/internal/argocd"
 	argocd "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 )
 
 const applicationStatusesKey = "applicationStatuses"
@@ -57,11 +58,11 @@ type compositeError interface {
 // RunHealthCheckStep implements the Directive interface.
 func (a *argocdUpdater) RunHealthCheckStep(
 	ctx context.Context,
-	healthCtx *HealthCheckStepContext,
-) HealthCheckStepResult {
+	healthCtx *directive.HealthCheckStepContext,
+) directive.HealthCheckStepResult {
 	cfg, err := ConfigToStruct[ArgoCDHealthConfig](healthCtx.Config)
 	if err != nil {
-		return HealthCheckStepResult{
+		return directive.HealthCheckStepResult{
 			Status: kargoapi.HealthStateUnknown,
 			Issues: []string{
 				fmt.Sprintf(
@@ -76,11 +77,11 @@ func (a *argocdUpdater) RunHealthCheckStep(
 
 func (a *argocdUpdater) runHealthCheckStep(
 	ctx context.Context,
-	healthCtx *HealthCheckStepContext,
+	healthCtx *directive.HealthCheckStepContext,
 	healthCfg ArgoCDHealthConfig,
-) HealthCheckStepResult {
+) directive.HealthCheckStepResult {
 	if healthCtx.ArgoCDClient == nil {
-		return HealthCheckStepResult{
+		return directive.HealthCheckStepResult{
 			Status: kargoapi.HealthStateUnknown,
 			Issues: []string{
 				"Argo CD integration is disabled on this controller; cannot assess " +
@@ -88,7 +89,7 @@ func (a *argocdUpdater) runHealthCheckStep(
 			},
 		}
 	}
-	health := HealthCheckStepResult{
+	health := directive.HealthCheckStepResult{
 		Status: kargoapi.HealthStateHealthy,
 		Issues: make([]string, 0),
 	}
@@ -144,7 +145,7 @@ var healthErrorConditions = []argocd.ApplicationConditionType{
 // returns an error with a message explaining why.
 func (a *argocdUpdater) getApplicationHealth(
 	ctx context.Context,
-	healthCtx *HealthCheckStepContext,
+	healthCtx *directive.HealthCheckStepContext,
 	appKey client.ObjectKey,
 	desiredRevisions []string,
 ) (kargoapi.HealthState, ArgoCDAppStatus, error) {

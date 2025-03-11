@@ -4,13 +4,14 @@ import (
 	"context"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 )
 
 // FakeEngine is a mock implementation of the Engine interface that can be used
 // to facilitate unit testing.
 type FakeEngine struct {
 	ExecuteFn     func(context.Context, PromotionContext, []PromotionStep) (PromotionResult, error)
-	CheckHealthFn func(context.Context, HealthCheckContext, []HealthCheckStep) kargoapi.Health
+	CheckHealthFn func(context.Context, directive.HealthCheckContext, []directive.HealthCheckStep) kargoapi.Health
 }
 
 // Promote implements the Engine interface.
@@ -28,8 +29,8 @@ func (e *FakeEngine) Promote(
 // CheckHealth implements the Engine interface.
 func (e *FakeEngine) CheckHealth(
 	ctx context.Context,
-	healthCtx HealthCheckContext,
-	steps []HealthCheckStep,
+	healthCtx directive.HealthCheckContext,
+	steps []directive.HealthCheckStep,
 ) kargoapi.Health {
 	if e.CheckHealthFn == nil {
 		return kargoapi.Health{Status: kargoapi.HealthStateHealthy}

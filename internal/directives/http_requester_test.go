@@ -11,25 +11,26 @@ import (
 	"github.com/stretchr/testify/require"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
 func Test_httpRequester_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           directive.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "url not specified",
-			config: Config{},
+			config: directive.Config{},
 			expectedProblems: []string{
 				"(root): url is required",
 			},
 		},
 		{
 			name: "url is empty string",
-			config: Config{
+			config: directive.Config{
 				"url": "",
 			},
 			expectedProblems: []string{
@@ -38,7 +39,7 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "invalid method",
-			config: Config{
+			config: directive.Config{
 				"method": "invalid",
 			},
 			expectedProblems: []string{
@@ -47,8 +48,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "header name not specified",
-			config: Config{
-				"headers": []Config{{}},
+			config: directive.Config{
+				"headers": []directive.Config{{}},
 			},
 			expectedProblems: []string{
 				"headers.0: name is required",
@@ -56,8 +57,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "header name is empty string",
-			config: Config{
-				"headers": []Config{{
+			config: directive.Config{
+				"headers": []directive.Config{{
 					"name": "",
 				}},
 			},
@@ -67,8 +68,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "header value not specified",
-			config: Config{
-				"headers": []Config{{}},
+			config: directive.Config{
+				"headers": []directive.Config{{}},
 			},
 			expectedProblems: []string{
 				"headers.0: value is required",
@@ -76,8 +77,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "header value is empty string",
-			config: Config{
-				"headers": []Config{{
+			config: directive.Config{
+				"headers": []directive.Config{{
 					"value": "",
 				}},
 			},
@@ -87,8 +88,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "query param name not specified",
-			config: Config{
-				"queryParams": []Config{{}},
+			config: directive.Config{
+				"queryParams": []directive.Config{{}},
 			},
 			expectedProblems: []string{
 				"queryParams.0: name is required",
@@ -96,8 +97,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "query param name is empty string",
-			config: Config{
-				"queryParams": []Config{{
+			config: directive.Config{
+				"queryParams": []directive.Config{{
 					"name": "",
 				}},
 			},
@@ -107,8 +108,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "query param value not specified",
-			config: Config{
-				"queryParams": []Config{{}},
+			config: directive.Config{
+				"queryParams": []directive.Config{{}},
 			},
 			expectedProblems: []string{
 				"queryParams.0: value is required",
@@ -116,8 +117,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "query param value is empty string",
-			config: Config{
-				"queryParams": []Config{{
+			config: directive.Config{
+				"queryParams": []directive.Config{{
 					"value": "",
 				}},
 			},
@@ -127,7 +128,7 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "invalid timeout",
-			config: Config{
+			config: directive.Config{
 				"timeout": "invalid",
 			},
 			expectedProblems: []string{
@@ -136,8 +137,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "output name not specified",
-			config: Config{
-				"outputs": []Config{{}},
+			config: directive.Config{
+				"outputs": []directive.Config{{}},
 			},
 			expectedProblems: []string{
 				"outputs.0: name is required",
@@ -145,8 +146,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "output name is empty string",
-			config: Config{
-				"outputs": []Config{{
+			config: directive.Config{
+				"outputs": []directive.Config{{
 					"name": "",
 				}},
 			},
@@ -156,8 +157,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "output fromExpression not specified",
-			config: Config{
-				"outputs": []Config{{}},
+			config: directive.Config{
+				"outputs": []directive.Config{{}},
 			},
 			expectedProblems: []string{
 				"outputs.0: fromExpression is required",
@@ -165,8 +166,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "output fromExpression is empty string",
-			config: Config{
-				"outputs": []Config{{
+			config: directive.Config{
+				"outputs": []directive.Config{{
 					"fromExpression": "",
 				}},
 			},
@@ -176,14 +177,14 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "valid kitchen sink",
-			config: Config{
+			config: directive.Config{
 				"method": "GET",
 				"url":    "https://example.com",
-				"headers": []Config{{
+				"headers": []directive.Config{{
 					"name":  "Accept",
 					"value": "application/json",
 				}},
-				"queryParams": []Config{{
+				"queryParams": []directive.Config{{
 					"name":  "foo",
 					"value": "bar",
 				}},
@@ -191,7 +192,7 @@ func Test_httpRequester_validate(t *testing.T) {
 				"timeout":               "30s",
 				"successExpression":     "response.status == 200",
 				"failureExpression":     "response.status == 404",
-				"outputs": []Config{
+				"outputs": []directive.Config{
 					{
 						"name":           "fact1",
 						"fromExpression": "response.body.facts[0]",
@@ -228,7 +229,7 @@ func Test_httpRequester_runPromotionStep(t *testing.T) {
 		name       string
 		cfg        builtin.HTTPConfig
 		handler    http.HandlerFunc
-		assertions func(*testing.T, PromotionStepResult, error)
+		assertions func(*testing.T, directive.PromotionStepResult, error)
 	}{
 		{
 			name:    "success and not failed; no body",
@@ -246,7 +247,7 @@ func Test_httpRequester_runPromotionStep(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, res PromotionStepResult, err error) {
+			assertions: func(t *testing.T, res directive.PromotionStepResult, err error) {
 				require.NoError(t, err)
 				require.Equal(t, kargoapi.PromotionPhaseSucceeded, res.Status)
 				require.Equal(
@@ -279,7 +280,7 @@ func Test_httpRequester_runPromotionStep(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, res PromotionStepResult, err error) {
+			assertions: func(t *testing.T, res directive.PromotionStepResult, err error) {
 				require.NoError(t, err)
 				require.Equal(t, kargoapi.PromotionPhaseSucceeded, res.Status)
 				require.Equal(
@@ -312,7 +313,7 @@ func Test_httpRequester_runPromotionStep(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, res PromotionStepResult, err error) {
+			assertions: func(t *testing.T, res directive.PromotionStepResult, err error) {
 				require.NoError(t, err)
 				require.Equal(t, kargoapi.PromotionPhaseSucceeded, res.Status)
 				require.Equal(
@@ -333,7 +334,7 @@ func Test_httpRequester_runPromotionStep(t *testing.T) {
 			cfg: builtin.HTTPConfig{
 				FailureExpression: "response.status == 404",
 			},
-			assertions: func(t *testing.T, res PromotionStepResult, err error) {
+			assertions: func(t *testing.T, res directive.PromotionStepResult, err error) {
 				require.ErrorContains(t, err, "HTTP (404) response met failure criteria")
 				require.True(t, isTerminal(err))
 				require.Equal(t, kargoapi.PromotionPhaseFailed, res.Status)
@@ -346,7 +347,7 @@ func Test_httpRequester_runPromotionStep(t *testing.T) {
 				SuccessExpression: "response.status == 200",
 				FailureExpression: "response.status == 200",
 			},
-			assertions: func(t *testing.T, res PromotionStepResult, err error) {
+			assertions: func(t *testing.T, res directive.PromotionStepResult, err error) {
 				require.ErrorContains(t, err, "HTTP (200) response met failure criteria")
 				require.True(t, isTerminal(err))
 				require.Equal(t, kargoapi.PromotionPhaseFailed, res.Status)
@@ -361,7 +362,7 @@ func Test_httpRequester_runPromotionStep(t *testing.T) {
 				SuccessExpression: "response.status == 200",
 				FailureExpression: "response.status == 404",
 			},
-			assertions: func(t *testing.T, res PromotionStepResult, err error) {
+			assertions: func(t *testing.T, res directive.PromotionStepResult, err error) {
 				require.NoError(t, err)
 				require.Equal(t, kargoapi.PromotionPhaseRunning, res.Status)
 			},

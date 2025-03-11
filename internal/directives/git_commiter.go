@@ -9,6 +9,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/git"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -41,54 +42,54 @@ func (g *gitCommitter) Name() string {
 // RunPromotionStep implements the PromotionStepRunner interface.
 func (g *gitCommitter) RunPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *directive.PromotionStepContext,
+) (directive.PromotionStepResult, error) {
 	if err := g.validate(stepCtx.Config); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 	cfg, err := ConfigToStruct[builtin.GitCommitConfig](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into %s config: %w", g.Name(), err)
 	}
 	return g.runPromotionStep(ctx, stepCtx, cfg)
 }
 
 // validate validates gitCommitter configuration against a JSON schema.
-func (g *gitCommitter) validate(cfg Config) error {
+func (g *gitCommitter) validate(cfg directive.Config) error {
 	return validate(g.schemaLoader, gojsonschema.NewGoLoader(cfg), g.Name())
 }
 
 func (g *gitCommitter) runPromotionStep(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	cfg builtin.GitCommitConfig,
-) (PromotionStepResult, error) {
+) (directive.PromotionStepResult, error) {
 	path, err := securejoin.SecureJoin(stepCtx.WorkDir, cfg.Path)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 			"error joining path %s with work dir %s: %w",
 			cfg.Path, stepCtx.WorkDir, err,
 		)
 	}
 	workTree, err := git.LoadWorkTree(path, nil)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error loading working tree from %s: %w", cfg.Path, err)
 	}
 	if err = workTree.AddAll(); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error adding all changes to working tree: %w", err)
 	}
 	hasDiffs, err := workTree.HasDiffs()
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error checking for diffs in working tree: %w", err)
 	}
 	if hasDiffs {
 		var commitMsg string
 		if commitMsg, err = g.buildCommitMessage(stepCtx.SharedState, cfg); err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+			return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 				fmt.Errorf("error building commit message: %w", err)
 		}
 		commitOpts := &git.CommitOptions{}
@@ -102,23 +103,23 @@ func (g *gitCommitter) runPromotionStep(
 			}
 		}
 		if err = workTree.Commit(commitMsg, commitOpts); err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+			return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 				fmt.Errorf("error committing to working tree: %w", err)
 		}
 	}
 	commitID, err := workTree.LastCommitID()
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error getting last commit ID: %w", err)
 	}
-	return PromotionStepResult{
+	return directive.PromotionStepResult{
 		Status: kargoapi.PromotionPhaseSucceeded,
 		Output: map[string]any{stateKeyCommit: commitID},
 	}, nil
 }
 
 func (g *gitCommitter) buildCommitMessage(
-	sharedState State,
+	sharedState directive.State,
 	cfg builtin.GitCommitConfig,
 ) (string, error) {
 	var commitMsg string

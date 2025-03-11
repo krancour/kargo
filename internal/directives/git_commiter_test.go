@@ -13,25 +13,26 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/git"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
 func Test_gitCommitter_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           directive.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "path not specified",
-			config: Config{},
+			config: directive.Config{},
 			expectedProblems: []string{
 				"(root): path is required",
 			},
 		},
 		{
 			name: "path is empty string",
-			config: Config{
+			config: directive.Config{
 				"path": "",
 			},
 			expectedProblems: []string{
@@ -40,14 +41,14 @@ func Test_gitCommitter_validate(t *testing.T) {
 		},
 		{
 			name:   "neither message nor messageFromSteps is specified",
-			config: Config{},
+			config: directive.Config{},
 			expectedProblems: []string{
 				"(root): Must validate one and only one schema",
 			},
 		},
 		{
 			name: "both message and messageFromSteps are specified",
-			config: Config{
+			config: directive.Config{
 				"message":          "fake commit message",
 				"messageFromSteps": []string{"fake-step-alias"},
 			},
@@ -57,7 +58,7 @@ func Test_gitCommitter_validate(t *testing.T) {
 		},
 		{
 			name: "message is empty string",
-			config: Config{
+			config: directive.Config{
 				"message": "",
 			},
 			expectedProblems: []string{
@@ -66,7 +67,7 @@ func Test_gitCommitter_validate(t *testing.T) {
 		},
 		{
 			name: "messageFromSteps is empty array",
-			config: Config{
+			config: directive.Config{
 				"messageFromSteps": []string{},
 			},
 			expectedProblems: []string{
@@ -75,7 +76,7 @@ func Test_gitCommitter_validate(t *testing.T) {
 		},
 		{
 			name: "messageFromSteps array contains an empty string",
-			config: Config{
+			config: directive.Config{
 				"messageFromSteps": []string{""},
 			},
 			expectedProblems: []string{
@@ -84,23 +85,23 @@ func Test_gitCommitter_validate(t *testing.T) {
 		},
 		{
 			name: "author is not specified",
-			config: Config{ // Should be completely valid
+			config: directive.Config{ // Should be completely valid
 				"path":    "/tmp/foo",
 				"message": "fake commit message",
 			},
 		},
 		{
 			name: "author email is not specified",
-			config: Config{ // Should be completely valid
-				"author":  Config{},
+			config: directive.Config{ // Should be completely valid
+				"author":  directive.Config{},
 				"path":    "/tmp/foo",
 				"message": "fake commit message",
 			},
 		},
 		{
 			name: "author email is empty string",
-			config: Config{ // Should be completely valid
-				"author": Config{
+			config: directive.Config{ // Should be completely valid
+				"author": directive.Config{
 					"email": "",
 				},
 				"path":    "/tmp/foo",
@@ -109,16 +110,16 @@ func Test_gitCommitter_validate(t *testing.T) {
 		},
 		{
 			name: "author name is not specified",
-			config: Config{ // Should be completely valid
-				"author":  Config{},
+			config: directive.Config{ // Should be completely valid
+				"author":  directive.Config{},
 				"path":    "/tmp/foo",
 				"message": "fake commit message",
 			},
 		},
 		{
 			name: "author name is empty string",
-			config: Config{ // Should be completely valid
-				"author": Config{
+			config: directive.Config{ // Should be completely valid
+				"author": directive.Config{
 					"name": "",
 				},
 				"path":    "/tmp/foo",
@@ -127,8 +128,8 @@ func Test_gitCommitter_validate(t *testing.T) {
 		},
 		{
 			name: "valid kitchen sink",
-			config: Config{
-				"author": Config{
+			config: directive.Config{
+				"author": directive.Config{
 					"email": "tony@starkindustries.com",
 					"name":  "Tony Stark",
 				},
@@ -210,7 +211,7 @@ func Test_gitCommitter_runPromotionStep(t *testing.T) {
 	runner, ok := r.(*gitCommitter)
 	require.True(t, ok)
 
-	stepCtx := &PromotionStepContext{
+	stepCtx := &directive.PromotionStepContext{
 		WorkDir: workDir,
 	}
 
@@ -237,7 +238,7 @@ func Test_gitCommitter_runPromotionStep(t *testing.T) {
 func Test_gitCommitter_buildCommitMessage(t *testing.T) {
 	testCases := []struct {
 		name        string
-		sharedState State
+		sharedState directive.State
 		cfg         builtin.GitCommitConfig
 		assertions  func(t *testing.T, msg string, err error)
 	}{
@@ -251,7 +252,7 @@ func Test_gitCommitter_buildCommitMessage(t *testing.T) {
 		},
 		{
 			name:        "no output from step with alias",
-			sharedState: State{},
+			sharedState: directive.State{},
 			cfg:         builtin.GitCommitConfig{MessageFromSteps: []string{"fake-step-alias"}},
 			assertions: func(t *testing.T, _ string, err error) {
 				require.NoError(t, err)
@@ -259,7 +260,7 @@ func Test_gitCommitter_buildCommitMessage(t *testing.T) {
 		},
 		{
 			name: "unexpected value type from step with alias",
-			sharedState: State{
+			sharedState: directive.State{
 				"fake-step-alias": "not a State",
 			},
 			cfg: builtin.GitCommitConfig{MessageFromSteps: []string{"fake-step-alias"}},
@@ -270,7 +271,7 @@ func Test_gitCommitter_buildCommitMessage(t *testing.T) {
 		},
 		{
 			name: "output from step with alias does not contain a commit message",
-			sharedState: State{
+			sharedState: directive.State{
 				"fake-step-alias": map[string]any{},
 			},
 			cfg: builtin.GitCommitConfig{MessageFromSteps: []string{"fake-step-alias"}},
@@ -281,7 +282,7 @@ func Test_gitCommitter_buildCommitMessage(t *testing.T) {
 		},
 		{
 			name: "output from step with alias contain a commit message that isn't a string",
-			sharedState: State{
+			sharedState: directive.State{
 				"fake-step-alias": map[string]any{
 					"commitMessage": 42,
 				},
@@ -296,7 +297,7 @@ func Test_gitCommitter_buildCommitMessage(t *testing.T) {
 		},
 		{
 			name: "successful message construction",
-			sharedState: State{
+			sharedState: directive.State{
 				"fake-step-alias": map[string]any{
 					"commitMessage": "part one",
 				},

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -127,14 +128,14 @@ func Test_yamlParser_validate(t *testing.T) {
 func Test_yamlParser_runPromotionStep(t *testing.T) {
 	tests := []struct {
 		name       string
-		stepCtx    *PromotionStepContext
+		stepCtx    *directive.PromotionStepContext
 		cfg        builtin.YAMLParseConfig
 		files      map[string]string
-		assertions func(*testing.T, string, PromotionStepResult, error)
+		assertions func(*testing.T, string, directive.PromotionStepResult, error)
 	}{
 		{
 			name: "successful run with outputs",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.YAMLParseConfig{
@@ -152,9 +153,9 @@ features:
   newFeature: false
 `,
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, directive.PromotionStepResult{
 					Status: kargoapi.PromotionPhaseSucceeded,
 					Output: map[string]any{
 						"appVersion":    "1.0.0",
@@ -166,7 +167,7 @@ features:
 		},
 		{
 			name: "failed to extract outputs",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.YAMLParseConfig{
@@ -181,15 +182,15 @@ app:
   version: "1.0.0"
 `,
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 				assert.Contains(t, err.Error(), "failed to extract outputs")
 			},
 		},
 		{
 			name: "no outputs provided",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.YAMLParseConfig{
@@ -202,9 +203,9 @@ app:
   version: "1.0.0"
 `,
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, directive.PromotionStepResult{
 					Status: kargoapi.PromotionPhaseErrored,
 				}, result)
 				assert.Contains(t, err.Error(), "outputs is required")
@@ -212,7 +213,7 @@ app:
 		},
 		{
 			name: "handle empty YAML file",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.YAMLParseConfig{
@@ -224,43 +225,43 @@ app:
 			files: map[string]string{
 				"config.yaml": ``,
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 				assert.Contains(t, err.Error(), "could not parse empty YAML file")
 			},
 		},
 		{
 			name:    "path is empty",
-			stepCtx: &PromotionStepContext{Project: "test-project"},
+			stepCtx: &directive.PromotionStepContext{Project: "test-project"},
 			cfg: builtin.YAMLParseConfig{
 				Path:    "",
 				Outputs: []builtin.YAMLParse{{Name: "key", FromExpression: "app.key"}},
 			},
 			files: map[string]string{},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 				assert.Contains(t, err.Error(), "YAML file path cannot be empty")
 			},
 		},
 		{
 			name:    "path is a directory instead of a file",
-			stepCtx: &PromotionStepContext{Project: "test-project"},
+			stepCtx: &directive.PromotionStepContext{Project: "test-project"},
 			cfg: builtin.YAMLParseConfig{
 				Path:    "config",
 				Outputs: []builtin.YAMLParse{{Name: "key", FromExpression: "app.key"}},
 			},
 			files: map[string]string{},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 				assert.Contains(t, err.Error(), "no such file or directory")
 			},
 		},
 		{
 			name: "valid YAML, valid expressions, valid path",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.YAMLParseConfig{
@@ -281,9 +282,9 @@ config:
   threshold: 10.0
 `,
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, directive.PromotionStepResult{
 					Status: kargoapi.PromotionPhaseSucceeded,
 					Output: map[string]any{
 						"appVersion": "2.0.1",

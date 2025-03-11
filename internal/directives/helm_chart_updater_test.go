@@ -25,25 +25,26 @@ import (
 	"github.com/akuity/kargo/internal/credentials"
 	"github.com/akuity/kargo/internal/helm"
 	intyaml "github.com/akuity/kargo/internal/yaml"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
 func Test_helmChartUpdater_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           directive.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "path is not specified",
-			config: Config{},
+			config: directive.Config{},
 			expectedProblems: []string{
 				"(root): path is required",
 			},
 		},
 		{
 			name: "path is empty",
-			config: Config{
+			config: directive.Config{
 				"path": "",
 			},
 			expectedProblems: []string{
@@ -52,15 +53,15 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name:   "charts is null",
-			config: Config{},
+			config: directive.Config{},
 			expectedProblems: []string{
 				"(root): charts is required",
 			},
 		},
 		{
 			name: "charts is empty",
-			config: Config{
-				"charts": []Config{},
+			config: directive.Config{
+				"charts": []directive.Config{},
 			},
 			expectedProblems: []string{
 				"charts: Array must have at least 1 items",
@@ -68,8 +69,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "repository not specified",
-			config: Config{
-				"charts": []Config{{}},
+			config: directive.Config{
+				"charts": []directive.Config{{}},
 			},
 			expectedProblems: []string{
 				"charts.0: repository is required",
@@ -77,8 +78,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "repository is empty",
-			config: Config{
-				"charts": []Config{{
+			config: directive.Config{
+				"charts": []directive.Config{{
 					"repository": "",
 				}},
 			},
@@ -88,8 +89,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "name not specified",
-			config: Config{
-				"charts": []Config{{}},
+			config: directive.Config{
+				"charts": []directive.Config{{}},
 			},
 			expectedProblems: []string{
 				"charts.0: name is required",
@@ -97,8 +98,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "name is empty",
-			config: Config{
-				"charts": []Config{{
+			config: directive.Config{
+				"charts": []directive.Config{{
 					"name": "",
 				}},
 			},
@@ -108,8 +109,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "version not specified",
-			config: Config{
-				"charts": []Config{{}},
+			config: directive.Config{
+				"charts": []directive.Config{{}},
 			},
 			expectedProblems: []string{
 				"charts.0: version is required",
@@ -117,8 +118,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "version is empty",
-			config: Config{
-				"charts": []Config{{
+			config: directive.Config{
+				"charts": []directive.Config{{
 					"version": "",
 				}},
 			},
@@ -128,9 +129,9 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "valid kitchen sink",
-			config: Config{
+			config: directive.Config{
 				"path": "fake-path",
-				"charts": []Config{
+				"charts": []directive.Config{
 					{
 						"repository": "fake-repository",
 						"name":       "fake-chart",
@@ -162,15 +163,15 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 func Test_helmChartUpdater_runPromotionStep(t *testing.T) {
 	tests := []struct {
 		name            string
-		context         *PromotionStepContext
+		context         *directive.PromotionStepContext
 		cfg             builtin.HelmUpdateChartConfig
 		chartMetadata   *chart.Metadata
 		setupRepository func(t *testing.T) (string, func())
-		assertions      func(*testing.T, string, PromotionStepResult, error)
+		assertions      func(*testing.T, string, directive.PromotionStepResult, error)
 	}{
 		{
 			name: "successful run with HTTP repository",
-			context: &PromotionStepContext{
+			context: &directive.PromotionStepContext{
 				Project: "test-project",
 				Freight: kargoapi.FreightCollection{
 					Freight: map[string]kargoapi.FreightReference{
@@ -224,9 +225,9 @@ func Test_helmChartUpdater_runPromotionStep(t *testing.T) {
 
 				return httpRepository.URL, httpRepository.Close
 			},
-			assertions: func(t *testing.T, tempDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, tempDir string, result directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, directive.PromotionStepResult{
 					Status: kargoapi.PromotionPhaseSucceeded,
 					Output: map[string]any{
 						"commitMessage": `Updated chart dependencies for testchart
@@ -415,7 +416,7 @@ func Test_helmChartUpdater_updateDependencies(t *testing.T) {
 		// Run the promotion step and assert the dependencies are updated
 		newVersions, err := runner.updateDependencies(
 			context.Background(),
-			&PromotionStepContext{},
+			&directive.PromotionStepContext{},
 			t.TempDir(),
 			chartPath,
 			nil,
@@ -479,7 +480,7 @@ func Test_helmChartUpdater_updateDependencies(t *testing.T) {
 		}
 
 		// Run the promotion step and assert the dependency is updated
-		newVersions, err := runner.updateDependencies(context.Background(), &PromotionStepContext{
+		newVersions, err := runner.updateDependencies(context.Background(), &directive.PromotionStepContext{
 			CredentialsDB: credentialsDB,
 		}, t.TempDir(), chartPath, []chartDependency{
 			{
@@ -569,7 +570,7 @@ func Test_helmChartUpdater_updateDependencies(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helmHome, chartPath := t.TempDir(), t.TempDir()
-			_, err := runner.updateDependencies(context.Background(), &PromotionStepContext{
+			_, err := runner.updateDependencies(context.Background(), &directive.PromotionStepContext{
 				CredentialsDB: tt.credentialsDB,
 			}, helmHome, chartPath, tt.chartDependencies)
 			tt.assertions(t, helmHome, chartPath, err)

@@ -16,25 +16,26 @@ import (
 	yaml "sigs.k8s.io/yaml/goyaml.v3"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
 func Test_kustomizeImageSetter_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           directive.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "path is not specified",
-			config: Config{},
+			config: directive.Config{},
 			expectedProblems: []string{
 				"(root): path is required",
 			},
 		},
 		{
 			name: "path is empty",
-			config: Config{
+			config: directive.Config{
 				"path": "",
 			},
 			expectedProblems: []string{
@@ -43,8 +44,8 @@ func Test_kustomizeImageSetter_validate(t *testing.T) {
 		},
 		{
 			name: "image not specified",
-			config: Config{
-				"images": []Config{{}},
+			config: directive.Config{
+				"images": []directive.Config{{}},
 			},
 			expectedProblems: []string{
 				"images.0: image is required",
@@ -52,8 +53,8 @@ func Test_kustomizeImageSetter_validate(t *testing.T) {
 		},
 		{
 			name: "image is empty",
-			config: Config{
-				"images": []Config{{
+			config: directive.Config{
+				"images": []directive.Config{{
 					"image": "",
 				}},
 			},
@@ -63,8 +64,8 @@ func Test_kustomizeImageSetter_validate(t *testing.T) {
 		},
 		{
 			name: "digest and tag are both not specified",
-			config: Config{
-				"images": []Config{{
+			config: directive.Config{
+				"images": []directive.Config{{
 					"image": "fake-image",
 				}},
 			},
@@ -74,8 +75,8 @@ func Test_kustomizeImageSetter_validate(t *testing.T) {
 		},
 		{
 			name: "digest and tag are both empty",
-			config: Config{
-				"images": []Config{{
+			config: directive.Config{
+				"images": []directive.Config{{
 					"image":  "fake-image",
 					"digest": "",
 					"tag":    "",
@@ -88,8 +89,8 @@ func Test_kustomizeImageSetter_validate(t *testing.T) {
 		{
 			name: "digest and tag are both specified",
 			// These should be mutually exclusive.
-			config: Config{
-				"images": []Config{{
+			config: directive.Config{
+				"images": []directive.Config{{
 					"digest": "fake-digest",
 					"tag":    "fake-tag",
 				}},
@@ -100,9 +101,9 @@ func Test_kustomizeImageSetter_validate(t *testing.T) {
 		},
 		{
 			name: "valid kitchen sink",
-			config: Config{
+			config: directive.Config{
 				"path": "fake-path",
-				"images": []Config{
+				"images": []directive.Config{
 					{
 						"image":  "fake-image-2",
 						"digest": "fake-digest",
@@ -151,8 +152,8 @@ func Test_kustomizeImageSetter_runPromotionStep(t *testing.T) {
 		name         string
 		setupFiles   func(t *testing.T) string
 		cfg          builtin.KustomizeSetImageConfig
-		setupStepCtx func(t *testing.T, workDir string) *PromotionStepContext
-		assertions   func(*testing.T, string, PromotionStepResult, error)
+		setupStepCtx func(t *testing.T, workDir string) *directive.PromotionStepContext
+		assertions   func(*testing.T, string, directive.PromotionStepResult, error)
 	}{
 		{
 			name: "successfully sets image",
@@ -171,7 +172,7 @@ kind: Kustomization
 					{Image: "nginx", Tag: "1.21.0"},
 				},
 			},
-			setupStepCtx: func(t *testing.T, workDir string) *PromotionStepContext {
+			setupStepCtx: func(t *testing.T, workDir string) *directive.PromotionStepContext {
 				scheme := runtime.NewScheme()
 				require.NoError(t, kargoapi.AddToScheme(scheme))
 				c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
@@ -182,7 +183,7 @@ kind: Kustomization
 					}),
 				).Build()
 
-				return &PromotionStepContext{
+				return &directive.PromotionStepContext{
 					WorkDir:     workDir,
 					KargoClient: c,
 					Project:     testNamespace,
@@ -199,9 +200,9 @@ kind: Kustomization
 					},
 				}
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				require.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, directive.PromotionStepResult{
 					Status: kargoapi.PromotionPhaseSucceeded,
 					Output: map[string]any{
 						"commitMessage": "Updated . to use new image\n\n- nginx:1.21.0",
@@ -228,8 +229,8 @@ kind: Kustomization
 				Path:   ".",
 				Images: nil, // Automatically set all images
 			},
-			setupStepCtx: func(_ *testing.T, workDir string) *PromotionStepContext {
-				return &PromotionStepContext{
+			setupStepCtx: func(_ *testing.T, workDir string) *directive.PromotionStepContext {
+				return &directive.PromotionStepContext{
 					WorkDir: workDir,
 					Freight: kargoapi.FreightCollection{
 						Freight: map[string]kargoapi.FreightReference{
@@ -243,9 +244,9 @@ kind: Kustomization
 					},
 				}
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				require.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, directive.PromotionStepResult{
 					Status: kargoapi.PromotionPhaseSucceeded,
 					Output: map[string]any{
 						"commitMessage": "Updated . to use new images\n\n- nginx@sha256:123\n- redis:6.2.5",
@@ -269,20 +270,20 @@ kind: Kustomization
 					{Image: "nginx"},
 				},
 			},
-			setupStepCtx: func(t *testing.T, workDir string) *PromotionStepContext {
+			setupStepCtx: func(t *testing.T, workDir string) *directive.PromotionStepContext {
 				scheme := runtime.NewScheme()
 				require.NoError(t, kargoapi.AddToScheme(scheme))
 				c := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-				return &PromotionStepContext{
+				return &directive.PromotionStepContext{
 					WorkDir:     workDir,
 					KargoClient: c,
 					Project:     testNamespace,
 				}
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
 				require.ErrorContains(t, err, "could not discover kustomization file:")
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 			},
 		},
 	}
@@ -441,7 +442,7 @@ func Test_kustomizeImageSetter_buildTargetImagesAutomatically(t *testing.T) {
 			require.NoError(t, kargoapi.AddToScheme(scheme))
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(tt.objects...).Build()
 
-			stepCtx := &PromotionStepContext{
+			stepCtx := &directive.PromotionStepContext{
 				KargoClient:     fakeClient,
 				Project:         testNamespace,
 				FreightRequests: tt.freightRequests,

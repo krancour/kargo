@@ -8,13 +8,14 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 )
 
 // CheckHealth implements the Engine interface.
 func (e *SimpleEngine) CheckHealth(
 	ctx context.Context,
-	healthCtx HealthCheckContext,
-	steps []HealthCheckStep,
+	healthCtx directive.HealthCheckContext,
+	steps []directive.HealthCheckStep,
 ) kargoapi.Health {
 	status, issues, output := e.executeHealthChecks(ctx, healthCtx, steps)
 	if len(output) == 0 {
@@ -39,13 +40,13 @@ func (e *SimpleEngine) CheckHealth(
 // executeHealthChecks executes a list of HealthCheckSteps in sequence.
 func (e *SimpleEngine) executeHealthChecks(
 	ctx context.Context,
-	healthCtx HealthCheckContext,
-	steps []HealthCheckStep,
-) (kargoapi.HealthState, []string, []State) {
+	healthCtx directive.HealthCheckContext,
+	steps []directive.HealthCheckStep,
+) (kargoapi.HealthState, []string, []directive.State) {
 	var (
 		aggregatedStatus = kargoapi.HealthStateHealthy
 		aggregatedIssues []string
-		aggregatedOutput = make([]State, 0, len(steps))
+		aggregatedOutput = make([]directive.State, 0, len(steps))
 	)
 
 	for _, step := range steps {
@@ -69,15 +70,15 @@ func (e *SimpleEngine) executeHealthChecks(
 	return aggregatedStatus, aggregatedIssues, aggregatedOutput
 }
 
-// executeHealthCheck executes a single HealthCheckStep.
+// executeHealthCheck executes a single directive.HealthCheckStep.
 func (e *SimpleEngine) executeHealthCheck(
 	ctx context.Context,
-	healthCtx HealthCheckContext,
-	step HealthCheckStep,
-) HealthCheckStepResult {
+	healthCtx directive.HealthCheckContext,
+	step directive.HealthCheckStep,
+) directive.HealthCheckStepResult {
 	reg, err := e.registry.GetHealthCheckStepRunnerRegistration(step.Kind)
 	if err != nil {
-		return HealthCheckStepResult{
+		return directive.HealthCheckStepResult{
 			Status: kargoapi.HealthStateUnknown,
 			Issues: []string{
 				fmt.Sprintf("no runner registered for step kind %q: %s", step.Kind, err.Error()),
@@ -89,13 +90,13 @@ func (e *SimpleEngine) executeHealthCheck(
 	return reg.Runner.RunHealthCheckStep(ctx, stepCtx)
 }
 
-// prepareHealthCheckStepContext prepares a HealthCheckStepContext for a HealthCheckStep.
+// prepareHealthCheckStepContext prepares a directive.HealthCheckStepContext for a directive.HealthCheckStep.
 func (e *SimpleEngine) prepareHealthCheckStepContext(
-	healthCtx HealthCheckContext,
-	step HealthCheckStep,
+	healthCtx directive.HealthCheckContext,
+	step directive.HealthCheckStep,
 	reg HealthCheckStepRunnerRegistration,
-) *HealthCheckStepContext {
-	stepCtx := &HealthCheckStepContext{
+) *directive.HealthCheckStepContext {
+	stepCtx := &directive.HealthCheckStepContext{
 		Config:  step.Config.DeepCopy(),
 		Project: healthCtx.Project,
 		Stage:   healthCtx.Stage,

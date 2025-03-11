@@ -12,6 +12,7 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/git"
 	"github.com/akuity/kargo/internal/credentials"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -69,29 +70,29 @@ func (g *gitCloner) Name() string {
 // RunPromotionStep implements the PromotionStepRunner interface.
 func (g *gitCloner) RunPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *directive.PromotionStepContext,
+) (directive.PromotionStepResult, error) {
 	if err := g.validate(stepCtx.Config); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 	cfg, err := ConfigToStruct[builtin.GitCloneConfig](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into %s config: %w", g.Name(), err)
 	}
 	return g.runPromotionStep(ctx, stepCtx, cfg)
 }
 
 // validate validates gitCloner configuration against a JSON schema.
-func (g *gitCloner) validate(cfg Config) error {
+func (g *gitCloner) validate(cfg directive.Config) error {
 	return validate(g.schemaLoader, gojsonschema.NewGoLoader(cfg), g.Name())
 }
 
 func (g *gitCloner) runPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	cfg builtin.GitCloneConfig,
-) (PromotionStepResult, error) {
+) (directive.PromotionStepResult, error) {
 	var repoCreds *git.RepoCredentials
 	creds, err := stepCtx.CredentialsDB.Get(
 		ctx,
@@ -100,7 +101,7 @@ func (g *gitCloner) runPromotionStep(
 		cfg.RepoURL,
 	)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error getting credentials for %s: %w", cfg.RepoURL, err)
 	}
 	if creds != nil {
@@ -122,7 +123,7 @@ func (g *gitCloner) runPromotionStep(
 		},
 	)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error cloning %s: %w", cfg.RepoURL, err)
 	}
 	for _, checkout := range cfg.Checkout {
@@ -131,7 +132,7 @@ func (g *gitCloner) runPromotionStep(
 		case checkout.Branch != "":
 			ref = checkout.Branch
 			if err = ensureRemoteBranch(repo, ref, checkout.Create); err != nil {
-				return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+				return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 					fmt.Errorf("error ensuring existence of remote branch %s: %w", ref, err)
 			}
 		case checkout.Commit != "":
@@ -141,7 +142,7 @@ func (g *gitCloner) runPromotionStep(
 		}
 		path, err := securejoin.SecureJoin(stepCtx.WorkDir, checkout.Path)
 		if err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+			return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 				"error joining path %s with work dir %s: %w",
 				checkout.Path, stepCtx.WorkDir, err,
 			)
@@ -150,7 +151,7 @@ func (g *gitCloner) runPromotionStep(
 			path,
 			&git.AddWorkTreeOptions{Ref: ref},
 		); err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+			return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 				"error adding work tree %s to repo %s: %w",
 				checkout.Path, cfg.RepoURL, err,
 			)
@@ -159,7 +160,7 @@ func (g *gitCloner) runPromotionStep(
 	// Note: We do NOT defer repo.Close() because we want to keep the repository
 	// around on the FS for subsequent promotion steps to use. The Engine will
 	// handle all work dir cleanup.
-	return PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
+	return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
 }
 
 // ensureRemoteBranch checks for the existence of a remote branch. If the remote

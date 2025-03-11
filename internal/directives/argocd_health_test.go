@@ -18,6 +18,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	argocd "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 )
 
 func Test_argocdUpdater_runHealthCheckStep(t *testing.T) {
@@ -30,13 +31,13 @@ func Test_argocdUpdater_runHealthCheckStep(t *testing.T) {
 
 	testCases := []struct {
 		name       string
-		healthCtx  *HealthCheckStepContext
-		assertions func(*testing.T, HealthCheckStepResult)
+		healthCtx  *directive.HealthCheckStepContext
+		assertions func(*testing.T, directive.HealthCheckStepResult)
 	}{
 		{
 			name:      "Argo CD integration disabled",
-			healthCtx: &HealthCheckStepContext{},
-			assertions: func(t *testing.T, res HealthCheckStepResult) {
+			healthCtx: &directive.HealthCheckStepContext{},
+			assertions: func(t *testing.T, res directive.HealthCheckStepResult) {
 				require.Equal(t, kargoapi.HealthStateUnknown, res.Status)
 				require.Len(t, res.Issues, 1)
 				require.Contains(t, res.Issues[0], "Argo CD integration is disabled")
@@ -44,7 +45,7 @@ func Test_argocdUpdater_runHealthCheckStep(t *testing.T) {
 		},
 		{
 			name: "composite error checking Application health",
-			healthCtx: &HealthCheckStepContext{
+			healthCtx: &directive.HealthCheckStepContext{
 				ArgoCDClient: fake.NewClientBuilder().
 					WithScheme(scheme).
 					WithObjects(
@@ -88,7 +89,7 @@ func Test_argocdUpdater_runHealthCheckStep(t *testing.T) {
 					).
 					Build(),
 			},
-			assertions: func(t *testing.T, res HealthCheckStepResult) {
+			assertions: func(t *testing.T, res directive.HealthCheckStepResult) {
 				require.Equal(t, kargoapi.HealthStateUnhealthy, res.Status)
 				require.Contains(t, res.Output, applicationStatusesKey)
 				require.Len(t, res.Issues, 2)
@@ -100,7 +101,7 @@ func Test_argocdUpdater_runHealthCheckStep(t *testing.T) {
 		},
 		{
 			name: "all apps healthy and synced",
-			healthCtx: &HealthCheckStepContext{
+			healthCtx: &directive.HealthCheckStepContext{
 				ArgoCDClient: fake.NewClientBuilder().
 					WithScheme(scheme).
 					WithObjects(
@@ -149,7 +150,7 @@ func Test_argocdUpdater_runHealthCheckStep(t *testing.T) {
 					).
 					Build(),
 			},
-			assertions: func(t *testing.T, res HealthCheckStepResult) {
+			assertions: func(t *testing.T, res directive.HealthCheckStepResult) {
 				require.Equal(t, kargoapi.HealthStateHealthy, res.Status)
 				require.Contains(t, res.Output, applicationStatusesKey)
 				require.Empty(t, res.Issues)
@@ -405,7 +406,7 @@ func Test_argocdUpdater_getApplicationHealth(t *testing.T) {
 			app.Status = testCase.appStatus
 			stageHealth, appStatus, err := runner.getApplicationHealth(
 				context.Background(),
-				&HealthCheckStepContext{
+				&directive.HealthCheckStepContext{
 					ArgoCDClient: fake.NewClientBuilder().
 						WithScheme(scheme).
 						WithObjects(app).
@@ -439,7 +440,7 @@ func Test_argocdUpdater_getApplicationHealth(t *testing.T) {
 		var count int
 		_, _, err := runner.getApplicationHealth(
 			context.Background(),
-			&HealthCheckStepContext{
+			&directive.HealthCheckStepContext{
 				ArgoCDClient: fake.NewClientBuilder().WithInterceptorFuncs(interceptor.Funcs{
 					Get: func(
 						_ context.Context,

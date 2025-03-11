@@ -1,6 +1,10 @@
 package directives
 
-import "context"
+import (
+	"context"
+
+	"github.com/akuity/kargo/pkg/x/directive"
+)
 
 // mockPromotionStepRunner is a mock implementation of the PromotionStepRunner
 // interface, which can be used for testing.
@@ -10,10 +14,10 @@ type mockPromotionStepRunner struct {
 	// runFunc is the function that the step should call when RunPromotionStep is
 	// called. If set, this function will be called instead of returning runResult
 	// and runErr.
-	runFunc func(context.Context, *PromotionStepContext) (PromotionStepResult, error)
+	runFunc func(context.Context, *directive.PromotionStepContext) (directive.PromotionStepResult, error)
 	// runResult is the result that the PromotionStepRunner should return when
 	// RunPromotionStep is called.
-	runResult PromotionStepResult
+	runResult directive.PromotionStepResult
 	// runErr is the error that the PromotionStepRunner should return when
 	// RunPromotionStep is called.
 	runErr error
@@ -27,8 +31,8 @@ func (m *mockPromotionStepRunner) Name() string {
 // RunPromotionStep implements the PromotionStepRunner interface.
 func (m *mockPromotionStepRunner) RunPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *directive.PromotionStepContext,
+) (directive.PromotionStepResult, error) {
 	if m.runFunc != nil {
 		return m.runFunc(ctx, stepCtx)
 	}

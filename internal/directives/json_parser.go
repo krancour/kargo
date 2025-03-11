@@ -11,6 +11,7 @@ import (
 	"github.com/xeipuuv/gojsonschema"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -38,9 +39,9 @@ func (jp *jsonParser) Name() string {
 
 func (jp *jsonParser) RunPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+	stepCtx *directive.PromotionStepContext,
+) (directive.PromotionStepResult, error) {
+	failure := directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if err := jp.validate(stepCtx.Config); err != nil {
 		return failure, err
@@ -55,16 +56,16 @@ func (jp *jsonParser) RunPromotionStep(
 }
 
 // validate validates jsonParser configuration against a JSON schema.
-func (jp *jsonParser) validate(cfg Config) error {
+func (jp *jsonParser) validate(cfg directive.Config) error {
 	return validate(jp.schemaLoader, gojsonschema.NewGoLoader(cfg), jp.Name())
 }
 
 func (jp *jsonParser) runPromotionStep(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	cfg builtin.JSONParseConfig,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+) (directive.PromotionStepResult, error) {
+	failure := directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if cfg.Path == "" {
 		return failure, fmt.Errorf("JSON file path cannot be empty")
@@ -84,7 +85,7 @@ func (jp *jsonParser) runPromotionStep(
 		return failure, fmt.Errorf("failed to extract outputs: %w", err)
 	}
 
-	return PromotionStepResult{
+	return directive.PromotionStepResult{
 		Status: kargoapi.PromotionPhaseSucceeded,
 		Output: extractedValues,
 	}, nil

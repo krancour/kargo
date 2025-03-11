@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -127,14 +128,14 @@ func Test_jsonParser_validate(t *testing.T) {
 func Test_jsonParser_runPromotionStep(t *testing.T) {
 	tests := []struct {
 		name       string
-		stepCtx    *PromotionStepContext
+		stepCtx    *directive.PromotionStepContext
 		cfg        builtin.JSONParseConfig
 		files      map[string]string
-		assertions func(*testing.T, string, PromotionStepResult, error)
+		assertions func(*testing.T, string, directive.PromotionStepResult, error)
 	}{
 		{
 			name: "successful run with outputs",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.JSONParseConfig{
@@ -154,9 +155,9 @@ func Test_jsonParser_runPromotionStep(t *testing.T) {
 					}
 				}`,
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, directive.PromotionStepResult{
 					Status: kargoapi.PromotionPhaseSucceeded,
 					Output: map[string]any{
 						"appVersion":    "1.0.0",
@@ -168,7 +169,7 @@ func Test_jsonParser_runPromotionStep(t *testing.T) {
 		},
 		{
 			name: "failed to extract outputs",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.JSONParseConfig{
@@ -178,15 +179,15 @@ func Test_jsonParser_runPromotionStep(t *testing.T) {
 				},
 			},
 			files: map[string]string{"config.json": `{ "app": { "version": "1.0.0" }}`},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 				assert.Contains(t, err.Error(), "failed to extract outputs")
 			},
 		},
 		{
 			name: "no outputs provided",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.JSONParseConfig{
@@ -200,9 +201,9 @@ func Test_jsonParser_runPromotionStep(t *testing.T) {
 					}
 				}`,
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, directive.PromotionStepResult{
 					Status: kargoapi.PromotionPhaseErrored,
 				}, result)
 				assert.Contains(t, err.Error(), "outputs is required")
@@ -210,7 +211,7 @@ func Test_jsonParser_runPromotionStep(t *testing.T) {
 		},
 		{
 			name: "handle empty JSON file",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.JSONParseConfig{
@@ -222,42 +223,42 @@ func Test_jsonParser_runPromotionStep(t *testing.T) {
 			files: map[string]string{
 				"config.json": ``,
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 				assert.Contains(t, err.Error(), "could not parse JSON file")
 			},
 		},
 		{
 			name:    "path is empty",
-			stepCtx: &PromotionStepContext{Project: "test-project"},
+			stepCtx: &directive.PromotionStepContext{Project: "test-project"},
 			cfg: builtin.JSONParseConfig{
 				Path:    "",
 				Outputs: []builtin.JSONParse{{Name: "key", FromExpression: "app.key"}},
 			},
 			files: map[string]string{},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 				assert.Contains(t, err.Error(), "JSON file path cannot be empty")
 			},
 		},
 		{
 			name:    "path is a directory instead of a file",
-			stepCtx: &PromotionStepContext{Project: "test-project"},
+			stepCtx: &directive.PromotionStepContext{Project: "test-project"},
 			cfg: builtin.JSONParseConfig{
 				Path: "config", Outputs: []builtin.JSONParse{{Name: "key", FromExpression: "app.key"}},
 			},
 			files: map[string]string{},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 				assert.Contains(t, err.Error(), "no such file or directory")
 			},
 		},
 		{
 			name: "valid JSON, valid expressions, valid path",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &directive.PromotionStepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.JSONParseConfig{
@@ -281,9 +282,9 @@ func Test_jsonParser_runPromotionStep(t *testing.T) {
 					}
 				}`,
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, directive.PromotionStepResult{
 					Status: kargoapi.PromotionPhaseSucceeded,
 					Output: map[string]any{
 						"appVersion": "2.0.1",

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -21,7 +22,7 @@ func Test_fileCopier_runPromotionStep(t *testing.T) {
 		name       string
 		setupFiles func(*testing.T) string
 		cfg        builtin.CopyConfig
-		assertions func(*testing.T, string, PromotionStepResult, error)
+		assertions func(*testing.T, string, directive.PromotionStepResult, error)
 	}{
 		{
 			name: "succeeds copying file",
@@ -37,9 +38,9 @@ func Test_fileCopier_runPromotionStep(t *testing.T) {
 				InPath:  "input.txt",
 				OutPath: "output.txt",
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
 
 				outPath := filepath.Join(workDir, "output.txt")
 				b, err := os.ReadFile(outPath)
@@ -69,9 +70,9 @@ func Test_fileCopier_runPromotionStep(t *testing.T) {
 				InPath:  "input/",
 				OutPath: "output/",
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
 
 				outDir := filepath.Join(workDir, "output")
 
@@ -107,9 +108,9 @@ func Test_fileCopier_runPromotionStep(t *testing.T) {
 				InPath:  "input/",
 				OutPath: "output/",
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
-				require.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
+				require.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
 
 				outDir := filepath.Join(workDir, "output")
 
@@ -145,9 +146,9 @@ func Test_fileCopier_runPromotionStep(t *testing.T) {
 				InPath:  "input/",
 				OutPath: "output/",
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
-				require.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
+				require.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
 
 				outDir := filepath.Join(workDir, "output")
 
@@ -181,9 +182,9 @@ func Test_fileCopier_runPromotionStep(t *testing.T) {
 				InPath:  "input/",
 				OutPath: "output/",
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
-				require.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
+				require.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
 
 				outDir := filepath.Join(workDir, "output")
 
@@ -218,9 +219,9 @@ func Test_fileCopier_runPromotionStep(t *testing.T) {
 				OutPath: "output/",
 				Ignore:  "!.git/",
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				assert.NoError(t, err)
-				require.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
+				require.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
 
 				outDir := filepath.Join(workDir, "output")
 
@@ -243,8 +244,8 @@ func Test_fileCopier_runPromotionStep(t *testing.T) {
 			cfg: builtin.CopyConfig{
 				InPath: "input.txt",
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
-				require.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+			assertions: func(t *testing.T, _ string, result directive.PromotionStepResult, err error) {
+				require.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 				require.ErrorContains(t, err, "failed to copy")
 			},
 		},
@@ -257,7 +258,7 @@ func Test_fileCopier_runPromotionStep(t *testing.T) {
 			workDir := tt.setupFiles(t)
 			result, err := runner.runPromotionStep(
 				context.Background(),
-				&PromotionStepContext{WorkDir: workDir},
+				&directive.PromotionStepContext{WorkDir: workDir},
 				tt.cfg,
 			)
 			tt.assertions(t, workDir, result, err)

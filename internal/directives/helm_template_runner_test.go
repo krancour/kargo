@@ -14,6 +14,7 @@ import (
 	"helm.sh/helm/v3/pkg/release"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -22,7 +23,7 @@ func Test_helmTemplateRunner_runPromotionStep(t *testing.T) {
 		name       string
 		files      map[string]string
 		cfg        builtin.HelmTemplateConfig
-		assertions func(*testing.T, string, PromotionStepResult, error)
+		assertions func(*testing.T, string, directive.PromotionStepResult, error)
 	}{
 		{
 			name: "successful run",
@@ -48,9 +49,9 @@ data:
 				ReleaseName: "test-release",
 				Namespace:   "test-namespace",
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				require.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
 
 				outPath := filepath.Join(workDir, "output.yaml")
 				require.FileExists(t, outPath)
@@ -94,9 +95,9 @@ data:
 				ReleaseName: "test-release",
 				Namespace:   "test-namespace",
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				require.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
 
 				outPath := filepath.Join(workDir, "output.yaml")
 				require.FileExists(t, outPath)
@@ -139,9 +140,9 @@ data:
 				ReleaseName: "test-release",
 				Namespace:   "test-namespace",
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				require.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, result)
 
 				outPath := filepath.Join(workDir, "output", "test-chart")
 				require.DirExists(t, outPath)
@@ -165,9 +166,9 @@ data:
 			cfg: builtin.HelmTemplateConfig{
 				ValuesFiles: []string{"non-existent.yaml"},
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				require.ErrorContains(t, err, "failed to compose values")
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 
 				require.NoFileExists(t, filepath.Join(workDir, "output.yaml"))
 			},
@@ -177,9 +178,9 @@ data:
 			cfg: builtin.HelmTemplateConfig{
 				Path: "./",
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				require.ErrorContains(t, err, "failed to load chart")
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 
 				require.NoFileExists(t, filepath.Join(workDir, "output.yaml"))
 			},
@@ -200,9 +201,9 @@ dependencies:
 				Path:    "charts/test-chart",
 				OutPath: "output.yaml",
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				require.ErrorContains(t, err, "missing chart dependencies")
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 
 				require.NoFileExists(t, filepath.Join(workDir, "output.yaml"))
 			},
@@ -218,9 +219,9 @@ version: 0.1.0`,
 				Path:        "charts/test-chart",
 				KubeVersion: "invalid",
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				require.ErrorContains(t, err, "failed to initialize Helm action config")
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 
 				require.NoFileExists(t, filepath.Join(workDir, "output.yaml"))
 			},
@@ -244,9 +245,9 @@ data:
 				Path:    "charts/test-chart",
 				OutPath: "output.yaml",
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				require.ErrorContains(t, err, "failed to render chart")
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 
 				require.NoFileExists(t, filepath.Join(workDir, "output.yaml"))
 			},
@@ -269,9 +270,9 @@ metadata:
 				Path:    "./chart/",
 				OutPath: "output.yaml",
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result directive.PromotionStepResult, err error) {
 				require.ErrorContains(t, err, "failed to write rendered chart")
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 
 				require.NoFileExists(t, filepath.Join(workDir, "output.yaml"))
 			},
@@ -287,7 +288,7 @@ metadata:
 				require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(workDir, p)), 0o700))
 				require.NoError(t, os.WriteFile(filepath.Join(workDir, p), []byte(c), 0o600))
 			}
-			stepCtx := &PromotionStepContext{
+			stepCtx := &directive.PromotionStepContext{
 				WorkDir: workDir,
 				Project: "test-project",
 			}

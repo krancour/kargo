@@ -11,6 +11,7 @@ import (
 	"github.com/xeipuuv/gojsonschema"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -40,9 +41,9 @@ func (j *jsonUpdater) Name() string {
 // RunPromotionStep implements the PromotionStepRunner interface.
 func (j *jsonUpdater) RunPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+	stepCtx *directive.PromotionStepContext,
+) (directive.PromotionStepResult, error) {
+	failure := directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if err := j.validate(stepCtx.Config); err != nil {
 		return failure, err
@@ -57,20 +58,20 @@ func (j *jsonUpdater) RunPromotionStep(
 }
 
 // validate validates jsonUpdater configuration against a JSON schema.
-func (j *jsonUpdater) validate(cfg Config) error {
+func (j *jsonUpdater) validate(cfg directive.Config) error {
 	return validate(j.schemaLoader, gojsonschema.NewGoLoader(cfg), j.Name())
 }
 
 func (j *jsonUpdater) runPromotionStep(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	cfg builtin.JSONUpdateConfig,
-) (PromotionStepResult, error) {
-	result := PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}
+) (directive.PromotionStepResult, error) {
+	result := directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}
 
 	if len(cfg.Updates) > 0 {
 		if err := j.updateFile(stepCtx.WorkDir, cfg.Path, cfg.Updates); err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+			return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 				fmt.Errorf("JSON file update failed: %w", err)
 		}
 

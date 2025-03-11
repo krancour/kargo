@@ -43,6 +43,7 @@ import (
 	"github.com/akuity/kargo/internal/logging"
 	intpredicate "github.com/akuity/kargo/internal/predicate"
 	"github.com/akuity/kargo/internal/rollouts"
+	"github.com/akuity/kargo/pkg/x/directive"
 )
 
 // ReconcilerConfig represents configuration for the stage reconciler.
@@ -746,16 +747,16 @@ func (r *RegularStageReconciler) assessHealth(ctx context.Context, stage *kargoa
 
 	// Compose the health check steps.
 	healthChecks := lastPromo.Status.HealthChecks
-	var steps []directives.HealthCheckStep
+	var steps []directive.HealthCheckStep
 	for _, step := range healthChecks {
-		steps = append(steps, directives.HealthCheckStep{
+		steps = append(steps, directive.HealthCheckStep{
 			Kind:   step.Uses,
 			Config: step.GetConfig(),
 		})
 	}
 
 	// Run the health checks.
-	health := r.directivesEngine.CheckHealth(ctx, directives.HealthCheckContext{
+	health := r.directivesEngine.CheckHealth(ctx, directive.HealthCheckContext{
 		Project: stage.Namespace,
 		Stage:   stage.Name,
 	}, steps)

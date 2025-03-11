@@ -4,6 +4,7 @@ import (
 	"context"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 )
 
 // Engine is an interface for executing user-defined promotion processes as well
@@ -14,5 +15,5 @@ type Engine interface {
 	Promote(context.Context, PromotionContext, []PromotionStep) (PromotionResult, error)
 	// CheckHealth executes the provided list of HealthCheckSteps in sequence and
 	// and returns a HealthCheckResult that aggregates the results of all steps.
-	CheckHealth(context.Context, HealthCheckContext, []HealthCheckStep) kargoapi.Health
+	CheckHealth(context.Context, directive.HealthCheckContext, []directive.HealthCheckStep) kargoapi.Health
 }

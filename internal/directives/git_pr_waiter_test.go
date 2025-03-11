@@ -12,25 +12,26 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/credentials"
 	"github.com/akuity/kargo/internal/gitprovider"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
 func Test_gitPRWaiter_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           directive.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "repoURL not specified",
-			config: Config{},
+			config: directive.Config{},
 			expectedProblems: []string{
 				"(root): repoURL is required",
 			},
 		},
 		{
 			name: "repoURL is empty string",
-			config: Config{
+			config: directive.Config{
 				"repoURL": "",
 			},
 			expectedProblems: []string{
@@ -39,7 +40,7 @@ func Test_gitPRWaiter_validate(t *testing.T) {
 		},
 		{
 			name: "prNumber not specified",
-			config: Config{
+			config: directive.Config{
 				"repoURL": "https://github.com/example/repo.git",
 			},
 			expectedProblems: []string{
@@ -48,7 +49,7 @@ func Test_gitPRWaiter_validate(t *testing.T) {
 		},
 		{
 			name: "prNumber is less than 1",
-			config: Config{
+			config: directive.Config{
 				"prNumber": 0,
 			},
 			expectedProblems: []string{
@@ -57,7 +58,7 @@ func Test_gitPRWaiter_validate(t *testing.T) {
 		},
 		{
 			name: "provider is an invalid value",
-			config: Config{
+			config: directive.Config{
 				"provider": "bogus",
 			},
 			expectedProblems: []string{
@@ -66,14 +67,14 @@ func Test_gitPRWaiter_validate(t *testing.T) {
 		},
 		{
 			name: "valid without explicit provider",
-			config: Config{
+			config: directive.Config{
 				"prNumber": 42,
 				"repoURL":  "https://github.com/example/repo.git",
 			},
 		},
 		{
 			name: "valid with explicit provider",
-			config: Config{
+			config: directive.Config{
 				"provider": "github",
 				"prNumber": 42,
 				"repoURL":  "https://github.com/example/repo.git",
@@ -103,7 +104,7 @@ func Test_gitPRWaiter_runPromotionStep(t *testing.T) {
 	testCases := []struct {
 		name       string
 		provider   gitprovider.Interface
-		assertions func(*testing.T, PromotionStepResult, error)
+		assertions func(*testing.T, directive.PromotionStepResult, error)
 	}{
 		{
 			name: "error finding PR",
@@ -115,7 +116,7 @@ func Test_gitPRWaiter_runPromotionStep(t *testing.T) {
 					return nil, errors.New("something went wrong")
 				},
 			},
-			assertions: func(t *testing.T, res PromotionStepResult, err error) {
+			assertions: func(t *testing.T, res directive.PromotionStepResult, err error) {
 				require.ErrorContains(t, err, "error getting pull request")
 				require.ErrorContains(t, err, "something went wrong")
 				require.Equal(t, kargoapi.PromotionPhaseErrored, res.Status)
@@ -133,7 +134,7 @@ func Test_gitPRWaiter_runPromotionStep(t *testing.T) {
 					}, nil
 				},
 			},
-			assertions: func(t *testing.T, res PromotionStepResult, err error) {
+			assertions: func(t *testing.T, res directive.PromotionStepResult, err error) {
 				require.NoError(t, err)
 				require.Equal(t, kargoapi.PromotionPhaseRunning, res.Status)
 			},
@@ -151,7 +152,7 @@ func Test_gitPRWaiter_runPromotionStep(t *testing.T) {
 					}, nil
 				},
 			},
-			assertions: func(t *testing.T, res PromotionStepResult, err error) {
+			assertions: func(t *testing.T, res directive.PromotionStepResult, err error) {
 				require.ErrorContains(t, err, "closed without being merged")
 				require.True(t, isTerminal(err))
 				require.Equal(t, kargoapi.PromotionPhaseFailed, res.Status)
@@ -170,7 +171,7 @@ func Test_gitPRWaiter_runPromotionStep(t *testing.T) {
 					}, nil
 				},
 			},
-			assertions: func(t *testing.T, res PromotionStepResult, err error) {
+			assertions: func(t *testing.T, res directive.PromotionStepResult, err error) {
 				require.NoError(t, err)
 				require.Equal(t, kargoapi.PromotionPhaseSucceeded, res.Status)
 			},
@@ -201,7 +202,7 @@ func Test_gitPRWaiter_runPromotionStep(t *testing.T) {
 
 			res, err := runner.runPromotionStep(
 				context.Background(),
-				&PromotionStepContext{
+				&directive.PromotionStepContext{
 					CredentialsDB: &credentials.FakeDB{},
 				},
 				builtin.GitWaitForPRConfig{

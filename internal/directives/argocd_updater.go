@@ -20,6 +20,7 @@ import (
 	"github.com/akuity/kargo/internal/git"
 	"github.com/akuity/kargo/internal/kubeclient"
 	"github.com/akuity/kargo/internal/logging"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -52,7 +53,7 @@ type argocdUpdater struct {
 
 	getAuthorizedApplicationFn func(
 		context.Context,
-		*PromotionStepContext,
+		*directive.PromotionStepContext,
 		client.ObjectKey,
 	) (*argocd.Application, error)
 
@@ -63,14 +64,14 @@ type argocdUpdater struct {
 	) (argocd.ApplicationSources, error)
 
 	mustPerformUpdateFn func(
-		*PromotionStepContext,
+		*directive.PromotionStepContext,
 		*builtin.ArgoCDAppUpdate,
 		*argocd.Application,
 	) (argocd.OperationPhase, bool, error)
 
 	syncApplicationFn func(
 		ctx context.Context,
-		stepCtx *PromotionStepContext,
+		stepCtx *directive.PromotionStepContext,
 		app *argocd.Application,
 		desiredSources argocd.ApplicationSources,
 	) error
@@ -83,14 +84,14 @@ type argocdUpdater struct {
 
 	argoCDAppPatchFn func(
 		context.Context,
-		*PromotionStepContext,
+		*directive.PromotionStepContext,
 		kubeclient.ObjectWithKind,
 		kubeclient.UnstructuredPatchFn,
 	) error
 
 	logAppEventFn func(
 		ctx context.Context,
-		stepCtx *PromotionStepContext,
+		stepCtx *directive.PromotionStepContext,
 		app *argocd.Application,
 		user string,
 		reason string,
@@ -132,14 +133,14 @@ func (a *argocdUpdater) DefaultErrorThreshold() uint32 {
 // RunPromotionStep implements the PromotionStepRunner interface.
 func (a *argocdUpdater) RunPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *directive.PromotionStepContext,
+) (directive.PromotionStepResult, error) {
 	if err := a.validate(stepCtx.Config); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 	cfg, err := ConfigToStruct[builtin.ArgoCDUpdateConfig](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into %s config: %w", a.Name(), err)
 	}
 	return a.runPromotionStep(ctx, stepCtx, cfg)
@@ -147,17 +148,17 @@ func (a *argocdUpdater) RunPromotionStep(
 
 // validate validates argocdUpdatePromotionStepRunner configuration against a
 // JSON schema.
-func (a *argocdUpdater) validate(cfg Config) error {
+func (a *argocdUpdater) validate(cfg directive.Config) error {
 	return validate(a.schemaLoader, gojsonschema.NewGoLoader(cfg), a.Name())
 }
 
 func (a *argocdUpdater) runPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	stepCfg builtin.ArgoCDUpdateConfig,
-) (PromotionStepResult, error) {
+) (directive.PromotionStepResult, error) {
 	if stepCtx.ArgoCDClient == nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, errors.New(
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, errors.New(
 			"Argo CD integration is disabled on this controller; cannot update " +
 				"Argo CD Application resources",
 		)
@@ -180,7 +181,7 @@ func (a *argocdUpdater) runPromotionStep(
 		}
 		app, err := a.getAuthorizedApplicationFn(ctx, stepCtx, appKey)
 		if err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+			return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 				"error getting Argo CD Application %q in namespace %q: %w",
 				appKey.Name, appKey.Namespace, err,
 			)
@@ -208,7 +209,7 @@ func (a *argocdUpdater) runPromotionStep(
 				if phase == "" {
 					// If we do not have a phase, we cannot continue processing
 					// this update by waiting.
-					return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+					return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 				}
 				// Log the error as a warning, but continue to the next update.
 				logger.Info(err.Error())
@@ -216,7 +217,7 @@ func (a *argocdUpdater) runPromotionStep(
 			if phase.Failed() {
 				// Record the reason for the failure if available.
 				if app.Status.OperationState != nil {
-					return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+					return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 						"Argo CD Application %q in namespace %q failed with: %s",
 						app.Name,
 						app.Namespace,
@@ -225,7 +226,7 @@ func (a *argocdUpdater) runPromotionStep(
 				}
 				// If the update failed, we can short-circuit. This is
 				// effectively "fail fast" behavior.
-				return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, nil
+				return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, nil
 			}
 			// If we get here, we can continue to the next update.
 			continue
@@ -244,7 +245,7 @@ func (a *argocdUpdater) runPromotionStep(
 			app,
 		)
 		if err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+			return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 				"error building desired sources for Argo CD Application %q in namespace %q: %w",
 				app.Name, app.Namespace, err,
 			)
@@ -257,7 +258,7 @@ func (a *argocdUpdater) runPromotionStep(
 			app,
 			desiredSources,
 		); err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+			return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 				"error syncing Argo CD Application %q in namespace %q: %w",
 				app.Name, app.Namespace, err,
 			)
@@ -268,7 +269,7 @@ func (a *argocdUpdater) runPromotionStep(
 
 	aggregatedStatus := a.operationPhaseToPromotionStatus(updateResults...)
 	if aggregatedStatus == "" {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 			"could not determine promotion step status from operation phases: %v",
 			updateResults,
 		)
@@ -276,11 +277,11 @@ func (a *argocdUpdater) runPromotionStep(
 
 	logger.Debug("done executing argocd-update promotion step")
 
-	return PromotionStepResult{
+	return directive.PromotionStepResult{
 		Status: aggregatedStatus,
-		HealthCheckStep: &HealthCheckStep{
+		HealthCheckStep: &directive.HealthCheckStep{
 			Kind: a.Name(),
-			Config: Config{
+			Config: directive.Config{
 				"apps": appHealthChecks,
 			},
 		},
@@ -338,7 +339,7 @@ updateLoop:
 }
 
 func (a *argocdUpdater) mustPerformUpdate(
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	update *builtin.ArgoCDAppUpdate,
 	app *argocd.Application,
 ) (phase argocd.OperationPhase, mustUpdate bool, err error) {
@@ -433,7 +434,7 @@ func (a *argocdUpdater) mustPerformUpdate(
 
 func (a *argocdUpdater) syncApplication(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	app *argocd.Application,
 	desiredSources argocd.ApplicationSources,
 ) error {
@@ -548,7 +549,7 @@ func (a *argocdUpdater) syncApplication(
 
 func (a *argocdUpdater) argoCDAppPatch(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	app kubeclient.ObjectWithKind,
 	modify kubeclient.UnstructuredPatchFn,
 ) error {
@@ -557,7 +558,7 @@ func (a *argocdUpdater) argoCDAppPatch(
 
 func (a *argocdUpdater) logAppEvent(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	app *argocd.Application,
 	user string,
 	reason string,
@@ -615,7 +616,7 @@ func (a *argocdUpdater) logAppEvent(
 // represented by stageMeta.
 func (a *argocdUpdater) getAuthorizedApplication(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	appKey client.ObjectKey,
 ) (*argocd.Application, error) {
 	app, err := argocd.GetApplication(
@@ -648,7 +649,7 @@ func (a *argocdUpdater) getAuthorizedApplication(
 // represented by appMeta does not explicitly permit mutation by the Kargo Stage
 // represented by stageMeta.
 func (a *argocdUpdater) authorizeArgoCDAppUpdate(
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	appMeta metav1.ObjectMeta,
 ) error {
 	permErr := fmt.Errorf(

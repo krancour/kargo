@@ -17,6 +17,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/logging"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -50,17 +51,17 @@ func (f *fileCopier) Name() string {
 // RunPromotionStep implements the PromotionStepRunner interface.
 func (f *fileCopier) RunPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *directive.PromotionStepContext,
+) (directive.PromotionStepResult, error) {
 	// Validate the configuration against the JSON Schema.
 	if err := validate(f.schemaLoader, gojsonschema.NewGoLoader(stepCtx.Config), f.Name()); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	// Convert the configuration into a typed object.
 	cfg, err := ConfigToStruct[builtin.CopyConfig](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into %s config: %w", f.Name(), err)
 	}
 
@@ -69,25 +70,25 @@ func (f *fileCopier) RunPromotionStep(
 
 func (f *fileCopier) runPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	cfg builtin.CopyConfig,
-) (PromotionStepResult, error) {
+) (directive.PromotionStepResult, error) {
 	// Secure join the paths to prevent path traversal attacks.
 	inPath, err := securejoin.SecureJoin(stepCtx.WorkDir, cfg.InPath)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not secure join inPath %q: %w", cfg.InPath, err)
 	}
 	outPath, err := securejoin.SecureJoin(stepCtx.WorkDir, cfg.OutPath)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not secure join outPath %q: %w", cfg.OutPath, err)
 	}
 
 	// Load the ignore rules.
 	matcher, err := f.loadIgnoreRules(inPath, cfg.Ignore)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("failed to load ignore rules: %w", err)
 	}
 
@@ -105,10 +106,10 @@ func (f *fileCopier) runPromotionStep(
 		},
 	}
 	if err = copy.Copy(inPath, outPath, opts); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("failed to copy %q to %q: %w", cfg.InPath, cfg.OutPath, err)
 	}
-	return PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
+	return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
 }
 
 // loadIgnoreRules loads the ignore rules from the given string. The rules are

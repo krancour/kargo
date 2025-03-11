@@ -10,6 +10,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	intyaml "github.com/akuity/kargo/internal/yaml"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -39,9 +40,9 @@ func (y *yamlUpdater) Name() string {
 // RunPromotionStep implements the PromotionStepRunner interface.
 func (y *yamlUpdater) RunPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+	stepCtx *directive.PromotionStepContext,
+) (directive.PromotionStepResult, error) {
+	failure := directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if err := y.validate(stepCtx.Config); err != nil {
 		return failure, err
@@ -57,15 +58,15 @@ func (y *yamlUpdater) RunPromotionStep(
 }
 
 // validate validates yamlImageUpdater configuration against a JSON schema.
-func (y *yamlUpdater) validate(cfg Config) error {
+func (y *yamlUpdater) validate(cfg directive.Config) error {
 	return validate(y.schemaLoader, gojsonschema.NewGoLoader(cfg), y.Name())
 }
 
 func (y *yamlUpdater) runPromotionStep(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	cfg builtin.YAMLUpdateConfig,
-) (PromotionStepResult, error) {
+) (directive.PromotionStepResult, error) {
 	updates := make([]intyaml.Update, len(cfg.Updates))
 	for i, update := range cfg.Updates {
 		updates[i] = intyaml.Update{
@@ -74,10 +75,10 @@ func (y *yamlUpdater) runPromotionStep(
 		}
 	}
 
-	result := PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}
+	result := directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}
 	if len(updates) > 0 {
 		if err := y.updateFile(stepCtx.WorkDir, cfg.Path, updates); err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+			return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 				fmt.Errorf("values file update failed: %w", err)
 		}
 

@@ -33,6 +33,7 @@ import (
 	libEvent "github.com/akuity/kargo/internal/kubernetes/event"
 	"github.com/akuity/kargo/internal/logging"
 	intpredicate "github.com/akuity/kargo/internal/predicate"
+	"github.com/akuity/kargo/pkg/x/directive"
 )
 
 // ReconcilerConfig represents configuration for the promotion reconciler.
@@ -488,7 +489,7 @@ func (r *reconciler) promote(
 		Freight:               *workingPromo.Status.FreightCollection.DeepCopy(),
 		StartFromStep:         promo.Status.CurrentStep,
 		StepExecutionMetadata: promo.Status.StepExecutionMetadata,
-		State:                 directives.State(workingPromo.Status.GetState()),
+		State:                 directive.State(workingPromo.Status.GetState()),
 		Vars:                  workingPromo.Spec.Vars,
 	}
 	if err := os.Mkdir(promoCtx.WorkDir, 0o700); err == nil {

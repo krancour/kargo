@@ -14,25 +14,26 @@ import (
 
 	"github.com/akuity/kargo/internal/controller/git"
 	"github.com/akuity/kargo/internal/credentials"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
 func Test_gitPusher_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           directive.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "path not specified",
-			config: Config{},
+			config: directive.Config{},
 			expectedProblems: []string{
 				"(root): path is required",
 			},
 		},
 		{
 			name: "path is empty string",
-			config: Config{
+			config: directive.Config{
 				"path": "",
 			},
 			expectedProblems: []string{
@@ -41,7 +42,7 @@ func Test_gitPusher_validate(t *testing.T) {
 		},
 		{
 			name: "maxAttempts < 1",
-			config: Config{
+			config: directive.Config{
 				"maxAttempts": 0,
 			},
 			expectedProblems: []string{
@@ -50,7 +51,7 @@ func Test_gitPusher_validate(t *testing.T) {
 		},
 		{
 			name: fmt.Sprintf("maxAttempts > %d", math.MaxInt32),
-			config: Config{
+			config: directive.Config{
 				"maxAttempts": math.MaxInt32 + 1,
 			},
 			expectedProblems: []string{
@@ -59,14 +60,14 @@ func Test_gitPusher_validate(t *testing.T) {
 		},
 		{
 			name: "just generateTargetBranch is true",
-			config: Config{ // Should be completely valid
+			config: directive.Config{ // Should be completely valid
 				"path":                 "/fake/path",
 				"generateTargetBranch": true,
 			},
 		},
 		{
 			name: "generateTargetBranch is true and targetBranch is empty string",
-			config: Config{ // Should be completely valid
+			config: directive.Config{ // Should be completely valid
 				"path":                 "/fake/path",
 				"generateTargetBranch": true,
 				"targetBranch":         "",
@@ -75,7 +76,7 @@ func Test_gitPusher_validate(t *testing.T) {
 		{
 			name: "generateTargetBranch is true and targetBranch is specified",
 			// These are meant to be mutually exclusive.
-			config: Config{
+			config: directive.Config{
 				"path":                 "/fake/path",
 				"generateTargetBranch": true,
 				"targetBranch":         "fake-branch",
@@ -86,34 +87,34 @@ func Test_gitPusher_validate(t *testing.T) {
 		},
 		{
 			name: "generateTargetBranch not specified and targetBranch not specified",
-			config: Config{ // Should be completely valid
+			config: directive.Config{ // Should be completely valid
 				"path": "/fake/path",
 			},
 		},
 		{
 			name: "generateTargetBranch not specified and targetBranch is empty string",
-			config: Config{ // Should be completely valid
+			config: directive.Config{ // Should be completely valid
 				"path":         "/fake/path",
 				"targetBranch": "",
 			},
 		},
 		{
 			name: "generateTargetBranch not specified and targetBranch is specified",
-			config: Config{ // Should be completely valid
+			config: directive.Config{ // Should be completely valid
 				"path":         "/fake/path",
 				"targetBranch": "fake-branch",
 			},
 		},
 		{
 			name: "just generateTargetBranch is false",
-			config: Config{ // Should be completely valid
+			config: directive.Config{ // Should be completely valid
 				"path":                 "/fake/path",
 				"generateTargetBranch": false,
 			},
 		},
 		{
 			name: "generateTargetBranch is false and targetBranch is empty string",
-			config: Config{ // Should be completely valid
+			config: directive.Config{ // Should be completely valid
 				"path":                 "/fake/path",
 				"generateTargetBranch": false,
 				"targetBranch":         "",
@@ -121,7 +122,7 @@ func Test_gitPusher_validate(t *testing.T) {
 		},
 		{
 			name: "generateTargetBranch is false and targetBranch is specified",
-			config: Config{ // Should be completely valid
+			config: directive.Config{ // Should be completely valid
 				"path":         "/fake/path",
 				"targetBranch": "fake-branch",
 			},
@@ -208,7 +209,7 @@ func Test_gitPusher_runPromotionStep(t *testing.T) {
 
 	res, err := runner.runPromotionStep(
 		context.Background(),
-		&PromotionStepContext{
+		&directive.PromotionStepContext{
 			Project:       "fake-project",
 			Stage:         "fake-stage",
 			Promotion:     "fake-promotion",

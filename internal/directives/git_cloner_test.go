@@ -14,25 +14,26 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/git"
 	"github.com/akuity/kargo/internal/credentials"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
 func Test_gitCloner_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           directive.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "repoURL not specified",
-			config: Config{},
+			config: directive.Config{},
 			expectedProblems: []string{
 				"(root): repoURL is required",
 			},
 		},
 		{
 			name: "repoURL is empty string",
-			config: Config{
+			config: directive.Config{
 				"repoURL": "",
 			},
 			expectedProblems: []string{
@@ -41,15 +42,15 @@ func Test_gitCloner_validate(t *testing.T) {
 		},
 		{
 			name:   "no checkout specified",
-			config: Config{},
+			config: directive.Config{},
 			expectedProblems: []string{
 				"(root): checkout is required",
 			},
 		},
 		{
 			name: "checkout is an empty array",
-			config: Config{
-				"checkout": []Config{},
+			config: directive.Config{
+				"checkout": []directive.Config{},
 			},
 			expectedProblems: []string{
 				"checkout: Array must have at least 1 items",
@@ -57,8 +58,8 @@ func Test_gitCloner_validate(t *testing.T) {
 		},
 		{
 			name: "checkout path is not specified",
-			config: Config{
-				"checkout": []Config{{}},
+			config: directive.Config{
+				"checkout": []directive.Config{{}},
 			},
 			expectedProblems: []string{
 				"checkout.0: path is required",
@@ -66,8 +67,8 @@ func Test_gitCloner_validate(t *testing.T) {
 		},
 		{
 			name: "checkout path is empty string",
-			config: Config{
-				"checkout": []Config{{
+			config: directive.Config{
+				"checkout": []directive.Config{{
 					"path": "",
 				}},
 			},
@@ -78,8 +79,8 @@ func Test_gitCloner_validate(t *testing.T) {
 		{
 			name: "branch and commit are both specified",
 			// These are meant to be mutually exclusive.
-			config: Config{
-				"checkout": []Config{{
+			config: directive.Config{
+				"checkout": []directive.Config{{
 					"branch": "fake-branch",
 					"commit": "fake-commit",
 				}},
@@ -91,8 +92,8 @@ func Test_gitCloner_validate(t *testing.T) {
 		{
 			name: "branch and tag are both specified",
 			// These are meant to be mutually exclusive.
-			config: Config{
-				"checkout": []Config{{
+			config: directive.Config{
+				"checkout": []directive.Config{{
 					"branch": "fake-branch",
 					"tag":    "fake-tag",
 				}},
@@ -104,8 +105,8 @@ func Test_gitCloner_validate(t *testing.T) {
 		{
 			name: "commit and tag are both specified",
 			// These are meant to be mutually exclusive.
-			config: Config{
-				"checkout": []Config{{
+			config: directive.Config{
+				"checkout": []directive.Config{{
 					"commit": "fake-commit",
 					"tag":    "fake-tag",
 				}},
@@ -116,9 +117,9 @@ func Test_gitCloner_validate(t *testing.T) {
 		},
 		{
 			name: "valid kitchen sink",
-			config: Config{
+			config: directive.Config{
 				"repoURL": "https://github.com/example/repo.git",
-				"checkout": []Config{
+				"checkout": []directive.Config{
 					{
 						"path": "/fake/path/0",
 					},
@@ -228,7 +229,7 @@ func Test_gitCloner_runPromotionStep(t *testing.T) {
 	runner, ok := r.(*gitCloner)
 	require.True(t, ok)
 
-	stepCtx := &PromotionStepContext{
+	stepCtx := &directive.PromotionStepContext{
 		CredentialsDB: &credentials.FakeDB{},
 		WorkDir:       t.TempDir(),
 	}

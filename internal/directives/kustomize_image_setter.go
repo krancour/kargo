@@ -20,6 +20,7 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/freight"
 	intyaml "github.com/akuity/kargo/internal/yaml"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -58,9 +59,9 @@ func (k *kustomizeImageSetter) Name() string {
 // RunPromotionStep implements the PromotionStepRunner interface.
 func (k *kustomizeImageSetter) RunPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+	stepCtx *directive.PromotionStepContext,
+) (directive.PromotionStepResult, error) {
+	failure := directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if err := k.validate(stepCtx.Config); err != nil {
 		return failure, err
@@ -76,19 +77,19 @@ func (k *kustomizeImageSetter) RunPromotionStep(
 }
 
 // validate validates kustomizeImageSetter configuration against a JSON schema.
-func (k *kustomizeImageSetter) validate(cfg Config) error {
+func (k *kustomizeImageSetter) validate(cfg directive.Config) error {
 	return validate(k.schemaLoader, gojsonschema.NewGoLoader(cfg), k.Name())
 }
 
 func (k *kustomizeImageSetter) runPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	cfg builtin.KustomizeSetImageConfig,
-) (PromotionStepResult, error) {
+) (directive.PromotionStepResult, error) {
 	// Find the Kustomization file.
 	kusPath, err := findKustomization(stepCtx.WorkDir, cfg.Path)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not discover kustomization file: %w", err)
 	}
 
@@ -102,15 +103,15 @@ func (k *kustomizeImageSetter) runPromotionStep(
 		targetImages, err = k.buildTargetImagesAutomatically(ctx, stepCtx)
 	}
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	// Update the Kustomization file with the new images.
 	if err = updateKustomizationFile(kusPath, targetImages); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
-	result := PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}
+	result := directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}
 	if commitMsg := k.generateCommitMessage(cfg.Path, targetImages); commitMsg != "" {
 		result.Output = map[string]any{
 			"commitMessage": commitMsg,
@@ -143,7 +144,7 @@ func (k *kustomizeImageSetter) buildTargetImagesFromConfig(
 
 func (k *kustomizeImageSetter) buildTargetImagesAutomatically(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 ) (map[string]kustypes.Image, error) {
 	// Check if there are any ambiguous image requests.
 	//

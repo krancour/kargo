@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/kustomize/kyaml/filesys"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -53,9 +54,9 @@ func (k *kustomizeBuilder) Name() string {
 // RunPromotionStep implements the PromotionStepRunner interface.
 func (k *kustomizeBuilder) RunPromotionStep(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+	stepCtx *directive.PromotionStepContext,
+) (directive.PromotionStepResult, error) {
+	failure := directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	// Validate the configuration against the JSON Schema.
 	if err := validate(k.schemaLoader, gojsonschema.NewGoLoader(stepCtx.Config), k.Name()); err != nil {
@@ -72,35 +73,35 @@ func (k *kustomizeBuilder) RunPromotionStep(
 }
 
 func (k *kustomizeBuilder) runPromotionStep(
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	cfg builtin.KustomizeBuildConfig,
-) (PromotionStepResult, error) {
+) (directive.PromotionStepResult, error) {
 	// Create a "chrooted" filesystem for the kustomize build.
 	fs, err := securefs.MakeFsOnDiskSecureBuild(stepCtx.WorkDir)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	// Build the manifests.
 	rm, err := kustomizeBuild(fs, filepath.Join(stepCtx.WorkDir, cfg.Path), cfg.Plugin)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	// Prepare the output path.
 	outPath, err := securejoin.SecureJoin(stepCtx.WorkDir, cfg.OutPath)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	// Write the built manifests to the output path.
 	if err := k.writeResult(rm, outPath); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 			"failed to write built manifests to %q: %w", cfg.OutPath,
 			sanitizePathError(err, stepCtx.WorkDir),
 		)
 	}
-	return PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
+	return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
 }
 
 func (k *kustomizeBuilder) writeResult(rm resmap.ResMap, outPath string) error {

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 )
 
 func TestFakeEngine_Promote(t *testing.T) {
@@ -47,22 +48,22 @@ func TestFakeEngine_Promote(t *testing.T) {
 func TestFakeEngine_CheckHealth(t *testing.T) {
 	t.Run("without function injection", func(t *testing.T) {
 		engine := &FakeEngine{}
-		res := engine.CheckHealth(context.Background(), HealthCheckContext{}, nil)
+		res := engine.CheckHealth(context.Background(), directive.HealthCheckContext{}, nil)
 		assert.Equal(t, kargoapi.HealthStateHealthy, res.Status)
 	})
 
 	t.Run("with function injection", func(t *testing.T) {
 		ctx := context.Background()
-		healthCtx := HealthCheckContext{
+		healthCtx := directive.HealthCheckContext{
 			Stage: "foo",
 		}
-		steps := []HealthCheckStep{{Kind: "mock"}}
+		steps := []directive.HealthCheckStep{{Kind: "mock"}}
 
 		engine := &FakeEngine{
 			CheckHealthFn: func(
 				givenCtx context.Context,
-				givenHealthCtx HealthCheckContext,
-				givenSteps []HealthCheckStep,
+				givenHealthCtx directive.HealthCheckContext,
+				givenSteps []directive.HealthCheckStep,
 			) kargoapi.Health {
 				assert.Equal(t, ctx, givenCtx)
 				assert.Equal(t, healthCtx, givenHealthCtx)

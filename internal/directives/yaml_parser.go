@@ -11,6 +11,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -38,9 +39,9 @@ func (yp *yamlParser) Name() string {
 
 func (yp *yamlParser) RunPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+	stepCtx *directive.PromotionStepContext,
+) (directive.PromotionStepResult, error) {
+	failure := directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if err := yp.validate(stepCtx.Config); err != nil {
 		return failure, err
@@ -55,16 +56,16 @@ func (yp *yamlParser) RunPromotionStep(
 }
 
 // validate validates yamlParser configuration against a YAML schema.
-func (yp *yamlParser) validate(cfg Config) error {
+func (yp *yamlParser) validate(cfg directive.Config) error {
 	return validate(yp.schemaLoader, gojsonschema.NewGoLoader(cfg), yp.Name())
 }
 
 func (yp *yamlParser) runPromotionStep(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *directive.PromotionStepContext,
 	cfg builtin.YAMLParseConfig,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+) (directive.PromotionStepResult, error) {
+	failure := directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if cfg.Path == "" {
 		return failure, fmt.Errorf("YAML file path cannot be empty")
@@ -84,7 +85,7 @@ func (yp *yamlParser) runPromotionStep(
 		return failure, fmt.Errorf("failed to extract outputs: %w", err)
 	}
 
-	return PromotionStepResult{
+	return directive.PromotionStepResult{
 		Status: kargoapi.PromotionPhaseSucceeded,
 		Output: extractedValues,
 	}, nil

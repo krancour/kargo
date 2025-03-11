@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 )
 
 type mockRetryableRunner struct {
@@ -196,9 +197,9 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 	testCases := []struct {
 		name        string
 		promoCtx    PromotionContext
-		promoState  State
+		promoState  directive.State
 		rawCfg      []byte
-		expectedCfg Config
+		expectedCfg directive.Config
 	}{
 		{
 			name: "test context",
@@ -213,7 +214,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"stage": "${{ ctx.stage }}",
 				"promotion": "${{ ctx.promotion }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: directive.Config{
 				"project":   "fake-project",
 				"stage":     "fake-stage",
 				"promotion": "fake-promotion",
@@ -240,7 +241,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"secret2-3": "${{ secrets.secret2.key3 }}",
 				"secret2-4": "${{ secrets.secret2.key4 }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: directive.Config{
 				"secret1-1": "value1",
 				"secret1-2": "value2",
 				"secret2-3": "value3",
@@ -271,7 +272,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"boolVar": "${{ vars.boolVar }}",
 				"numVar": "${{ vars.numVar }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: directive.Config{
 				"strVar":  "foo",
 				"boolVar": true,
 				"numVar":  42,
@@ -301,7 +302,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"boolVar": "${{ vars.boolVar }}",
 				"numVar": "${{ vars.numVar }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: directive.Config{
 				"strVar":  "foo",
 				"boolVar": true,
 				"numVar":  42,
@@ -310,7 +311,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 		{
 			name: "test outputs",
 			// Test that expressions can reference outputs
-			promoState: State{
+			promoState: directive.State{
 				"strOutput":  "foo",
 				"boolOutput": true,
 				"numOutput":  42,
@@ -320,7 +321,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"boolOutput": "${{ outputs.boolOutput }}",
 				"numOutput": "${{ outputs.numOutput }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: directive.Config{
 				"strOutput":  "foo",
 				"boolOutput": true,
 				"numOutput":  42,
@@ -340,7 +341,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"origin1": "${{ warehouse('fake-warehouse') }}",
 				"origin2": "${{ warehouse(vars.warehouseName) }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: directive.Config{
 				"origin1": map[string]any{
 					"kind": "Warehouse",
 					"name": "fake-warehouse",
@@ -399,7 +400,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"commitID3": "${{ commitFrom('https://fake-git-repo', warehouse('fake-warehouse')).ID }}",
 				"commitID4": "${{ commitFrom(vars.repoURL, warehouse(vars.warehouseName)).ID }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: directive.Config{
 				"commitID1": "fake-commit-id",
 				"commitID2": "fake-commit-id",
 				"commitID3": "fake-commit-id",
@@ -454,7 +455,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"imageTag3": "${{ imageFrom('fake-image-repo', warehouse('fake-warehouse')).Tag }}",
 				"imageTag4": "${{ imageFrom(vars.repoURL, warehouse(vars.warehouseName)).Tag }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: directive.Config{
 				"imageTag1": "fake-image-tag",
 				"imageTag2": "fake-image-tag",
 				"imageTag3": "fake-image-tag",
@@ -531,7 +532,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"chartVersion7": "${{ chartFrom('https://fake-chart-repo', 'fake-chart', warehouse('fake-warehouse')).Version }}",
 				"chartVersion8": "${{ chartFrom(vars.repoURL, vars.chartName, warehouse(vars.warehouseName)).Version }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: directive.Config{
 				"chartVersion1": "fake-oci-chart-version",
 				"chartVersion2": "fake-oci-chart-version",
 				"chartVersion3": "fake-oci-chart-version",
@@ -564,7 +565,7 @@ func TestPromotionStep_Skip(t *testing.T) {
 		name       string
 		step       *PromotionStep
 		ctx        PromotionContext
-		state      State
+		state      directive.State
 		assertions func(*testing.T, bool, error)
 	}{
 		{
@@ -598,7 +599,7 @@ func TestPromotionStep_Skip(t *testing.T) {
 			step: &PromotionStep{
 				If: "${{ outputs.foo == 'bar' }}",
 			},
-			state: State{
+			state: directive.State{
 				"foo": "bar",
 			},
 			assertions: func(t *testing.T, b bool, err error) {
@@ -612,7 +613,7 @@ func TestPromotionStep_Skip(t *testing.T) {
 				Alias: "task::other-alias",
 				If:    "${{ task.outputs.alias.foo == 'bar' }}",
 			},
-			state: State{
+			state: directive.State{
 				"task::alias": map[string]any{
 					"foo": "baz",
 				},

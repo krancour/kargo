@@ -17,6 +17,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/logging"
+	"github.com/akuity/kargo/pkg/x/directive"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -50,79 +51,79 @@ func (h *httpRequester) Name() string {
 
 func (h *httpRequester) RunPromotionStep(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *directive.PromotionStepContext,
+) (directive.PromotionStepResult, error) {
 	if err := h.validate(stepCtx.Config); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 	cfg, err := ConfigToStruct[builtin.HTTPConfig](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into http config: %w", err)
 	}
 	return h.runPromotionStep(ctx, stepCtx, cfg)
 }
 
 // validate validates httpRequester configuration against a JSON schema.
-func (h *httpRequester) validate(cfg Config) error {
+func (h *httpRequester) validate(cfg directive.Config) error {
 	return validate(h.schemaLoader, gojsonschema.NewGoLoader(cfg), h.Name())
 }
 
 func (h *httpRequester) runPromotionStep(
 	ctx context.Context,
-	_ *PromotionStepContext,
+	_ *directive.PromotionStepContext,
 	cfg builtin.HTTPConfig,
-) (PromotionStepResult, error) {
+) (directive.PromotionStepResult, error) {
 	req, err := h.buildRequest(cfg)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error building HTTP request: %w", err)
 	}
 	client, err := h.getClient(cfg)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error creating HTTP client: %w", err)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error sending HTTP request: %w", err)
 	}
 	defer resp.Body.Close()
 	env, err := h.buildExprEnv(ctx, resp)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error building expression context from HTTP response: %w", err)
 	}
 	success, err := h.wasRequestSuccessful(cfg, resp.StatusCode, env)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error evaluating success criteria: %w", err)
 	}
 	failure, err := h.didRequestFail(cfg, resp.StatusCode, env)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error evaluating failure criteria: %w", err)
 	}
 	switch {
 	case success && !failure:
 		outputs, err := h.buildOutputs(cfg.Outputs, env)
 		if err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+			return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 				fmt.Errorf("error extracting outputs from HTTP response: %w", err)
 		}
-		return PromotionStepResult{
+		return directive.PromotionStepResult{
 			Status: kargoapi.PromotionPhaseSucceeded,
 			Output: outputs,
 		}, nil
 	case failure:
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseFailed},
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseFailed},
 			&terminalError{err: fmt.Errorf(
 				"HTTP (%d) response met failure criteria",
 				resp.StatusCode,
 			)}
 	default:
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseRunning}, nil
+		return directive.PromotionStepResult{Status: kargoapi.PromotionPhaseRunning}, nil
 	}
 }
 

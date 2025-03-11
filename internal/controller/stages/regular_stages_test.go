@@ -27,6 +27,7 @@ import (
 	"github.com/akuity/kargo/internal/directives"
 	"github.com/akuity/kargo/internal/indexer"
 	fakeevent "github.com/akuity/kargo/internal/kubernetes/event/fake"
+	"github.com/akuity/kargo/pkg/x/directive"
 )
 
 func TestRegularStageReconciler_Reconcile(t *testing.T) {
@@ -1394,7 +1395,7 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 	tests := []struct {
 		name          string
 		stage         *kargoapi.Stage
-		checkHealthFn func(context.Context, directives.HealthCheckContext, []directives.HealthCheckStep) kargoapi.Health
+		checkHealthFn func(context.Context, directive.HealthCheckContext, []directive.HealthCheckStep) kargoapi.Health
 		assertions    func(*testing.T, kargoapi.StageStatus)
 	}{
 		{
@@ -1494,8 +1495,8 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 			},
 			checkHealthFn: func(
 				context.Context,
-				directives.HealthCheckContext,
-				[]directives.HealthCheckStep,
+				directive.HealthCheckContext,
+				[]directive.HealthCheckStep,
 			) kargoapi.Health {
 				return kargoapi.Health{Status: kargoapi.HealthStateHealthy}
 			},
@@ -1532,8 +1533,8 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 			},
 			checkHealthFn: func(
 				context.Context,
-				directives.HealthCheckContext,
-				[]directives.HealthCheckStep,
+				directive.HealthCheckContext,
+				[]directive.HealthCheckStep,
 			) kargoapi.Health {
 				return kargoapi.Health{
 					Status: kargoapi.HealthStateUnhealthy,
@@ -1577,8 +1578,8 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 			},
 			checkHealthFn: func(
 				context.Context,
-				directives.HealthCheckContext,
-				[]directives.HealthCheckStep,
+				directive.HealthCheckContext,
+				[]directive.HealthCheckStep,
 			) kargoapi.Health {
 				return kargoapi.Health{Status: kargoapi.HealthStateNotApplicable}
 			},
@@ -1613,8 +1614,8 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 			},
 			checkHealthFn: func(
 				context.Context,
-				directives.HealthCheckContext,
-				[]directives.HealthCheckStep,
+				directive.HealthCheckContext,
+				[]directive.HealthCheckStep,
 			) kargoapi.Health {
 				return kargoapi.Health{Status: kargoapi.HealthStateUnknown}
 			},

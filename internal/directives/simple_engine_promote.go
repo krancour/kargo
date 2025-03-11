@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/x/directive"
 )
 
 // Promote implements the Engine interface.
@@ -54,11 +55,11 @@ func (e *SimpleEngine) executeSteps(
 	// run.
 	state := promoCtx.State.DeepCopy()
 	if state == nil {
-		state = make(State)
+		state = make(directive.State)
 	}
 
 	var (
-		healthChecks  []HealthCheckStep
+		healthChecks  []directive.HealthCheckStep
 		err           error
 		stepExecMetas = promoCtx.StepExecutionMetadata.DeepCopy()
 	)
@@ -294,15 +295,15 @@ func (e *SimpleEngine) executeStep(
 	step PromotionStep,
 	reg PromotionStepRunnerRegistration,
 	workDir string,
-	state State,
-) (PromotionStepResult, error) {
+	state directive.State,
+) (directive.PromotionStepResult, error) {
 	stepCtx, err := e.preparePromotionStepContext(ctx, promoCtx, step, reg.Permissions, workDir, state)
 	if err != nil {
 		// TODO(krancour): We're not yet distinguishing between retryable and
 		// non-retryable errors. When we start to do this, failure to prepare the
 		// step context (likely due to invalid configuration) should be considered
 		// non-retryable.
-		return PromotionStepResult{
+		return directive.PromotionStepResult{
 			Status: kargoapi.PromotionPhaseErrored,
 		}, err
 	}
@@ -314,15 +315,15 @@ func (e *SimpleEngine) executeStep(
 	return result, err
 }
 
-// preparePromotionStepContext prepares a PromotionStepContext for a PromotionStep.
+// preparePromotionStepContext prepares a directive.PromotionStepContext for a PromotionStep.
 func (e *SimpleEngine) preparePromotionStepContext(
 	ctx context.Context,
 	promoCtx PromotionContext,
 	step PromotionStep,
 	permissions StepRunnerPermissions,
 	workDir string,
-	state State,
-) (*PromotionStepContext, error) {
+	state directive.State,
+) (*directive.PromotionStepContext, error) {
 	stateCopy := state.DeepCopy()
 
 	stepCfg, err := step.GetConfig(ctx, e.kargoClient, promoCtx, stateCopy)
@@ -330,7 +331,7 @@ func (e *SimpleEngine) preparePromotionStepContext(
 		return nil, fmt.Errorf("failed to get step config: %w", err)
 	}
 
-	stepCtx := &PromotionStepContext{
+	stepCtx := &directive.PromotionStepContext{
 		UIBaseURL:       promoCtx.UIBaseURL,
 		WorkDir:         workDir,
 		SharedState:     stateCopy,
