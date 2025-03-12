@@ -17,6 +17,7 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	libargocd "github.com/akuity/kargo/internal/argocd"
 	argocd "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/health"
 	"github.com/akuity/kargo/internal/git"
 	"github.com/akuity/kargo/internal/kubeclient"
 	"github.com/akuity/kargo/internal/logging"
@@ -265,9 +266,9 @@ func (a *argocdUpdater) runPromotionStep(
 
 	return PromotionStepResult{
 		Status: aggregatedStatus,
-		HealthCheck: &HealthCheck{
+		HealthCheck: &health.Criteria{
 			Kind: a.Name(),
-			Config: Config{
+			Input: health.Input{
 				"apps": appHealthChecks,
 			},
 		},

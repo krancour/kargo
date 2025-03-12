@@ -3,6 +3,7 @@ package directives
 import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/akuity/kargo/internal/controller/health"
 	"github.com/akuity/kargo/internal/credentials"
 )
 
@@ -76,16 +77,16 @@ func (s stepRunnerRegistry) getPromotionStepRunner(name string) PromotionStepRun
 	return promoStepRunner
 }
 
-// getHealthCheckRunner returns the HealthCheckRunner for the health check with
-// the given name, or an error if no such HealthCheckRunner is registered.
-func (s stepRunnerRegistry) getHealthCheckRunner(name string) HealthCheckRunner {
+// getHealthChecker returns the health.Checker registered with the given name,
+// or an error if no such health.Checker is registered.
+func (s stepRunnerRegistry) getHealthChecker(name string) health.Checker {
 	runner, ok := s[name]
 	if !ok {
 		return nil
 	}
-	healthCheckRunner, ok := runner.(HealthCheckRunner)
+	healthChecker, ok := runner.(health.Checker)
 	if !ok {
 		return nil
 	}
-	return healthCheckRunner
+	return healthChecker
 }

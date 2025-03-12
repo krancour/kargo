@@ -8,6 +8,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/health"
 )
 
 // CheckHealth implements the Engine interface.
@@ -15,7 +16,7 @@ func (e *SimpleEngine) CheckHealth(
 	ctx context.Context,
 	project string,
 	stage string,
-	checks []HealthCheck,
+	checks []health.Criteria,
 ) kargoapi.Health {
 	status, issues, output := e.executeHealthChecks(ctx, project, stage, checks)
 	if len(output) == 0 {
@@ -42,7 +43,7 @@ func (e *SimpleEngine) executeHealthChecks(
 	ctx context.Context,
 	project string,
 	stage string,
-	checks []HealthCheck,
+	checks []health.Criteria,
 ) (kargoapi.HealthState, []string, []State) {
 	var (
 		aggregatedStatus = kargoapi.HealthStateHealthy
@@ -50,7 +51,7 @@ func (e *SimpleEngine) executeHealthChecks(
 		aggregatedOutput = make([]State, 0, len(checks))
 	)
 
-	for _, step := range checks {
+	for _, check := range checks {
 		select {
 		case <-ctx.Done():
 			aggregatedStatus = aggregatedStatus.Merge(kargoapi.HealthStateUnknown)
@@ -59,7 +60,7 @@ func (e *SimpleEngine) executeHealthChecks(
 		default:
 		}
 
-		result := e.executeHealthCheck(ctx, project, stage, step)
+		result := e.executeHealthCheck(ctx, project, stage, check)
 		aggregatedStatus = aggregatedStatus.Merge(result.Status)
 		aggregatedIssues = append(aggregatedIssues, result.Issues...)
 
@@ -76,16 +77,18 @@ func (e *SimpleEngine) executeHealthCheck(
 	ctx context.Context,
 	project string,
 	stage string,
-	check HealthCheck,
-) HealthCheckResult {
-	runner := e.registry.getHealthCheckRunner(check.Kind)
-	if runner == nil {
-		return HealthCheckResult{
+	criteria health.Criteria,
+) health.Result {
+	checker := e.registry.getHealthChecker(criteria.Kind)
+	if checker == nil {
+		return health.Result{
 			Status: kargoapi.HealthStateUnknown,
 			Issues: []string{
-				fmt.Sprintf("no promotion step runner registered for step kind %q", check.Kind),
+				fmt.Sprintf("no health checker registered for health check kind %q", criteria.Kind),
 			},
 		}
 	}
-	return runner.Check(ctx, project, stage, check.Config.DeepCopy())
+	criteria.Project = project
+	criteria.Stage = stage
+	return checker.Check(ctx, criteria)
 }

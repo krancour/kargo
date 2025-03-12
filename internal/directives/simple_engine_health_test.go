@@ -7,17 +7,18 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/health"
 )
 
 func TestSimpleEngine_CheckHealth(t *testing.T) {
 	tests := []struct {
 		name       string
-		checks     []HealthCheck
+		checks     []health.Criteria
 		assertions func(*testing.T, kargoapi.Health)
 	}{
 		{
 			name: "successful health check",
-			checks: []HealthCheck{
+			checks: []health.Criteria{
 				{Kind: "success-check"},
 			},
 			assertions: func(t *testing.T, health kargoapi.Health) {
@@ -29,7 +30,7 @@ func TestSimpleEngine_CheckHealth(t *testing.T) {
 		},
 		{
 			name: "multiple successful health checks",
-			checks: []HealthCheck{
+			checks: []health.Criteria{
 				{Kind: "success-check"},
 				{Kind: "success-check"},
 			},
@@ -42,7 +43,7 @@ func TestSimpleEngine_CheckHealth(t *testing.T) {
 		},
 		{
 			name: "failed health check",
-			checks: []HealthCheck{
+			checks: []health.Criteria{
 				{Kind: "error-check"},
 			},
 			assertions: func(t *testing.T, health kargoapi.Health) {
@@ -53,7 +54,7 @@ func TestSimpleEngine_CheckHealth(t *testing.T) {
 		},
 		{
 			name: "context cancellation",
-			checks: []HealthCheck{
+			checks: []health.Criteria{
 				{Kind: "context-waiter"},
 			},
 			assertions: func(t *testing.T, health kargoapi.Health) {
@@ -70,27 +71,27 @@ func TestSimpleEngine_CheckHealth(t *testing.T) {
 			defer cancel()
 
 			testRegistry := stepRunnerRegistry{}
-			testRegistry.register(&mockHealthCheckRunner{
-				name: "success-check",
-				checkResult: HealthCheckResult{
+			testRegistry.register(&health.MockChecker{
+				CheckName: "success-check",
+				CheckResult: health.Result{
 					Status: kargoapi.HealthStateHealthy,
 					Output: State{"test": "success"},
 				},
 			})
-			testRegistry.register(&mockHealthCheckRunner{
-				name: "error-check",
-				checkResult: HealthCheckResult{
+			testRegistry.register(&health.MockChecker{
+				CheckName: "error-check",
+				CheckResult: health.Result{
 					Status: kargoapi.HealthStateUnhealthy,
 					Issues: []string{"health check failed"},
 					Output: State{"test": "error"},
 				},
 			})
-			testRegistry.register(&mockHealthCheckRunner{
-				name: "context-waiter",
-				checkFunc: func(ctx context.Context, _, _ string, _ Config) HealthCheckResult {
+			testRegistry.register(&health.MockChecker{
+				CheckName: "context-waiter",
+				CheckFunc: func(ctx context.Context, _ health.Input) health.Result {
 					cancel()
 					<-ctx.Done()
-					return HealthCheckResult{
+					return health.Result{
 						Status: kargoapi.HealthStateUnknown,
 						Issues: []string{ctx.Err().Error()},
 					}
@@ -110,12 +111,12 @@ func TestSimpleEngine_CheckHealth(t *testing.T) {
 func TestSimpleEngine_executeHealthChecks(t *testing.T) {
 	tests := []struct {
 		name       string
-		checks     []HealthCheck
+		checks     []health.Criteria
 		assertions func(*testing.T, kargoapi.HealthState, []string, []State)
 	}{
 		{
 			name: "aggregate multiple healthy checks",
-			checks: []HealthCheck{
+			checks: []health.Criteria{
 				{Kind: "success-check"},
 				{Kind: "success-check"},
 			},
@@ -130,7 +131,7 @@ func TestSimpleEngine_executeHealthChecks(t *testing.T) {
 		},
 		{
 			name: "merge different health states",
-			checks: []HealthCheck{
+			checks: []health.Criteria{
 				{Kind: "success-check"},
 				{Kind: "error-check"},
 			},
@@ -142,7 +143,7 @@ func TestSimpleEngine_executeHealthChecks(t *testing.T) {
 		},
 		{
 			name: "context cancellation",
-			checks: []HealthCheck{
+			checks: []health.Criteria{
 				{Kind: "context-waiter"},
 				{Kind: "success-check"}, // Should not execute
 			},
@@ -160,27 +161,27 @@ func TestSimpleEngine_executeHealthChecks(t *testing.T) {
 			defer cancel()
 
 			testRegistry := stepRunnerRegistry{}
-			testRegistry.register(&mockHealthCheckRunner{
-				name: "success-check",
-				checkResult: HealthCheckResult{
+			testRegistry.register(&health.MockChecker{
+				CheckName: "success-check",
+				CheckResult: health.Result{
 					Status: kargoapi.HealthStateHealthy,
 					Output: State{"test": "success"},
 				},
 			})
-			testRegistry.register(&mockHealthCheckRunner{
-				name: "error-check",
-				checkResult: HealthCheckResult{
+			testRegistry.register(&health.MockChecker{
+				CheckName: "error-check",
+				CheckResult: health.Result{
 					Status: kargoapi.HealthStateUnhealthy,
 					Issues: []string{"health check failed"},
 					Output: State{"test": "error"},
 				},
 			})
-			testRegistry.register(&mockHealthCheckRunner{
-				name: "context-waiter",
-				checkFunc: func(ctx context.Context, _, _ string, _ Config) HealthCheckResult {
+			testRegistry.register(&health.MockChecker{
+				CheckName: "context-waiter",
+				CheckFunc: func(ctx context.Context, _ health.Input) health.Result {
 					cancel()
 					<-ctx.Done()
-					return HealthCheckResult{
+					return health.Result{
 						Status: kargoapi.HealthStateUnknown,
 						Issues: []string{ctx.Err().Error()},
 					}
@@ -200,21 +201,21 @@ func TestSimpleEngine_executeHealthChecks(t *testing.T) {
 func TestSimpleEngine_executeHealthCheck(t *testing.T) {
 	tests := []struct {
 		name       string
-		check      HealthCheck
-		assertions func(*testing.T, HealthCheckResult)
+		check      health.Criteria
+		assertions func(*testing.T, health.Result)
 	}{
 		{
 			name:  "successful execution",
-			check: HealthCheck{Kind: "success-check"},
-			assertions: func(t *testing.T, result HealthCheckResult) {
+			check: health.Criteria{Kind: "success-check"},
+			assertions: func(t *testing.T, result health.Result) {
 				assert.Equal(t, kargoapi.HealthStateHealthy, result.Status)
 				assert.Empty(t, result.Issues)
 			},
 		},
 		{
 			name:  "unregistered runner",
-			check: HealthCheck{Kind: "unknown"},
-			assertions: func(t *testing.T, result HealthCheckResult) {
+			check: health.Criteria{Kind: "unknown"},
+			assertions: func(t *testing.T, result health.Result) {
 				assert.Equal(t, kargoapi.HealthStateUnknown, result.Status)
 				assert.Contains(t, result.Issues[0], "no promotion step runner registered for step kind")
 				assert.Contains(t, result.Issues[0], "unknown")
@@ -225,9 +226,9 @@ func TestSimpleEngine_executeHealthCheck(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testRegistry := stepRunnerRegistry{}
-			testRegistry.register(&mockHealthCheckRunner{
-				name: "success-check",
-				checkResult: HealthCheckResult{
+			testRegistry.register(&health.MockChecker{
+				CheckName: "success-check",
+				CheckResult: health.Result{
 					Status: kargoapi.HealthStateHealthy,
 				},
 			})

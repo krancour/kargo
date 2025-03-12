@@ -11,6 +11,7 @@ import (
 	yaml "sigs.k8s.io/yaml/goyaml.v3"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/health"
 	"github.com/akuity/kargo/internal/expressions"
 	exprfn "github.com/akuity/kargo/internal/expressions/function"
 	"github.com/akuity/kargo/internal/kargo"
@@ -339,11 +340,10 @@ type PromotionResult struct {
 	// Message is an optional message that provides additional context about the
 	// outcome of the user-defined promotion executed by the Engine.
 	Message string
-	// HealthChecks collects health check configuration returned from the
-	// execution of individual PromotionSteps by their corresponding
-	// PromotionStepRunners. This configuration can later be used as input to
-	// a HealthCheckRunner.
-	HealthChecks []HealthCheck
+	// HealthChecks collects health.Criteria returned from the execution of
+	// individual PromotionSteps by their corresponding PromotionStepRunners.
+	// These criteria can later be used as input to health.Checkers.
+	HealthChecks []health.Criteria
 	// If the promotion process remains in-progress, perhaps waiting for a change
 	// in some external state, the value of this field will indicate where to
 	// resume the process in the next reconciliation.
@@ -417,7 +417,7 @@ type PromotionStepResult struct {
 	// HealthCheck is health check with opaque configuration optionally returned
 	// by a PromotionStepRunner's successful execution of a PromotionStep. This
 	// configuration can later be used as input to a HealthCheckRunner.
-	HealthCheck *HealthCheck
+	HealthCheck *health.Criteria
 }
 
 // getTaskOutputs returns the outputs of a task that are relevant to the current

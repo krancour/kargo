@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/akuity/kargo/internal/controller/health"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -43,17 +44,17 @@ func TestStepRunnerRegistry_getPromotionStepRunner(t *testing.T) {
 	})
 }
 
-func TestStepRunnerRegistry_getHealthCheckRunner(t *testing.T) {
+func TestStepRunnerRegistry_getHealthChecker(t *testing.T) {
 	t.Run("registration exists", func(t *testing.T) {
 		registry := stepRunnerRegistry{}
-		runner := &mockHealthCheckRunner{}
+		runner := &health.MockChecker{}
 		registry.register(runner)
-		r := registry.getHealthCheckRunner(runner.Name())
+		r := registry.getHealthChecker(runner.Name())
 		assert.Same(t, r, runner)
 	})
 
 	t.Run("registration does not exist", func(t *testing.T) {
-		runner := stepRunnerRegistry{}.getHealthCheckRunner("nonexistent")
+		runner := stepRunnerRegistry{}.getHealthChecker("nonexistent")
 		assert.Nil(t, runner)
 	})
 }

@@ -33,6 +33,7 @@ import (
 	"github.com/akuity/kargo/internal/conditions"
 	"github.com/akuity/kargo/internal/controller"
 	argocdapi "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/health"
 	"github.com/akuity/kargo/internal/directives"
 	kargoEvent "github.com/akuity/kargo/internal/event"
 	exprfn "github.com/akuity/kargo/internal/expressions/function"
@@ -744,18 +745,18 @@ func (r *RegularStageReconciler) assessHealth(ctx context.Context, stage *kargoa
 		return newStatus
 	}
 
-	// Compose the health check steps.
+	// Compose the health check criteria.
 	healthChecks := lastPromo.Status.HealthChecks
-	var steps []directives.HealthCheck
-	for _, step := range healthChecks {
-		steps = append(steps, directives.HealthCheck{
-			Kind:   step.Uses,
-			Config: step.GetConfig(),
+	var criteria []health.Criteria
+	for _, check := range healthChecks {
+		criteria = append(criteria, health.Criteria{
+			Kind:  check.Uses,
+			Input: check.GetConfig(),
 		})
 	}
 
 	// Run the health checks.
-	health := r.directivesEngine.CheckHealth(ctx, stage.Namespace, stage.Name, steps)
+	health := r.directivesEngine.CheckHealth(ctx, stage.Namespace, stage.Name, criteria)
 	newStatus.Health = &health
 
 	// Set the Healthy condition based on the health status.

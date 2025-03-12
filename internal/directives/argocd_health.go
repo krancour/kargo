@@ -14,13 +14,14 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	libargocd "github.com/akuity/kargo/internal/argocd"
 	argocd "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/health"
 )
 
 const applicationStatusesKey = "applicationStatuses"
 
-// ArgoCDHealthConfig is the configuration for a health check to be executed by
-// the argocd-update directive.
-type ArgoCDHealthConfig struct {
+// ArgoCDHealthInput is the input for a health check associated with the the
+// argocd-update step.
+type ArgoCDHealthInput struct {
 	// Apps is a list health checks to perform on specific Argo CD Applications.
 	Apps []ArgoCDAppHealthCheck `json:"apps"`
 }
@@ -57,17 +58,15 @@ type compositeError interface {
 // Check implements the HealthCheckRunner interface.
 func (a *argocdUpdater) Check(
 	ctx context.Context,
-	_ string,
-	_ string,
-	config Config,
-) HealthCheckResult {
-	cfg, err := ConfigToStruct[ArgoCDHealthConfig](config)
+	criteria health.Criteria,
+) health.Result {
+	cfg, err := health.InputToStruct[ArgoCDHealthInput](criteria.Input)
 	if err != nil {
-		return HealthCheckResult{
+		return health.Result{
 			Status: kargoapi.HealthStateUnknown,
 			Issues: []string{
 				fmt.Sprintf(
-					"could not convert config into %s health check config: %s",
+					"could not convert opaque input into %s health check input: %s",
 					a.Name(), err.Error(),
 				),
 			},
@@ -78,10 +77,10 @@ func (a *argocdUpdater) Check(
 
 func (a *argocdUpdater) runHealthCheck(
 	ctx context.Context,
-	healthCfg ArgoCDHealthConfig,
-) HealthCheckResult {
+	input ArgoCDHealthInput,
+) health.Result {
 	if a.argocdClient == nil {
-		return HealthCheckResult{
+		return health.Result{
 			Status: kargoapi.HealthStateUnknown,
 			Issues: []string{
 				"Argo CD integration is disabled on this controller; cannot assess " +
@@ -89,12 +88,12 @@ func (a *argocdUpdater) runHealthCheck(
 			},
 		}
 	}
-	health := HealthCheckResult{
+	res := health.Result{
 		Status: kargoapi.HealthStateHealthy,
 		Issues: make([]string, 0),
 	}
-	appStatuses := make([]ArgoCDAppStatus, len(healthCfg.Apps))
-	for i, appHealthCheck := range healthCfg.Apps {
+	appStatuses := make([]ArgoCDAppStatus, len(input.Apps))
+	for i, appHealthCheck := range input.Apps {
 		namespace := appHealthCheck.Namespace
 		if namespace == "" {
 			namespace = libargocd.Namespace()
@@ -113,21 +112,21 @@ func (a *argocdUpdater) runHealthCheck(
 			},
 			appHealthCheck.DesiredRevisions,
 		)
-		health.Status = health.Status.Merge(state)
+		res.Status = res.Status.Merge(state)
 		if err != nil {
 			if cErr, ok := err.(compositeError); ok {
 				for _, e := range cErr.Unwrap() {
-					health.Issues = append(health.Issues, e.Error())
+					res.Issues = append(res.Issues, e.Error())
 				}
 			} else {
-				health.Issues = append(health.Issues, err.Error())
+				res.Issues = append(res.Issues, err.Error())
 			}
 		}
 	}
-	health.Output = map[string]any{
+	res.Output = map[string]any{
 		applicationStatusesKey: appStatuses,
 	}
-	return health
+	return res
 }
 
 // healthErrorConditions are the v1alpha1.ApplicationConditionType conditions

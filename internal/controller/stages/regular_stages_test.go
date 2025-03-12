@@ -24,6 +24,7 @@ import (
 	rolloutsapi "github.com/akuity/kargo/api/stubs/rollouts/v1alpha1"
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/conditions"
+	"github.com/akuity/kargo/internal/controller/health"
 	"github.com/akuity/kargo/internal/directives"
 	"github.com/akuity/kargo/internal/indexer"
 	fakeevent "github.com/akuity/kargo/internal/kubernetes/event/fake"
@@ -1394,7 +1395,7 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 	tests := []struct {
 		name          string
 		stage         *kargoapi.Stage
-		checkHealthFn func(ctx context.Context, project, stage string, steps []directives.HealthCheck) kargoapi.Health
+		checkHealthFn func(ctx context.Context, project, stage string, criteria []health.Criteria) kargoapi.Health
 		assertions    func(*testing.T, kargoapi.StageStatus)
 	}{
 		{
@@ -1492,12 +1493,7 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 					},
 				},
 			},
-			checkHealthFn: func(
-				context.Context,
-				string,
-				string,
-				[]directives.HealthCheck,
-			) kargoapi.Health {
+			checkHealthFn: func(context.Context, string, string, []health.Criteria) kargoapi.Health {
 				return kargoapi.Health{Status: kargoapi.HealthStateHealthy}
 			},
 			assertions: func(t *testing.T, status kargoapi.StageStatus) {
@@ -1531,12 +1527,7 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 					},
 				},
 			},
-			checkHealthFn: func(
-				context.Context,
-				string,
-				string,
-				[]directives.HealthCheck,
-			) kargoapi.Health {
+			checkHealthFn: func(context.Context, string, string, []health.Criteria) kargoapi.Health {
 				return kargoapi.Health{
 					Status: kargoapi.HealthStateUnhealthy,
 					Issues: []string{
@@ -1577,12 +1568,7 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 					},
 				},
 			},
-			checkHealthFn: func(
-				context.Context,
-				string,
-				string,
-				[]directives.HealthCheck,
-			) kargoapi.Health {
+			checkHealthFn: func(context.Context, string, string, []health.Criteria) kargoapi.Health {
 				return kargoapi.Health{Status: kargoapi.HealthStateNotApplicable}
 			},
 			assertions: func(t *testing.T, status kargoapi.StageStatus) {
@@ -1614,12 +1600,7 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 					},
 				},
 			},
-			checkHealthFn: func(
-				context.Context,
-				string,
-				string,
-				[]directives.HealthCheck,
-			) kargoapi.Health {
+			checkHealthFn: func(context.Context, string, string, []health.Criteria) kargoapi.Health {
 				return kargoapi.Health{Status: kargoapi.HealthStateUnknown}
 			},
 			assertions: func(t *testing.T, status kargoapi.StageStatus) {

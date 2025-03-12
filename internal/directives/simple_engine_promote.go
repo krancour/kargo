@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/health"
 )
 
 // Promote implements the Engine interface.
@@ -58,7 +59,7 @@ func (e *SimpleEngine) executeSteps(
 	}
 
 	var (
-		healthChecks  []HealthCheck
+		healthChecks  []health.Criteria
 		err           error
 		stepExecMetas = promoCtx.StepExecutionMetadata.DeepCopy()
 	)

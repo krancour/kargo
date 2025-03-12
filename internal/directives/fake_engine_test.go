@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/health"
 )
 
 func TestFakeEngine_Promote(t *testing.T) {
@@ -55,22 +56,15 @@ func TestFakeEngine_CheckHealth(t *testing.T) {
 		ctx := context.Background()
 		const testProject = "fake-project"
 		const testStage = "fake-stage"
-		checks := []HealthCheck{{Kind: "mock"}}
+		criteria := []health.Criteria{{Kind: "mock"}}
 		engine := &FakeEngine{
-			CheckHealthFn: func(
-				givenCtx context.Context,
-				givenProject string,
-				givenStage string,
-				givenChecks []HealthCheck,
-			) kargoapi.Health {
+			CheckHealthFn: func(givenCtx context.Context, _, _ string, givenCriteria []health.Criteria) kargoapi.Health {
 				assert.Equal(t, ctx, givenCtx)
-				assert.Equal(t, testProject, givenProject)
-				assert.Equal(t, testStage, givenStage)
-				assert.Equal(t, checks, givenChecks)
+				assert.Equal(t, criteria, givenCriteria)
 				return kargoapi.Health{Status: kargoapi.HealthStateUnhealthy}
 			},
 		}
-		res := engine.CheckHealth(ctx, testProject, testStage, checks)
+		res := engine.CheckHealth(ctx, testProject, testStage, criteria)
 		assert.Equal(t, kargoapi.HealthStateUnhealthy, res.Status)
 	})
 }

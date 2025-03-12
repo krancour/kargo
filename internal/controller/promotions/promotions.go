@@ -521,7 +521,7 @@ func (r *reconciler) promote(
 			workingPromo.Status.HealthChecks,
 			kargoapi.HealthCheckStep{
 				Uses:   step.Kind,
-				Config: &apiextensionsv1.JSON{Raw: step.Config.ToJSON()},
+				Config: &apiextensionsv1.JSON{Raw: step.Input.ToJSON()},
 			},
 		)
 	}
