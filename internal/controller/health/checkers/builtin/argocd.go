@@ -55,8 +55,29 @@ type compositeError interface {
 	Unwrap() []error
 }
 
-// Check implements the HealthCheckRunner interface.
-func (a *argocdUpdater) Check(
+type argocdChecker struct {
+	argocdClient client.Client
+}
+
+// newArgocdChecker returns a implementation of the health.Checker interface
+// that monitors the health and sync state of Argo CD Application resources.
+func newArgocdChecker(argocdClient client.Client) *argocdChecker {
+	return &argocdChecker{
+		argocdClient: argocdClient,
+	}
+}
+
+// Name implements the health.Checker interface.
+func (a *argocdChecker) Name() string {
+	// Note: The promotion.StepRunner for the argocd-update step has historically
+	// registered a health check with the same name, so we continue to do that for
+	// backwards compatibility, but newer health.Checkers need not follow this
+	// convention of promotion.StepRunner and health.Checker names matching.
+	return "argocd-updater"
+}
+
+// Check implements the health.Checker interface.
+func (a *argocdChecker) Check(
 	ctx context.Context,
 	criteria health.Criteria,
 ) health.Result {
@@ -75,7 +96,7 @@ func (a *argocdUpdater) Check(
 	return a.runHealthCheck(ctx, cfg)
 }
 
-func (a *argocdUpdater) runHealthCheck(
+func (a *argocdChecker) runHealthCheck(
 	ctx context.Context,
 	input ArgoCDHealthInput,
 ) health.Result {
@@ -141,7 +162,7 @@ var healthErrorConditions = []argocd.ApplicationConditionType{
 // an overall health state, the Argo CD Application's health status, and its sync
 // status. If it can not (fully) assess the health of the Argo CD Application, it
 // returns an error with a message explaining why.
-func (a *argocdUpdater) getApplicationHealth(
+func (a *argocdChecker) getApplicationHealth(
 	ctx context.Context,
 	appKey client.ObjectKey,
 	desiredRevisions []string,
@@ -242,7 +263,7 @@ func (a *argocdUpdater) getApplicationHealth(
 
 // stageHealthForAppSync returns the v1alpha1.HealthState for an Argo CD
 // Application based on its sync status.
-func (a *argocdUpdater) stageHealthForAppSync(
+func (a *argocdChecker) stageHealthForAppSync(
 	app *argocd.Application,
 	desiredRevisions []string,
 ) (kargoapi.HealthState, error) {
@@ -313,7 +334,7 @@ func (a *argocdUpdater) stageHealthForAppSync(
 
 // stageHealthForAppHealth returns the v1alpha1.HealthState for an Argo CD
 // Application based on its health status.
-func (a *argocdUpdater) stageHealthForAppHealth(
+func (a *argocdChecker) stageHealthForAppHealth(
 	app *argocd.Application,
 ) (kargoapi.HealthState, error) {
 	switch app.Status.Health.Status {
@@ -349,7 +370,7 @@ func (a *argocdUpdater) stageHealthForAppHealth(
 
 // filterAppConditions returns a slice of v1alpha1.ApplicationCondition that
 // match the provided types.
-func (a *argocdUpdater) filterAppConditions(
+func (a *argocdChecker) filterAppConditions(
 	app *argocd.Application,
 	t ...argocd.ApplicationConditionType,
 ) []argocd.ApplicationCondition {

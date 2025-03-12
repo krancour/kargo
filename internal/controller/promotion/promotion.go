@@ -11,7 +11,7 @@ import (
 // StepRunner is an interface for components that implement the logic for
 // execution of an individual Step in a user-defined promotion process.
 type StepRunner interface {
-	// Name returns the name of the PromotionStepRunner.
+	// Name returns the name of the StepRunner.
 	Name() string
 	// Run executes an individual Step from a user-defined promotion process using
 	// the provided StepContext. Implementations may indirectly modify that
@@ -32,7 +32,7 @@ type RetryableStepRunner interface {
 }
 
 // StepContext is a type that represents the context in which a
-// SinglePromotion step is executed by a PromotionStepRunner.
+// single promotion step is executed by a StepRunner.
 type StepContext struct {
 	// UIBaseURL may be used to construct deeper URLs for interacting with the
 	// Kargo UI.
@@ -63,7 +63,7 @@ type StepContext struct {
 	// TODO: krancour: Longer term, if we can standardize the way that
 	// PromotionSteps express the artifacts they need to work with, we can make
 	// the Engine responsible for finding them and furnishing them directly to
-	// each PromotionStepRunner.
+	// each StepRunner.
 	FreightRequests []kargoapi.FreightRequest
 	// Freight is the collection of all Freight referenced by the Promotion. This
 	// collection contains both the Freight that is actively being promoted as
@@ -73,7 +73,7 @@ type StepContext struct {
 	// TODO: krancour: Longer term, if we can standardize the way that
 	// PromotionSteps express the artifacts they need to work with, we can make
 	// the Engine responsible for finding them and furnishing them directly to
-	// each PromotionStepRunner.
+	// each StepRunner.
 	Freight kargoapi.FreightCollection
 }
 

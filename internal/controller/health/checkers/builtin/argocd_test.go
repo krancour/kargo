@@ -155,7 +155,7 @@ func Test_argocdUpdater_runHealthCheck(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			runner := &argocdUpdater{
+			runner := &argocdChecker{
 				argocdClient: testCase.client,
 			}
 			testCase.assertions(
@@ -397,7 +397,7 @@ func Test_argocdUpdater_getApplicationHealth(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			app := testApp.DeepCopy()
 			app.Status = testCase.appStatus
-			runner := &argocdUpdater{
+			runner := &argocdChecker{
 				argocdClient: fake.NewClientBuilder().
 					WithScheme(scheme).
 					WithObjects(app).
@@ -431,7 +431,7 @@ func Test_argocdUpdater_getApplicationHealth(t *testing.T) {
 			},
 		}
 		var count int
-		runner := &argocdUpdater{
+		runner := &argocdChecker{
 			argocdClient: fake.NewClientBuilder().WithInterceptorFuncs(interceptor.Funcs{
 				Get: func(
 					_ context.Context,
@@ -582,7 +582,7 @@ func Test_argocdUpdater_stageHealthForAppSync(t *testing.T) {
 		},
 	}
 
-	runner := &argocdUpdater{}
+	runner := &argocdChecker{}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -671,7 +671,7 @@ func Test_argocdUpdater_stageHealthForAppHealth(t *testing.T) {
 		},
 	}
 
-	runner := &argocdUpdater{}
+	runner := &argocdChecker{}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -754,7 +754,7 @@ func Test_argocdUpdater_filterAppConditions(t *testing.T) {
 		},
 	}
 
-	runner := (&argocdUpdater{})
+	runner := (&argocdChecker{})
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

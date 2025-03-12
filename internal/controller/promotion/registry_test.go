@@ -38,7 +38,6 @@ func TestStepRunnerRegistry_getStepRunner(t *testing.T) {
 	})
 
 	t.Run("registration does not exist", func(t *testing.T) {
-		runner := stepRunnerRegistry{}.getStepRunner("nonexistent")
-		assert.Nil(t, runner)
+		assert.Nil(t, stepRunnerRegistry{}.getStepRunner("nonexistent"))
 	})
 }

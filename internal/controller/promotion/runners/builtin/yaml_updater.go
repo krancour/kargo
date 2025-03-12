@@ -14,13 +14,13 @@ import (
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
-// yamlUpdater is an implementation of the PromotionStepRunner interface that
+// yamlUpdater is an implementation of the promotion.StepRunner interface that
 // updates the values of specified keys in a YAML file.
 type yamlUpdater struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
-// newYAMLUpdater returns an implementation of the PromotionStepRunner interface
+// newYAMLUpdater returns an implementation of the promotion.StepRunner interface
 // that updates the values of specified keys in a YAML file.
 func newYAMLUpdater() promotion.StepRunner {
 	r := &yamlUpdater{}
@@ -28,12 +28,12 @@ func newYAMLUpdater() promotion.StepRunner {
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the promotion.StepRunner interface.
 func (y *yamlUpdater) Name() string {
 	return "yaml-update"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
+// RunPromotionStep implements the promotion.StepRunner interface.
 func (y *yamlUpdater) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

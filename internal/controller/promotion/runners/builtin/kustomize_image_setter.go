@@ -29,14 +29,14 @@ import (
 // Kustomization image field.
 const preserveSeparator = "*"
 
-// kustomizeImageSetter is an implementation  of the PromotionStepRunner
+// kustomizeImageSetter is an implementation  of the promotion.StepRunner
 // interface that sets images in a Kustomization file.
 type kustomizeImageSetter struct {
 	schemaLoader gojsonschema.JSONLoader
 	kargoClient  client.Client
 }
 
-// newKustomizeImageSetter returns an implementation  of the PromotionStepRunner
+// newKustomizeImageSetter returns an implementation  of the promotion.StepRunner
 // interface that sets images in a Kustomization file.
 func newKustomizeImageSetter(kargoClient client.Client) promotion.StepRunner {
 	return &kustomizeImageSetter{
@@ -45,12 +45,12 @@ func newKustomizeImageSetter(kargoClient client.Client) promotion.StepRunner {
 	}
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the promotion.StepRunner interface.
 func (k *kustomizeImageSetter) Name() string {
 	return "kustomize-set-image"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
+// RunPromotionStep implements the promotion.StepRunner interface.
 func (k *kustomizeImageSetter) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

@@ -16,7 +16,7 @@ import (
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
-// gitCloner is an implementation of the PromotionStepRunner interface that
+// gitCloner is an implementation of the promotion.StepRunner interface that
 // clones one or more refs from a remote Git repository to one or more working
 // directories.
 type gitCloner struct {
@@ -42,7 +42,7 @@ func gitUserFromEnv() git.User {
 	}
 }
 
-// newGitCloner returns an implementation of the PromotionStepRunner interface
+// newGitCloner returns an implementation of the promotion.StepRunner interface
 // that clones one or more refs from a remote Git repository to one or more
 // working directories.
 func newGitCloner(credsDB credentials.Database) promotion.StepRunner {
@@ -54,12 +54,12 @@ func newGitCloner(credsDB credentials.Database) promotion.StepRunner {
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the promotion.StepRunner interface.
 func (g *gitCloner) Name() string {
 	return "git-clone"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
+// RunPromotionStep implements the promotion.StepRunner interface.
 func (g *gitCloner) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

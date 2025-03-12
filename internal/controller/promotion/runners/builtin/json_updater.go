@@ -15,13 +15,13 @@ import (
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
-// jsonUpdater is an implementation of the PromotionStepRunner interface that
+// jsonUpdater is an implementation of the promotion.StepRunner interface that
 // updates the values of specified keys in a JSON file.
 type jsonUpdater struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
-// newJSONUpdater returns an implementation of the PromotionStepRunner interface
+// newJSONUpdater returns an implementation of the promotion.StepRunner interface
 // that updates the values of specified keys in a JSON file.
 func newJSONUpdater() promotion.StepRunner {
 	r := &jsonUpdater{}
@@ -29,12 +29,12 @@ func newJSONUpdater() promotion.StepRunner {
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the promotion.StepRunner interface.
 func (j *jsonUpdater) Name() string {
 	return "json-update"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
+// RunPromotionStep implements the promotion.StepRunner interface.
 func (j *jsonUpdater) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

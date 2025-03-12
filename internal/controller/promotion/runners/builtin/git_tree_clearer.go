@@ -13,13 +13,13 @@ import (
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
-// gitTreeClearer is an implementation of the PromotionStepRunner interface
+// gitTreeClearer is an implementation of the promotion.StepRunner interface
 // that removes the content of a Git working tree.
 type gitTreeClearer struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
-// newGitTreeClearer returns an implementation of the PromotionStepRunner
+// newGitTreeClearer returns an implementation of the promotion.StepRunner
 // interface that removes the content of a Git working tree.
 func newGitTreeClearer() promotion.StepRunner {
 	r := &gitTreeClearer{}
@@ -27,12 +27,12 @@ func newGitTreeClearer() promotion.StepRunner {
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the promotion.StepRunner interface.
 func (g *gitTreeClearer) Name() string {
 	return "git-clear"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
+// RunPromotionStep implements the promotion.StepRunner interface.
 func (g *gitTreeClearer) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

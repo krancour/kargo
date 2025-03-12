@@ -32,13 +32,13 @@ func outPathIsFile(cfg builtin.HelmTemplateConfig) bool {
 	return ext == ".yaml" || ext == ".yml"
 }
 
-// helmTemplateRunner is an implementation of the PromotionStepRunner interface
+// helmTemplateRunner is an implementation of the promotion.StepRunner interface
 // that renders a Helm chart.
 type helmTemplateRunner struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
-// newHelmTemplateRunner returns an implementation of the PromotionStepRunner
+// newHelmTemplateRunner returns an implementation of the promotion.StepRunner
 // interface that renders a Helm chart.
 func newHelmTemplateRunner() promotion.StepRunner {
 	r := &helmTemplateRunner{}
@@ -46,12 +46,12 @@ func newHelmTemplateRunner() promotion.StepRunner {
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the promotion.StepRunner interface.
 func (h *helmTemplateRunner) Name() string {
 	return "helm-template"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
+// RunPromotionStep implements the promotion.StepRunner interface.
 func (h *helmTemplateRunner) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

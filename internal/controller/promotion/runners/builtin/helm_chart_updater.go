@@ -31,14 +31,14 @@ import (
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
-// helmChartUpdater is an implementation of the PromotionStepRunner interface
+// helmChartUpdater is an implementation of the promotion.StepRunner interface
 // that updates the dependencies of a Helm chart.
 type helmChartUpdater struct {
 	schemaLoader gojsonschema.JSONLoader
 	credsDB      credentials.Database
 }
 
-// newHelmChartUpdater returns an implementation of the PromotionStepRunner
+// newHelmChartUpdater returns an implementation of the promotion.StepRunner
 // interface that updates the dependencies of a Helm chart.
 func newHelmChartUpdater(credsDB credentials.Database) promotion.StepRunner {
 	r := &helmChartUpdater{
@@ -48,12 +48,12 @@ func newHelmChartUpdater(credsDB credentials.Database) promotion.StepRunner {
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the promotion.StepRunner interface.
 func (h *helmChartUpdater) Name() string {
 	return "helm-update-chart"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
+// RunPromotionStep implements the promotion.StepRunner interface.
 func (h *helmChartUpdater) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

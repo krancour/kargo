@@ -21,7 +21,7 @@ import (
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
-// fileCopier is an implementation of the PromotionStepRunner interface that
+// fileCopier is an implementation of the promotion.StepRunner interface that
 // copies a file or directory.
 //
 // The copy is recursive, merging directories if the destination directory
@@ -31,7 +31,7 @@ type fileCopier struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
-// newFileCopier returns an implementation of the PromotionStepRunner interface
+// newFileCopier returns an implementation of the promotion.StepRunner interface
 // that copies a file or directory.
 func newFileCopier() promotion.StepRunner {
 	r := &fileCopier{}
@@ -39,12 +39,12 @@ func newFileCopier() promotion.StepRunner {
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the promotion.StepRunner interface.
 func (f *fileCopier) Name() string {
 	return "copy"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
+// RunPromotionStep implements the promotion.StepRunner interface.
 func (f *fileCopier) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

@@ -59,8 +59,8 @@ func ReconcilerConfigFromEnv() ReconcilerConfig {
 
 // reconciler reconciles Promotion resources.
 type reconciler struct {
-	kargoClient      client.Client
-	directivesEngine directives.Engine
+	kargoClient client.Client
+	promoEngine promotion.Engine
 
 	cfg ReconcilerConfig
 
@@ -95,7 +95,7 @@ func SetupReconcilerWithManager(
 	ctx context.Context,
 	kargoMgr manager.Manager,
 	argocdMgr manager.Manager,
-	directivesEngine directives.Engine,
+	directivesEngine promotion.Engine,
 	cfg ReconcilerConfig,
 ) error {
 	// Index running Promotions by Argo CD Applications
@@ -172,14 +172,14 @@ func SetupReconcilerWithManager(
 func newReconciler(
 	kargoClient client.Client,
 	recorder record.EventRecorder,
-	directivesEngine directives.Engine,
+	directivesEngine promotion.Engine,
 	cfg ReconcilerConfig,
 ) *reconciler {
 	r := &reconciler{
-		kargoClient:      kargoClient,
-		directivesEngine: directivesEngine,
-		recorder:         recorder,
-		cfg:              cfg,
+		kargoClient: kargoClient,
+		promoEngine: directivesEngine,
+		recorder:    recorder,
+		cfg:         cfg,
 	}
 	r.getStageFn = api.GetStage
 	r.promoteFn = r.promote
@@ -511,7 +511,7 @@ func (r *reconciler) promote(
 		}
 	}()
 
-	res, err := r.directivesEngine.Promote(ctx, promoCtx, steps)
+	res, err := r.promoEngine.Promote(ctx, promoCtx, steps)
 	workingPromo.Status.Phase = res.Status
 	workingPromo.Status.Message = res.Message
 	workingPromo.Status.CurrentStep = res.CurrentStep

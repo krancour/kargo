@@ -18,6 +18,7 @@ import (
 	libargocd "github.com/akuity/kargo/internal/argocd"
 	argocd "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/health"
+	checkers "github.com/akuity/kargo/internal/controller/health/checkers/builtin"
 	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/internal/git"
 	"github.com/akuity/kargo/internal/kubeclient"
@@ -30,7 +31,7 @@ const (
 	promotionInfoKey              = "kargo.akuity.io/promotion"
 )
 
-// argocdUpdater is an implementation of the PromotionStepRunner interface that
+// argocdUpdater is an implementation of the promotion.StepRunner interface that
 // updates one or more Argo CD Application resources.
 type argocdUpdater struct {
 	schemaLoader gojsonschema.JSONLoader
@@ -85,9 +86,8 @@ type argocdUpdater struct {
 	)
 }
 
-// newArgocdUpdater returns a implementation of the PromotionStepRunner and
-// HealthCheckRunner interfaces that updates Argo CD Application resources and
-// monitors their health.
+// newArgocdUpdater returns a implementation of the promotion.StepRunner
+// interfaces that updates Argo CD Application resources.
 func newArgocdUpdater(argocdClient client.Client) *argocdUpdater {
 	r := &argocdUpdater{
 		argocdClient: argocdClient,
@@ -103,7 +103,7 @@ func newArgocdUpdater(argocdClient client.Client) *argocdUpdater {
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the promotion.StepRunner interface.
 func (a *argocdUpdater) Name() string {
 	return "argocd-update"
 }
@@ -118,7 +118,7 @@ func (a *argocdUpdater) DefaultErrorThreshold() uint32 {
 	return 0 // Will fall back to the system default.
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
+// RunPromotionStep implements the promotion.StepRunner interface.
 func (a *argocdUpdater) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,
@@ -134,7 +134,7 @@ func (a *argocdUpdater) Run(
 	return a.run(ctx, stepCtx, cfg)
 }
 
-// validate validates argocdUpdatePromotionStepRunner configuration against a
+// validate validates argocdUpdater configuration against a
 // JSON schema.
 func (a *argocdUpdater) validate(cfg promotion.Config) error {
 	return validate(a.schemaLoader, gojsonschema.NewGoLoader(cfg), a.Name())
@@ -156,7 +156,7 @@ func (a *argocdUpdater) run(
 	logger.Debug("executing argocd-update promotion step")
 
 	var updateResults = make([]argocd.OperationPhase, 0, len(stepCfg.Apps))
-	appHealthChecks := make([]ArgoCDAppHealthCheck, len(stepCfg.Apps))
+	appHealthChecks := make([]checkers.ArgoCDAppHealthCheck, len(stepCfg.Apps))
 	for i := range stepCfg.Apps {
 		update := &stepCfg.Apps[i]
 		// Retrieve the Argo CD Application.
@@ -176,7 +176,7 @@ func (a *argocdUpdater) run(
 		}
 
 		desiredRevisions := a.getDesiredRevisions(update, app)
-		appHealthChecks[i] = ArgoCDAppHealthCheck{
+		appHealthChecks[i] = checkers.ArgoCDAppHealthCheck{
 			Name:             app.Name,
 			Namespace:        app.Namespace,
 			DesiredRevisions: desiredRevisions,

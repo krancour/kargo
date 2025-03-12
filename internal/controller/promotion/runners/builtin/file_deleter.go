@@ -16,13 +16,13 @@ import (
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
-// fileDeleter is an implementation of the PromotionStepRunner interface that
+// fileDeleter is an implementation of the promotion.StepRunner interface that
 // deletes a file or directory.
 type fileDeleter struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
-// newFileDeleter returns an implementation of the PromotionStepRunner interface
+// newFileDeleter returns an implementation of the promotion.StepRunner interface
 // that deletes a file or directory.
 func newFileDeleter() promotion.StepRunner {
 	r := &fileDeleter{}
@@ -30,12 +30,12 @@ func newFileDeleter() promotion.StepRunner {
 	return r
 }
 
-// Name implements the PromotionStepRunner interface
+// Name implements the promotion.StepRunner interface
 func (f *fileDeleter) Name() string {
 	return "delete"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
+// RunPromotionStep implements the promotion.StepRunner interface.
 func (f *fileDeleter) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

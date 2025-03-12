@@ -16,13 +16,13 @@ import (
 // stateKeyCommit is the key used to store the commit ID in the shared State.
 const stateKeyCommit = "commit"
 
-// gitCommitter is an implementation of the PromotionStepRunner interface that
+// gitCommitter is an implementation of the promotion.StepRunner interface that
 // makes a commit to a local Git repository.
 type gitCommitter struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
-// newGitCommitter returns an implementation of the PromotionStepRunner
+// newGitCommitter returns an implementation of the promotion.StepRunner
 // interface that makes a commit to a local Git repository.
 func newGitCommitter() promotion.StepRunner {
 	r := &gitCommitter{}
@@ -30,12 +30,12 @@ func newGitCommitter() promotion.StepRunner {
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the promotion.StepRunner interface.
 func (g *gitCommitter) Name() string {
 	return "git-commit"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
+// RunPromotionStep implements the promotion.StepRunner interface.
 func (g *gitCommitter) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

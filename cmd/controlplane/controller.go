@@ -21,13 +21,15 @@ import (
 	libargocd "github.com/akuity/kargo/internal/argocd"
 	"github.com/akuity/kargo/internal/controller"
 	argocd "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
-	"github.com/akuity/kargo/internal/controller/promotion/builtin"
+	"github.com/akuity/kargo/internal/controller/health"
+	healthCheckers "github.com/akuity/kargo/internal/controller/health/checkers/builtin"
+	"github.com/akuity/kargo/internal/controller/promotion"
+	promotionStepRunners "github.com/akuity/kargo/internal/controller/promotion/runners/builtin"
 	"github.com/akuity/kargo/internal/controller/promotions"
 	"github.com/akuity/kargo/internal/controller/stages"
 	"github.com/akuity/kargo/internal/controller/warehouses"
 	"github.com/akuity/kargo/internal/credentials"
 	credsdb "github.com/akuity/kargo/internal/credentials/kubernetes"
-	"github.com/akuity/kargo/internal/directives"
 	"github.com/akuity/kargo/internal/indexer"
 	"github.com/akuity/kargo/internal/logging"
 	"github.com/akuity/kargo/internal/os"
@@ -317,8 +319,8 @@ func (o *controllerOptions) setupReconcilers(
 		argoCDClient = argocdMgr.GetClient()
 	}
 
-	builtin.Initialize(kargoMgr.GetClient(), argoCDClient, credentialsDB)
-	directivesEngine := directives.NewSimpleEngine(kargoMgr.GetClient())
+	promotionStepRunners.Initialize(kargoMgr.GetClient(), argoCDClient, credentialsDB)
+	healthCheckers.Initialize(argoCDClient)
 
 	sharedIndexer := indexer.NewSharedFieldIndexer(kargoMgr.GetFieldIndexer())
 
@@ -326,18 +328,19 @@ func (o *controllerOptions) setupReconcilers(
 		ctx,
 		kargoMgr,
 		argocdMgr,
-		directivesEngine,
+		promotion.NewSimpleEngine(kargoMgr.GetClient()),
 		promotions.ReconcilerConfigFromEnv(),
 	); err != nil {
 		return fmt.Errorf("error setting up Promotions reconciler: %w", err)
 	}
 
-	if err := stages.NewRegularStageReconciler(stagesReconcilerCfg, directivesEngine).SetupWithManager(
-		ctx,
-		kargoMgr,
-		argocdMgr,
-		sharedIndexer,
-	); err != nil {
+	if err := stages.NewRegularStageReconciler(stagesReconcilerCfg, health.NewSimpleEngine()).
+		SetupWithManager(
+			ctx,
+			kargoMgr,
+			argocdMgr,
+			sharedIndexer,
+		); err != nil {
 		return fmt.Errorf("error setting up regular Stages reconciler: %w", err)
 	}
 

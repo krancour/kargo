@@ -26,13 +26,13 @@ const (
 	contentTypeJSON   = "application/json"
 )
 
-// httpRequester is an implementation of the PromotionStepRunner interface that
+// httpRequester is an implementation of the promotion.StepRunner interface that
 // sends an HTTP request and processes the response.
 type httpRequester struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
-// newHTTPRequester returns an implementation of the PromotionStepRunner
+// newHTTPRequester returns an implementation of the promotion.StepRunner
 // interface that sends an HTTP request and processes the response.
 func newHTTPRequester() promotion.StepRunner {
 	r := &httpRequester{}
@@ -40,7 +40,7 @@ func newHTTPRequester() promotion.StepRunner {
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the promotion.StepRunner interface.
 func (h *httpRequester) Name() string {
 	return "http"
 }

@@ -12,7 +12,7 @@ import (
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
-// outputComposer is an implementation of the PromotionStepRunner interface
+// outputComposer is an implementation of the promotion.StepRunner interface
 // that allows composing outputs from previous steps into new outputs.
 //
 // It works based on the promotion.StepContext.Config field allowing to an
@@ -37,7 +37,7 @@ type outputComposer struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
-// newOutputComposer returns an implementation of the PromotionStepRunner
+// newOutputComposer returns an implementation of the promotion.StepRunner
 // interface that composes output from previous steps into new output.
 func newOutputComposer() promotion.StepRunner {
 	r := &outputComposer{}
@@ -45,12 +45,12 @@ func newOutputComposer() promotion.StepRunner {
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the promotion.StepRunner interface.
 func (c *outputComposer) Name() string {
 	return "compose-output"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
+// RunPromotionStep implements the promotion.StepRunner interface.
 func (c *outputComposer) Run(
 	_ context.Context,
 	stepCtx *promotion.StepContext,

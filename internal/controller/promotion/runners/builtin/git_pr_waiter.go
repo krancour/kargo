@@ -14,14 +14,14 @@ import (
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
-// gitPRWaiter is an implementation of the PromotionStepRunner interface that
+// gitPRWaiter is an implementation of the promotion.StepRunner interface that
 // waits for a pull request to be merged or closed unmerged.
 type gitPRWaiter struct {
 	schemaLoader gojsonschema.JSONLoader
 	credsDB      credentials.Database
 }
 
-// newGitPRWaiter returns an implementation of the PromotionStepRunner interface
+// newGitPRWaiter returns an implementation of the promotion.StepRunner interface
 // that waits for a pull request to be merged or closed unmerged.
 func newGitPRWaiter(credsDB credentials.Database) promotion.StepRunner {
 	r := &gitPRWaiter{
@@ -31,12 +31,12 @@ func newGitPRWaiter(credsDB credentials.Database) promotion.StepRunner {
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the promotion.StepRunner interface.
 func (g *gitPRWaiter) Name() string {
 	return "git-wait-for-pr"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
+// RunPromotionStep implements the promotion.StepRunner interface.
 func (g *gitPRWaiter) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

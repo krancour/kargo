@@ -22,7 +22,7 @@ import (
 // shared State.
 const stateKeyBranch = "branch"
 
-// gitPushPusher is an implementation of the PromotionStepRunner interface that
+// gitPushPusher is an implementation of the promotion.StepRunner interface that
 // pushes commits from a local Git repository to a remote Git repository.
 type gitPushPusher struct {
 	schemaLoader gojsonschema.JSONLoader
@@ -31,7 +31,7 @@ type gitPushPusher struct {
 	masterMu     sync.Mutex
 }
 
-// newGitPusher returns an implementation of the PromotionStepRunner interface
+// newGitPusher returns an implementation of the promotion.StepRunner interface
 // that pushes commits from a local Git repository to a remote Git repository.
 func newGitPusher(credsDB credentials.Database) promotion.StepRunner {
 	r := &gitPushPusher{
@@ -42,12 +42,12 @@ func newGitPusher(credsDB credentials.Database) promotion.StepRunner {
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the promotion.StepRunner interface.
 func (g *gitPushPusher) Name() string {
 	return "git-push"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
+// RunPromotionStep implements the promotion.StepRunner interface.
 func (g *gitPushPusher) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

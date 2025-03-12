@@ -27,14 +27,14 @@ import (
 // xref: https://github.com/kubernetes-sigs/kustomize/issues/3659
 var kustomizeRenderMutex sync.Mutex
 
-// kustomizeBuilder is an implementation of the PromotionStepRunner interface
+// kustomizeBuilder is an implementation of the promotion.StepRunner interface
 // that builds a set of Kubernetes manifests using Kustomize.
 type kustomizeBuilder struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
 // newKustomizeBuilder returns an implementation of the
-// PromotionStepRunner interface that builds a set of Kubernetes manifests using
+// promotion.StepRunner interface that builds a set of Kubernetes manifests using
 // Kustomize.
 func newKustomizeBuilder() promotion.StepRunner {
 	return &kustomizeBuilder{
@@ -42,12 +42,12 @@ func newKustomizeBuilder() promotion.StepRunner {
 	}
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the promotion.StepRunner interface.
 func (k *kustomizeBuilder) Name() string {
 	return "kustomize-build"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
+// RunPromotionStep implements the promotion.StepRunner interface.
 func (k *kustomizeBuilder) Run(
 	_ context.Context,
 	stepCtx *promotion.StepContext,

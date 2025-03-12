@@ -34,7 +34,6 @@ import (
 	"github.com/akuity/kargo/internal/controller"
 	argocdapi "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/health"
-	"github.com/akuity/kargo/internal/directives"
 	kargoEvent "github.com/akuity/kargo/internal/event"
 	exprfn "github.com/akuity/kargo/internal/expressions/function"
 	"github.com/akuity/kargo/internal/indexer"
@@ -73,19 +72,22 @@ func ReconcilerConfigFromEnv() ReconcilerConfig {
 }
 
 type RegularStageReconciler struct {
-	cfg              ReconcilerConfig
-	client           client.Client
-	eventRecorder    record.EventRecorder
-	directivesEngine directives.Engine
+	cfg           ReconcilerConfig
+	client        client.Client
+	eventRecorder record.EventRecorder
+	healthEngine  health.Engine
 
 	backoffCfg wait.Backoff
 }
 
 // NewRegularStageReconciler creates a new Stages reconciler.
-func NewRegularStageReconciler(cfg ReconcilerConfig, engine directives.Engine) *RegularStageReconciler {
+func NewRegularStageReconciler(
+	cfg ReconcilerConfig,
+	healthEngine health.Engine,
+) *RegularStageReconciler {
 	return &RegularStageReconciler{
-		cfg:              cfg,
-		directivesEngine: engine,
+		cfg:          cfg,
+		healthEngine: healthEngine,
 		backoffCfg: wait.Backoff{
 			Duration: 1 * time.Second,
 			Factor:   2,
@@ -756,7 +758,7 @@ func (r *RegularStageReconciler) assessHealth(ctx context.Context, stage *kargoa
 	}
 
 	// Run the health checks.
-	health := r.directivesEngine.CheckHealth(ctx, stage.Namespace, stage.Name, criteria)
+	health := r.healthEngine.Check(ctx, stage.Namespace, stage.Name, criteria)
 	newStatus.Health = &health
 
 	// Set the Healthy condition based on the health status.

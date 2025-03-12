@@ -10,7 +10,7 @@ type MockChecker struct {
 	// CheckFunc is the function that this Checker should call when Check is
 	// called. If set, this function will be called instead of returning
 	// checkResult.
-	CheckFunc func(context.Context, Input) Result
+	CheckFunc func(context.Context, Criteria) Result
 	// CheckResult is the result that this Checker should return when Check is
 	// called.
 	CheckResult Result
@@ -22,9 +22,9 @@ func (m *MockChecker) Name() string {
 }
 
 // Check implements the Checker interface.
-func (m *MockChecker) Check(ctx context.Context, input Input) Result {
+func (m *MockChecker) Check(ctx context.Context, criteria Criteria) Result {
 	if m.CheckFunc != nil {
-		return m.CheckFunc(ctx, input)
+		return m.CheckFunc(ctx, criteria)
 	}
 	return m.CheckResult
 }

@@ -2,81 +2,81 @@ package builtin
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 
 	securejoin "github.com/cyphar/filepath-securejoin"
 	"github.com/expr-lang/expr"
 	"github.com/xeipuuv/gojsonschema"
+	"sigs.k8s.io/yaml"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
-// jsonParser is an implementation of the PromotionStepRunner interface that
-// parses a JSON file and extracts specified outputs.
-type jsonParser struct {
+// yamlParser is an implementation of the promotion.StepRunner interface that
+// parses a YAML file and extracts specified outputs.
+type yamlParser struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
-// newJSONParser returns a new instance of jsonParser.
-func newJSONParser() promotion.StepRunner {
-	r := &jsonParser{}
+// newYAMLParser returns a new instance of yamlParser.
+func newYAMLParser() promotion.StepRunner {
+	r := &yamlParser{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
-func (jp *jsonParser) Name() string {
-	return "json-parse"
+// Name implements the promotion.StepRunner interface.
+func (yp *yamlParser) Name() string {
+	return "yaml-parse"
 }
 
-func (jp *jsonParser) Run(
+func (yp *yamlParser) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,
 ) (promotion.StepResult, error) {
 	failure := promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}
 
-	if err := jp.validate(stepCtx.Config); err != nil {
+	if err := yp.validate(stepCtx.Config); err != nil {
 		return failure, err
 	}
 
-	cfg, err := promotion.ConfigToStruct[builtin.JSONParseConfig](stepCtx.Config)
+	cfg, err := promotion.ConfigToStruct[builtin.YAMLParseConfig](stepCtx.Config)
 	if err != nil {
-		return failure, fmt.Errorf("could not convert config into %s config: %w", jp.Name(), err)
+		return failure, fmt.Errorf("could not convert config into %s config: %w", yp.Name(), err)
 	}
 
-	return jp.run(ctx, stepCtx, cfg)
+	return yp.run(ctx, stepCtx, cfg)
 }
 
-// validate validates jsonParser configuration against a JSON schema.
-func (jp *jsonParser) validate(cfg promotion.Config) error {
-	return validate(jp.schemaLoader, gojsonschema.NewGoLoader(cfg), jp.Name())
+// validate validates yamlParser configuration against a YAML schema.
+func (yp *yamlParser) validate(cfg promotion.Config) error {
+	return validate(yp.schemaLoader, gojsonschema.NewGoLoader(cfg), yp.Name())
 }
 
-func (jp *jsonParser) run(
+func (yp *yamlParser) run(
 	_ context.Context,
 	stepCtx *promotion.StepContext,
-	cfg builtin.JSONParseConfig,
+	cfg builtin.YAMLParseConfig,
 ) (promotion.StepResult, error) {
 	failure := promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if cfg.Path == "" {
-		return failure, fmt.Errorf("JSON file path cannot be empty")
+		return failure, fmt.Errorf("YAML file path cannot be empty")
 	}
 
 	if len(cfg.Outputs) == 0 {
-		return failure, fmt.Errorf("invalid %s config: outputs is required", jp.Name())
+		return failure, fmt.Errorf("invalid %s config: outputs is required", yp.Name())
 	}
 
-	data, err := jp.readAndParseJSON(stepCtx.WorkDir, cfg.Path)
+	data, err := yp.readAndParseYAML(stepCtx.WorkDir, cfg.Path)
 	if err != nil {
 		return failure, err
 	}
 
-	extractedValues, err := jp.extractValues(data, cfg.Outputs)
+	extractedValues, err := yp.extractValues(data, cfg.Outputs)
 	if err != nil {
 		return failure, fmt.Errorf("failed to extract outputs: %w", err)
 	}
@@ -87,29 +87,33 @@ func (jp *jsonParser) run(
 	}, nil
 }
 
-// readAndParseJSON reads a JSON file and unmarshals it into a map.
-func (jp *jsonParser) readAndParseJSON(workDir string, path string) (map[string]any, error) {
+// readAndParseYAML reads a YAML file and unmarshals it into a map.
+func (yp *yamlParser) readAndParseYAML(workDir string, path string) (map[string]any, error) {
 
 	absFilePath, err := securejoin.SecureJoin(workDir, path)
 	if err != nil {
 		return nil, fmt.Errorf("error joining path %q: %w", path, err)
 	}
 
-	jsonData, err := os.ReadFile(absFilePath)
+	yamlData, err := os.ReadFile(absFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading JSON file %q: %w", absFilePath, err)
+		return nil, fmt.Errorf("error reading YAML file %q: %w", absFilePath, err)
+	}
+
+	if len(yamlData) == 0 {
+		return nil, fmt.Errorf("could not parse empty YAML file: %q", absFilePath)
 	}
 
 	var data map[string]any
-	if err := json.Unmarshal(jsonData, &data); err != nil {
-		return nil, fmt.Errorf("could not parse JSON file: %w", err)
+	if err := yaml.Unmarshal(yamlData, &data); err != nil {
+		return nil, fmt.Errorf("could not parse YAML file: %w", err)
 	}
 
 	return data, nil
 }
 
 // extractValues evaluates JSONPath expressions using expr and returns extracted values.
-func (jp *jsonParser) extractValues(data map[string]any, outputs []builtin.JSONParse) (map[string]any, error) {
+func (yp *yamlParser) extractValues(data map[string]any, outputs []builtin.YAMLParse) (map[string]any, error) {
 	results := make(map[string]any)
 
 	for _, output := range outputs {
