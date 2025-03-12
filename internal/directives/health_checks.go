@@ -13,7 +13,7 @@ type HealthCheckStepRunner interface {
 	Name() string
 	// RunHealthCheckStep executes a health check using the provided
 	// HealthCheckStepContext.
-	RunHealthCheckStep(context.Context, *HealthCheckStepContext) HealthCheckStepResult
+	RunHealthCheckStep(ctx context.Context, stage, project string, config Config) HealthCheckStepResult
 }
 
 // HealthCheckStep describes a single step in a health check process.
@@ -26,18 +26,6 @@ type HealthCheckStep struct {
 	// Config is an opaque map of configuration values to be passed to the
 	// HealthCheckStepRunner executing this step.
 	Config Config
-}
-
-// HealthCheckStepContext is a type that represents the context in which a
-// single HealthCheckStep is executed by a HealthCheckStepRunner.
-type HealthCheckStepContext struct {
-	// Config is the configuration of the step that is currently being
-	// executed.
-	Config Config
-	// Project is the Project that the Stage is associated with.
-	Project string
-	// Stage is the Stage that the health check is targeting.
-	Stage string
 }
 
 // HealthCheckStepResult represents the results of a single HealthCheckStep

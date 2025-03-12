@@ -57,9 +57,11 @@ type compositeError interface {
 // RunHealthCheckStep implements the Directive interface.
 func (a *argocdUpdater) RunHealthCheckStep(
 	ctx context.Context,
-	healthCtx *HealthCheckStepContext,
+	_ string,
+	_ string,
+	config Config,
 ) HealthCheckStepResult {
-	cfg, err := ConfigToStruct[ArgoCDHealthConfig](healthCtx.Config)
+	cfg, err := ConfigToStruct[ArgoCDHealthConfig](config)
 	if err != nil {
 		return HealthCheckStepResult{
 			Status: kargoapi.HealthStateUnknown,

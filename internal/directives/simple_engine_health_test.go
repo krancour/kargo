@@ -87,7 +87,7 @@ func TestSimpleEngine_CheckHealth(t *testing.T) {
 			})
 			testRegistry.register(&mockHealthCheckStepRunner{
 				name: "context-waiter",
-				runFunc: func(ctx context.Context, _ *HealthCheckStepContext) HealthCheckStepResult {
+				runFunc: func(ctx context.Context, _, _ string, _ Config) HealthCheckStepResult {
 					cancel()
 					<-ctx.Done()
 					return HealthCheckStepResult{
@@ -177,7 +177,7 @@ func TestSimpleEngine_executeHealthChecks(t *testing.T) {
 			})
 			testRegistry.register(&mockHealthCheckStepRunner{
 				name: "context-waiter",
-				runFunc: func(ctx context.Context, _ *HealthCheckStepContext) HealthCheckStepResult {
+				runFunc: func(ctx context.Context, _, _ string, _ Config) HealthCheckStepResult {
 					cancel()
 					<-ctx.Done()
 					return HealthCheckStepResult{

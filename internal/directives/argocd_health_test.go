@@ -31,12 +31,10 @@ func Test_argocdUpdater_runHealthCheckStep(t *testing.T) {
 	testCases := []struct {
 		name       string
 		client     client.Client
-		healthCtx  *HealthCheckStepContext
 		assertions func(*testing.T, HealthCheckStepResult)
 	}{
 		{
-			name:      "Argo CD integration disabled",
-			healthCtx: &HealthCheckStepContext{},
+			name: "Argo CD integration disabled",
 			assertions: func(t *testing.T, res HealthCheckStepResult) {
 				require.Equal(t, kargoapi.HealthStateUnknown, res.Status)
 				require.Len(t, res.Issues, 1)
@@ -87,7 +85,6 @@ func Test_argocdUpdater_runHealthCheckStep(t *testing.T) {
 					},
 				).
 				Build(),
-			healthCtx: &HealthCheckStepContext{},
 			assertions: func(t *testing.T, res HealthCheckStepResult) {
 				require.Equal(t, kargoapi.HealthStateUnhealthy, res.Status)
 				require.Contains(t, res.Output, applicationStatusesKey)
@@ -147,7 +144,6 @@ func Test_argocdUpdater_runHealthCheckStep(t *testing.T) {
 					},
 				).
 				Build(),
-			healthCtx: &HealthCheckStepContext{},
 			assertions: func(t *testing.T, res HealthCheckStepResult) {
 				require.Equal(t, kargoapi.HealthStateHealthy, res.Status)
 				require.Contains(t, res.Output, applicationStatusesKey)

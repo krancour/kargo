@@ -87,10 +87,5 @@ func (e *SimpleEngine) executeHealthCheck(
 			},
 		}
 	}
-	stepCtx := &HealthCheckStepContext{
-		Config:  step.Config.DeepCopy(),
-		Project: project,
-		Stage:   stage,
-	}
-	return runner.RunHealthCheckStep(ctx, stepCtx)
+	return runner.RunHealthCheckStep(ctx, project, stage, step.Config.DeepCopy())
 }
