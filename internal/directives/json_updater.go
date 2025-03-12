@@ -11,6 +11,7 @@ import (
 	"github.com/xeipuuv/gojsonschema"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -22,7 +23,7 @@ type jsonUpdater struct {
 
 // newJSONUpdater returns an implementation of the PromotionStepRunner interface
 // that updates the values of specified keys in a JSON file.
-func newJSONUpdater() PromotionStepRunner {
+func newJSONUpdater() promotion.StepRunner {
 	r := &jsonUpdater{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
@@ -34,39 +35,39 @@ func (j *jsonUpdater) Name() string {
 }
 
 // RunPromotionStep implements the PromotionStepRunner interface.
-func (j *jsonUpdater) RunPromotionStep(
+func (j *jsonUpdater) Run(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+	stepCtx *promotion.StepContext,
+) (promotion.StepResult, error) {
+	failure := promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if err := j.validate(stepCtx.Config); err != nil {
 		return failure, err
 	}
 
-	cfg, err := ConfigToStruct[builtin.JSONUpdateConfig](stepCtx.Config)
+	cfg, err := promotion.ConfigToStruct[builtin.JSONUpdateConfig](stepCtx.Config)
 	if err != nil {
 		return failure, fmt.Errorf("could not convert config into %s config: %w", j.Name(), err)
 	}
 
-	return j.runPromotionStep(ctx, stepCtx, cfg)
+	return j.run(ctx, stepCtx, cfg)
 }
 
 // validate validates jsonUpdater configuration against a JSON schema.
-func (j *jsonUpdater) validate(cfg Config) error {
+func (j *jsonUpdater) validate(cfg promotion.Config) error {
 	return validate(j.schemaLoader, gojsonschema.NewGoLoader(cfg), j.Name())
 }
 
-func (j *jsonUpdater) runPromotionStep(
+func (j *jsonUpdater) run(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *promotion.StepContext,
 	cfg builtin.JSONUpdateConfig,
-) (PromotionStepResult, error) {
-	result := PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}
+) (promotion.StepResult, error) {
+	result := promotion.StepResult{Status: kargoapi.PromotionPhaseSucceeded}
 
 	if len(cfg.Updates) > 0 {
 		if err := j.updateFile(stepCtx.WorkDir, cfg.Path, cfg.Updates); err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+			return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 				fmt.Errorf("JSON file update failed: %w", err)
 		}
 

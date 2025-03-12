@@ -11,6 +11,7 @@ import (
 	"github.com/xeipuuv/gojsonschema"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -21,7 +22,7 @@ type jsonParser struct {
 }
 
 // newJSONParser returns a new instance of jsonParser.
-func newJSONParser() PromotionStepRunner {
+func newJSONParser() promotion.StepRunner {
 	r := &jsonParser{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
@@ -32,35 +33,35 @@ func (jp *jsonParser) Name() string {
 	return "json-parse"
 }
 
-func (jp *jsonParser) RunPromotionStep(
+func (jp *jsonParser) Run(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+	stepCtx *promotion.StepContext,
+) (promotion.StepResult, error) {
+	failure := promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if err := jp.validate(stepCtx.Config); err != nil {
 		return failure, err
 	}
 
-	cfg, err := ConfigToStruct[builtin.JSONParseConfig](stepCtx.Config)
+	cfg, err := promotion.ConfigToStruct[builtin.JSONParseConfig](stepCtx.Config)
 	if err != nil {
 		return failure, fmt.Errorf("could not convert config into %s config: %w", jp.Name(), err)
 	}
 
-	return jp.runPromotionStep(ctx, stepCtx, cfg)
+	return jp.run(ctx, stepCtx, cfg)
 }
 
 // validate validates jsonParser configuration against a JSON schema.
-func (jp *jsonParser) validate(cfg Config) error {
+func (jp *jsonParser) validate(cfg promotion.Config) error {
 	return validate(jp.schemaLoader, gojsonschema.NewGoLoader(cfg), jp.Name())
 }
 
-func (jp *jsonParser) runPromotionStep(
+func (jp *jsonParser) run(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *promotion.StepContext,
 	cfg builtin.JSONParseConfig,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+) (promotion.StepResult, error) {
+	failure := promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if cfg.Path == "" {
 		return failure, fmt.Errorf("JSON file path cannot be empty")
@@ -80,7 +81,7 @@ func (jp *jsonParser) runPromotionStep(
 		return failure, fmt.Errorf("failed to extract outputs: %w", err)
 	}
 
-	return PromotionStepResult{
+	return promotion.StepResult{
 		Status: kargoapi.PromotionPhaseSucceeded,
 		Output: extractedValues,
 	}, nil

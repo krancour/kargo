@@ -8,13 +8,14 @@ import (
 	"github.com/xeipuuv/gojsonschema"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
 // outputComposer is an implementation of the PromotionStepRunner interface
 // that allows composing outputs from previous steps into new outputs.
 //
-// It works based on the PromotionStepContext.Config field allowing to an
+// It works based on the promotion.StepContext.Config field allowing to an
 // arbitrary number of key-value pairs to be exported as outputs.
 // Because the values are allowed to be expressions and can contain
 // references to outputs from previous steps, this allows for remapping
@@ -38,7 +39,7 @@ type outputComposer struct {
 
 // newOutputComposer returns an implementation of the PromotionStepRunner
 // interface that composes output from previous steps into new output.
-func newOutputComposer() PromotionStepRunner {
+func newOutputComposer() promotion.StepRunner {
 	r := &outputComposer{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
@@ -50,29 +51,29 @@ func (c *outputComposer) Name() string {
 }
 
 // RunPromotionStep implements the PromotionStepRunner interface.
-func (c *outputComposer) RunPromotionStep(
+func (c *outputComposer) Run(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *promotion.StepContext,
+) (promotion.StepResult, error) {
 	// Validate the configuration against the JSON Schema.
 	if err := validate(c.schemaLoader, gojsonschema.NewGoLoader(stepCtx.Config), c.Name()); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	// Convert the configuration into a typed object.
-	cfg, err := ConfigToStruct[builtin.ComposeOutput](stepCtx.Config)
+	cfg, err := promotion.ConfigToStruct[builtin.ComposeOutput](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into %s config: %w", c.Name(), err)
 	}
 
-	return c.runPromotionStep(cfg)
+	return c.run(cfg)
 }
 
-func (c *outputComposer) runPromotionStep(
+func (c *outputComposer) run(
 	cfg builtin.ComposeOutput,
-) (PromotionStepResult, error) {
-	return PromotionStepResult{
+) (promotion.StepResult, error) {
+	return promotion.StepResult{
 		Status: kargoapi.PromotionPhaseSucceeded,
 		Output: maps.Clone(cfg),
 	}, nil

@@ -16,6 +16,7 @@ import (
 	"github.com/xeipuuv/gojsonschema"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/internal/logging"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
@@ -33,7 +34,7 @@ type httpRequester struct {
 
 // newHTTPRequester returns an implementation of the PromotionStepRunner
 // interface that sends an HTTP request and processes the response.
-func newHTTPRequester() PromotionStepRunner {
+func newHTTPRequester() promotion.StepRunner {
 	r := &httpRequester{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
@@ -44,81 +45,81 @@ func (h *httpRequester) Name() string {
 	return "http"
 }
 
-func (h *httpRequester) RunPromotionStep(
+func (h *httpRequester) Run(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *promotion.StepContext,
+) (promotion.StepResult, error) {
 	if err := h.validate(stepCtx.Config); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
-	cfg, err := ConfigToStruct[builtin.HTTPConfig](stepCtx.Config)
+	cfg, err := promotion.ConfigToStruct[builtin.HTTPConfig](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into http config: %w", err)
 	}
-	return h.runPromotionStep(ctx, stepCtx, cfg)
+	return h.run(ctx, stepCtx, cfg)
 }
 
 // validate validates httpRequester configuration against a JSON schema.
-func (h *httpRequester) validate(cfg Config) error {
+func (h *httpRequester) validate(cfg promotion.Config) error {
 	return validate(h.schemaLoader, gojsonschema.NewGoLoader(cfg), h.Name())
 }
 
-func (h *httpRequester) runPromotionStep(
+func (h *httpRequester) run(
 	ctx context.Context,
-	_ *PromotionStepContext,
+	_ *promotion.StepContext,
 	cfg builtin.HTTPConfig,
-) (PromotionStepResult, error) {
+) (promotion.StepResult, error) {
 	req, err := h.buildRequest(cfg)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error building HTTP request: %w", err)
 	}
 	client, err := h.getClient(cfg)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error creating HTTP client: %w", err)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error sending HTTP request: %w", err)
 	}
 	defer resp.Body.Close()
 	env, err := h.buildExprEnv(ctx, resp)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error building expression context from HTTP response: %w", err)
 	}
 	success, err := h.wasRequestSuccessful(cfg, resp.StatusCode, env)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error evaluating success criteria: %w", err)
 	}
 	failure, err := h.didRequestFail(cfg, resp.StatusCode, env)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error evaluating failure criteria: %w", err)
 	}
 	switch {
 	case success && !failure:
 		outputs, err := h.buildOutputs(cfg.Outputs, env)
 		if err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+			return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 				fmt.Errorf("error extracting outputs from HTTP response: %w", err)
 		}
-		return PromotionStepResult{
+		return promotion.StepResult{
 			Status: kargoapi.PromotionPhaseSucceeded,
 			Output: outputs,
 		}, nil
 	case failure:
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseFailed},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseFailed},
 			&terminalError{err: fmt.Errorf(
 				"HTTP (%d) response met failure criteria",
 				resp.StatusCode,
 			)}
 	default:
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseRunning}, nil
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseRunning}, nil
 	}
 }
 

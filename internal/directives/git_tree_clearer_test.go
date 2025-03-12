@@ -13,25 +13,26 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/git"
+	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
 func Test_gitTreeOverwriter_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           promotion.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "path not specified",
-			config: Config{},
+			config: promotion.Config{},
 			expectedProblems: []string{
 				"(root): path is required",
 			},
 		},
 		{
 			name: "path is empty string",
-			config: Config{
+			config: promotion.Config{
 				"path": "",
 			},
 			expectedProblems: []string{
@@ -107,9 +108,9 @@ func Test_gitTreeOverwriter_runPromotionStep(t *testing.T) {
 	runner, ok := r.(*gitTreeClearer)
 	require.True(t, ok)
 
-	res, err := runner.runPromotionStep(
+	res, err := runner.run(
 		context.Background(),
-		&PromotionStepContext{
+		&promotion.StepContext{
 			Project: "fake-project",
 			Stage:   "fake-stage",
 			WorkDir: workDir,

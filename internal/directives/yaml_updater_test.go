@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/internal/yaml"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
@@ -17,19 +18,19 @@ import (
 func Test_yamlUpdater_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           promotion.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "path is not specified",
-			config: Config{},
+			config: promotion.Config{},
 			expectedProblems: []string{
 				"(root): path is required",
 			},
 		},
 		{
 			name: "path is empty",
-			config: Config{
+			config: promotion.Config{
 				"path": "",
 			},
 			expectedProblems: []string{
@@ -38,15 +39,15 @@ func Test_yamlUpdater_validate(t *testing.T) {
 		},
 		{
 			name:   "updates is null",
-			config: Config{},
+			config: promotion.Config{},
 			expectedProblems: []string{
 				"(root): updates is required",
 			},
 		},
 		{
 			name: "updates is empty",
-			config: Config{
-				"updates": []Config{},
+			config: promotion.Config{
+				"updates": []promotion.Config{},
 			},
 			expectedProblems: []string{
 				"updates: Array must have at least 1 items",
@@ -54,8 +55,8 @@ func Test_yamlUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "key not specified",
-			config: Config{
-				"updates": []Config{{}},
+			config: promotion.Config{
+				"updates": []promotion.Config{{}},
 			},
 			expectedProblems: []string{
 				"updates.0: key is required",
@@ -63,8 +64,8 @@ func Test_yamlUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "key is empty",
-			config: Config{
-				"updates": []Config{{
+			config: promotion.Config{
+				"updates": []promotion.Config{{
 					"key": "",
 				}},
 			},
@@ -74,8 +75,8 @@ func Test_yamlUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "value not specified",
-			config: Config{
-				"updates": []Config{{}},
+			config: promotion.Config{
+				"updates": []promotion.Config{{}},
 			},
 			expectedProblems: []string{
 				"updates.0: value is required",
@@ -83,9 +84,9 @@ func Test_yamlUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "valid config",
-			config: Config{
+			config: promotion.Config{
 				"path": "fake-path",
-				"updates": []Config{
+				"updates": []promotion.Config{
 					{
 						"key":   "fake-key",
 						"value": "fake-value",
@@ -120,14 +121,14 @@ func Test_yamlUpdater_validate(t *testing.T) {
 func Test_yamlUpdater_runPromotionStep(t *testing.T) {
 	tests := []struct {
 		name       string
-		stepCtx    *PromotionStepContext
+		stepCtx    *promotion.StepContext
 		cfg        builtin.YAMLUpdateConfig
 		files      map[string]string
-		assertions func(*testing.T, string, PromotionStepResult, error)
+		assertions func(*testing.T, string, promotion.StepResult, error)
 	}{
 		{
 			name: "successful run with updates",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &promotion.StepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.YAMLUpdateConfig{
@@ -139,9 +140,9 @@ func Test_yamlUpdater_runPromotionStep(t *testing.T) {
 			files: map[string]string{
 				"values.yaml": "image:\n  tag: oldtag\n",
 			},
-			assertions: func(t *testing.T, workDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, workDir string, result promotion.StepResult, err error) {
 				assert.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, promotion.StepResult{
 					Status: kargoapi.PromotionPhaseSucceeded,
 					Output: map[string]any{
 						"commitMessage": "Updated values.yaml\n\n- image.tag: \"fake-tag\"",
@@ -154,7 +155,7 @@ func Test_yamlUpdater_runPromotionStep(t *testing.T) {
 		},
 		{
 			name: "failed to update file",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &promotion.StepContext{
 				Project: "test-project",
 			},
 			cfg: builtin.YAMLUpdateConfig{
@@ -163,9 +164,9 @@ func Test_yamlUpdater_runPromotionStep(t *testing.T) {
 					{Key: "image.tag", Value: "fake-tag"},
 				},
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result promotion.StepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 				assert.Contains(t, err.Error(), "values file update failed")
 			},
 		},
@@ -183,7 +184,7 @@ func Test_yamlUpdater_runPromotionStep(t *testing.T) {
 				require.NoError(t, os.WriteFile(path.Join(stepCtx.WorkDir, p), []byte(c), 0o600))
 			}
 
-			result, err := runner.runPromotionStep(context.Background(), stepCtx, tt.cfg)
+			result, err := runner.run(context.Background(), stepCtx, tt.cfg)
 			tt.assertions(t, stepCtx.WorkDir, result, err)
 		})
 	}

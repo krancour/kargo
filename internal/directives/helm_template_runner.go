@@ -20,6 +20,7 @@ import (
 	"helm.sh/helm/v3/pkg/release"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -39,7 +40,7 @@ type helmTemplateRunner struct {
 
 // newHelmTemplateRunner returns an implementation of the PromotionStepRunner
 // interface that renders a Helm chart.
-func newHelmTemplateRunner() PromotionStepRunner {
+func newHelmTemplateRunner() promotion.StepRunner {
 	r := &helmTemplateRunner{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
@@ -51,11 +52,11 @@ func (h *helmTemplateRunner) Name() string {
 }
 
 // RunPromotionStep implements the PromotionStepRunner interface.
-func (h *helmTemplateRunner) RunPromotionStep(
+func (h *helmTemplateRunner) Run(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+	stepCtx *promotion.StepContext,
+) (promotion.StepResult, error) {
+	failure := promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	// Validate the configuration against the JSON Schema
 	if err := validate(
@@ -67,59 +68,59 @@ func (h *helmTemplateRunner) RunPromotionStep(
 	}
 
 	// Convert the configuration into a typed struct
-	cfg, err := ConfigToStruct[builtin.HelmTemplateConfig](stepCtx.Config)
+	cfg, err := promotion.ConfigToStruct[builtin.HelmTemplateConfig](stepCtx.Config)
 	if err != nil {
 		return failure, fmt.Errorf("could not convert config into %s config: %w", h.Name(), err)
 	}
 
-	return h.runPromotionStep(ctx, stepCtx, cfg)
+	return h.run(ctx, stepCtx, cfg)
 }
 
-func (h *helmTemplateRunner) runPromotionStep(
+func (h *helmTemplateRunner) run(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *promotion.StepContext,
 	cfg builtin.HelmTemplateConfig,
-) (PromotionStepResult, error) {
+) (promotion.StepResult, error) {
 	composedValues, err := h.composeValues(stepCtx.WorkDir, cfg.ValuesFiles)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("failed to compose values: %w", err)
 	}
 
 	chartRequested, err := h.loadChart(stepCtx.WorkDir, cfg.Path)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("failed to load chart from %q: %w", cfg.Path, err)
 	}
 
 	if err = h.checkDependencies(chartRequested); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("missing chart dependencies: %w", err)
 	}
 
 	absOutPath, err := securejoin.SecureJoin(stepCtx.WorkDir, cfg.OutPath)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("failed to join path %q: %w", cfg.OutPath, err)
 	}
 
 	install, err := h.newInstallAction(cfg, stepCtx.Project, absOutPath)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("failed to initialize Helm action config: %w", err)
 	}
 
 	rls, err := install.RunWithContext(ctx, chartRequested, composedValues)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("failed to render chart: %w", err)
 	}
 
 	if err = h.writeOutput(cfg, rls, absOutPath); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("failed to write rendered chart: %w", err)
 	}
-	return PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
+	return promotion.StepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
 }
 
 // composeValues composes the values from the given values files. It merges the

@@ -13,6 +13,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/akuity/kargo/internal/controller/git"
+	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/internal/credentials"
 	"github.com/akuity/kargo/internal/gitprovider"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
@@ -21,19 +22,19 @@ import (
 func Test_gitPROpener_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           promotion.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "repoURL not specified",
-			config: Config{},
+			config: promotion.Config{},
 			expectedProblems: []string{
 				"(root): repoURL is required",
 			},
 		},
 		{
 			name: "repoURL is empty string",
-			config: Config{
+			config: promotion.Config{
 				"repoURL": "",
 			},
 			expectedProblems: []string{
@@ -42,14 +43,14 @@ func Test_gitPROpener_validate(t *testing.T) {
 		},
 		{
 			name:   "targetBranch not specified",
-			config: Config{},
+			config: promotion.Config{},
 			expectedProblems: []string{
 				"(root): targetBranch is required",
 			},
 		},
 		{
 			name: "targetBranch is empty string",
-			config: Config{
+			config: promotion.Config{
 				"targetBranch": "",
 			},
 			expectedProblems: []string{
@@ -58,7 +59,7 @@ func Test_gitPROpener_validate(t *testing.T) {
 		},
 		{
 			name: "sourceBranch is empty string",
-			config: Config{
+			config: promotion.Config{
 				"sourceBranch": "",
 			},
 			expectedProblems: []string{
@@ -67,7 +68,7 @@ func Test_gitPROpener_validate(t *testing.T) {
 		},
 		{
 			name: "provider is an invalid value",
-			config: Config{
+			config: promotion.Config{
 				"provider": "bogus",
 			},
 			expectedProblems: []string{
@@ -76,7 +77,7 @@ func Test_gitPROpener_validate(t *testing.T) {
 		},
 		{
 			name: "valid without explicit provider",
-			config: Config{
+			config: promotion.Config{
 				"repoURL":      "https://github.com/example/repo.git",
 				"sourceBranch": "fake-branch",
 				"targetBranch": "another-fake-branch",
@@ -84,7 +85,7 @@ func Test_gitPROpener_validate(t *testing.T) {
 		},
 		{
 			name: "valid with explicit provider",
-			config: Config{
+			config: promotion.Config{
 				"provider":     "github",
 				"repoURL":      "https://github.com/example/repo.git",
 				"sourceBranch": "fake-branch",
@@ -93,7 +94,7 @@ func Test_gitPROpener_validate(t *testing.T) {
 		},
 		{
 			name: "valid with custom title",
-			config: Config{
+			config: promotion.Config{
 				"provider":     "github",
 				"repoURL":      "https://github.com/example/repo.git",
 				"sourceBranch": "fake-branch",
@@ -187,9 +188,9 @@ func Test_gitPROpener_runPromotionStep(t *testing.T) {
 	runner, ok := r.(*gitPROpener)
 	require.True(t, ok)
 
-	res, err := runner.runPromotionStep(
+	res, err := runner.run(
 		context.Background(),
-		&PromotionStepContext{
+		&promotion.StepContext{
 			Project: "fake-project",
 			Stage:   "fake-stage",
 			WorkDir: workDir,

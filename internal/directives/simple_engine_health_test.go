@@ -8,6 +8,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/health"
+	"github.com/akuity/kargo/internal/controller/promotion"
 )
 
 func TestSimpleEngine_CheckHealth(t *testing.T) {
@@ -75,7 +76,7 @@ func TestSimpleEngine_CheckHealth(t *testing.T) {
 				CheckName: "success-check",
 				CheckResult: health.Result{
 					Status: kargoapi.HealthStateHealthy,
-					Output: State{"test": "success"},
+					Output: promotion.State{"test": "success"},
 				},
 			})
 			testRegistry.register(&health.MockChecker{
@@ -83,7 +84,7 @@ func TestSimpleEngine_CheckHealth(t *testing.T) {
 				CheckResult: health.Result{
 					Status: kargoapi.HealthStateUnhealthy,
 					Issues: []string{"health check failed"},
-					Output: State{"test": "error"},
+					Output: promotion.State{"test": "error"},
 				},
 			})
 			testRegistry.register(&health.MockChecker{
@@ -112,7 +113,7 @@ func TestSimpleEngine_executeHealthChecks(t *testing.T) {
 	tests := []struct {
 		name       string
 		checks     []health.Criteria
-		assertions func(*testing.T, kargoapi.HealthState, []string, []State)
+		assertions func(*testing.T, kargoapi.HealthState, []string, []promotion.State)
 	}{
 		{
 			name: "aggregate multiple healthy checks",
@@ -120,7 +121,7 @@ func TestSimpleEngine_executeHealthChecks(t *testing.T) {
 				{Kind: "success-check"},
 				{Kind: "success-check"},
 			},
-			assertions: func(t *testing.T, status kargoapi.HealthState, issues []string, output []State) {
+			assertions: func(t *testing.T, status kargoapi.HealthState, issues []string, output []promotion.State) {
 				assert.Equal(t, kargoapi.HealthStateHealthy, status)
 				assert.Empty(t, issues)
 				assert.Len(t, output, 2)
@@ -135,7 +136,7 @@ func TestSimpleEngine_executeHealthChecks(t *testing.T) {
 				{Kind: "success-check"},
 				{Kind: "error-check"},
 			},
-			assertions: func(t *testing.T, status kargoapi.HealthState, issues []string, output []State) {
+			assertions: func(t *testing.T, status kargoapi.HealthState, issues []string, output []promotion.State) {
 				assert.Equal(t, kargoapi.HealthStateUnhealthy, status)
 				assert.Contains(t, issues, "health check failed")
 				assert.Len(t, output, 2)
@@ -147,7 +148,7 @@ func TestSimpleEngine_executeHealthChecks(t *testing.T) {
 				{Kind: "context-waiter"},
 				{Kind: "success-check"}, // Should not execute
 			},
-			assertions: func(t *testing.T, status kargoapi.HealthState, issues []string, output []State) {
+			assertions: func(t *testing.T, status kargoapi.HealthState, issues []string, output []promotion.State) {
 				assert.Equal(t, kargoapi.HealthStateUnknown, status)
 				assert.Contains(t, issues, context.Canceled.Error())
 				assert.Empty(t, output)
@@ -165,7 +166,7 @@ func TestSimpleEngine_executeHealthChecks(t *testing.T) {
 				CheckName: "success-check",
 				CheckResult: health.Result{
 					Status: kargoapi.HealthStateHealthy,
-					Output: State{"test": "success"},
+					Output: promotion.State{"test": "success"},
 				},
 			})
 			testRegistry.register(&health.MockChecker{
@@ -173,7 +174,7 @@ func TestSimpleEngine_executeHealthChecks(t *testing.T) {
 				CheckResult: health.Result{
 					Status: kargoapi.HealthStateUnhealthy,
 					Issues: []string{"health check failed"},
-					Output: State{"test": "error"},
+					Output: promotion.State{"test": "error"},
 				},
 			})
 			testRegistry.register(&health.MockChecker{

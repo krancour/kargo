@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/kustomize/kyaml/yaml"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/internal/credentials"
 	"github.com/akuity/kargo/internal/helm"
 	intyaml "github.com/akuity/kargo/internal/yaml"
@@ -31,19 +32,19 @@ import (
 func Test_helmChartUpdater_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           promotion.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "path is not specified",
-			config: Config{},
+			config: promotion.Config{},
 			expectedProblems: []string{
 				"(root): path is required",
 			},
 		},
 		{
 			name: "path is empty",
-			config: Config{
+			config: promotion.Config{
 				"path": "",
 			},
 			expectedProblems: []string{
@@ -52,15 +53,15 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name:   "charts is null",
-			config: Config{},
+			config: promotion.Config{},
 			expectedProblems: []string{
 				"(root): charts is required",
 			},
 		},
 		{
 			name: "charts is empty",
-			config: Config{
-				"charts": []Config{},
+			config: promotion.Config{
+				"charts": []promotion.Config{},
 			},
 			expectedProblems: []string{
 				"charts: Array must have at least 1 items",
@@ -68,8 +69,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "repository not specified",
-			config: Config{
-				"charts": []Config{{}},
+			config: promotion.Config{
+				"charts": []promotion.Config{{}},
 			},
 			expectedProblems: []string{
 				"charts.0: repository is required",
@@ -77,8 +78,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "repository is empty",
-			config: Config{
-				"charts": []Config{{
+			config: promotion.Config{
+				"charts": []promotion.Config{{
 					"repository": "",
 				}},
 			},
@@ -88,8 +89,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "name not specified",
-			config: Config{
-				"charts": []Config{{}},
+			config: promotion.Config{
+				"charts": []promotion.Config{{}},
 			},
 			expectedProblems: []string{
 				"charts.0: name is required",
@@ -97,8 +98,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "name is empty",
-			config: Config{
-				"charts": []Config{{
+			config: promotion.Config{
+				"charts": []promotion.Config{{
 					"name": "",
 				}},
 			},
@@ -108,8 +109,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "version not specified",
-			config: Config{
-				"charts": []Config{{}},
+			config: promotion.Config{
+				"charts": []promotion.Config{{}},
 			},
 			expectedProblems: []string{
 				"charts.0: version is required",
@@ -117,8 +118,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "version is empty",
-			config: Config{
-				"charts": []Config{{
+			config: promotion.Config{
+				"charts": []promotion.Config{{
 					"version": "",
 				}},
 			},
@@ -128,9 +129,9 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "valid kitchen sink",
-			config: Config{
+			config: promotion.Config{
 				"path": "fake-path",
-				"charts": []Config{
+				"charts": []promotion.Config{
 					{
 						"repository": "fake-repository",
 						"name":       "fake-chart",
@@ -162,15 +163,15 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 func Test_helmChartUpdater_runPromotionStep(t *testing.T) {
 	tests := []struct {
 		name            string
-		context         *PromotionStepContext
+		context         *promotion.StepContext
 		cfg             builtin.HelmUpdateChartConfig
 		chartMetadata   *chart.Metadata
 		setupRepository func(t *testing.T) (string, func())
-		assertions      func(*testing.T, string, PromotionStepResult, error)
+		assertions      func(*testing.T, string, promotion.StepResult, error)
 	}{
 		{
 			name: "successful run with HTTP repository",
-			context: &PromotionStepContext{
+			context: &promotion.StepContext{
 				Project: "test-project",
 				Freight: kargoapi.FreightCollection{
 					Freight: map[string]kargoapi.FreightReference{
@@ -224,9 +225,9 @@ func Test_helmChartUpdater_runPromotionStep(t *testing.T) {
 
 				return httpRepository.URL, httpRepository.Close
 			},
-			assertions: func(t *testing.T, tempDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, tempDir string, result promotion.StepResult, err error) {
 				assert.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, promotion.StepResult{
 					Status: kargoapi.PromotionPhaseSucceeded,
 					Output: map[string]any{
 						"commitMessage": `Updated chart dependencies for testchart
@@ -292,7 +293,7 @@ func Test_helmChartUpdater_runPromotionStep(t *testing.T) {
 				require.NoError(t, os.WriteFile(filepath.Join(chartPath, "Chart.yaml"), b, 0o600))
 			}
 
-			result, err := runner.runPromotionStep(context.Background(), stepCtx, tt.cfg)
+			result, err := runner.run(context.Background(), stepCtx, tt.cfg)
 			tt.assertions(t, stepCtx.WorkDir, result, err)
 
 			// Assert that the Helm cache directory was not used
@@ -415,7 +416,7 @@ func Test_helmChartUpdater_updateDependencies(t *testing.T) {
 		// Run the promotion step and assert the dependencies are updated
 		newVersions, err := runner.updateDependencies(
 			context.Background(),
-			&PromotionStepContext{},
+			&promotion.StepContext{},
 			t.TempDir(),
 			chartPath,
 			nil,
@@ -481,7 +482,7 @@ func Test_helmChartUpdater_updateDependencies(t *testing.T) {
 		// Run the promotion step and assert the dependency is updated
 		newVersions, err := runner.updateDependencies(
 			context.Background(),
-			&PromotionStepContext{},
+			&promotion.StepContext{},
 			t.TempDir(),
 			chartPath,
 			[]chartDependency{{
@@ -574,7 +575,7 @@ func Test_helmChartUpdater_updateDependencies(t *testing.T) {
 			runner.credsDB = tt.credentialsDB
 			_, err := runner.updateDependencies(
 				context.Background(),
-				&PromotionStepContext{},
+				&promotion.StepContext{},
 				helmHome,
 				chartPath,
 				tt.chartDependencies,

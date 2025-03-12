@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/kustomize/kyaml/filesys"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -35,7 +36,7 @@ type kustomizeBuilder struct {
 // newKustomizeBuilder returns an implementation of the
 // PromotionStepRunner interface that builds a set of Kubernetes manifests using
 // Kustomize.
-func newKustomizeBuilder() PromotionStepRunner {
+func newKustomizeBuilder() promotion.StepRunner {
 	return &kustomizeBuilder{
 		schemaLoader: getConfigSchemaLoader("kustomize-build"),
 	}
@@ -47,11 +48,11 @@ func (k *kustomizeBuilder) Name() string {
 }
 
 // RunPromotionStep implements the PromotionStepRunner interface.
-func (k *kustomizeBuilder) RunPromotionStep(
+func (k *kustomizeBuilder) Run(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+	stepCtx *promotion.StepContext,
+) (promotion.StepResult, error) {
+	failure := promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	// Validate the configuration against the JSON Schema.
 	if err := validate(k.schemaLoader, gojsonschema.NewGoLoader(stepCtx.Config), k.Name()); err != nil {
@@ -59,44 +60,44 @@ func (k *kustomizeBuilder) RunPromotionStep(
 	}
 
 	// Convert the configuration into a typed object.
-	cfg, err := ConfigToStruct[builtin.KustomizeBuildConfig](stepCtx.Config)
+	cfg, err := promotion.ConfigToStruct[builtin.KustomizeBuildConfig](stepCtx.Config)
 	if err != nil {
 		return failure, fmt.Errorf("could not convert config into %s config: %w", k.Name(), err)
 	}
 
-	return k.runPromotionStep(stepCtx, cfg)
+	return k.run(stepCtx, cfg)
 }
 
-func (k *kustomizeBuilder) runPromotionStep(
-	stepCtx *PromotionStepContext,
+func (k *kustomizeBuilder) run(
+	stepCtx *promotion.StepContext,
 	cfg builtin.KustomizeBuildConfig,
-) (PromotionStepResult, error) {
+) (promotion.StepResult, error) {
 	// Create a "chrooted" filesystem for the kustomize build.
 	fs, err := securefs.MakeFsOnDiskSecureBuild(stepCtx.WorkDir)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	// Build the manifests.
 	rm, err := kustomizeBuild(fs, filepath.Join(stepCtx.WorkDir, cfg.Path), cfg.Plugin)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	// Prepare the output path.
 	outPath, err := securejoin.SecureJoin(stepCtx.WorkDir, cfg.OutPath)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	// Write the built manifests to the output path.
 	if err := k.writeResult(rm, outPath); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 			"failed to write built manifests to %q: %w", cfg.OutPath,
 			sanitizePathError(err, stepCtx.WorkDir),
 		)
 	}
-	return PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
+	return promotion.StepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
 }
 
 func (k *kustomizeBuilder) writeResult(rm resmap.ResMap, outPath string) error {

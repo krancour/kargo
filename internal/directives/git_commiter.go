@@ -9,6 +9,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/git"
+	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -23,7 +24,7 @@ type gitCommitter struct {
 
 // newGitCommitter returns an implementation of the PromotionStepRunner
 // interface that makes a commit to a local Git repository.
-func newGitCommitter() PromotionStepRunner {
+func newGitCommitter() promotion.StepRunner {
 	r := &gitCommitter{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
@@ -35,56 +36,56 @@ func (g *gitCommitter) Name() string {
 }
 
 // RunPromotionStep implements the PromotionStepRunner interface.
-func (g *gitCommitter) RunPromotionStep(
+func (g *gitCommitter) Run(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *promotion.StepContext,
+) (promotion.StepResult, error) {
 	if err := g.validate(stepCtx.Config); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
-	cfg, err := ConfigToStruct[builtin.GitCommitConfig](stepCtx.Config)
+	cfg, err := promotion.ConfigToStruct[builtin.GitCommitConfig](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into %s config: %w", g.Name(), err)
 	}
-	return g.runPromotionStep(ctx, stepCtx, cfg)
+	return g.run(ctx, stepCtx, cfg)
 }
 
 // validate validates gitCommitter configuration against a JSON schema.
-func (g *gitCommitter) validate(cfg Config) error {
+func (g *gitCommitter) validate(cfg promotion.Config) error {
 	return validate(g.schemaLoader, gojsonschema.NewGoLoader(cfg), g.Name())
 }
 
-func (g *gitCommitter) runPromotionStep(
+func (g *gitCommitter) run(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *promotion.StepContext,
 	cfg builtin.GitCommitConfig,
-) (PromotionStepResult, error) {
+) (promotion.StepResult, error) {
 	path, err := securejoin.SecureJoin(stepCtx.WorkDir, cfg.Path)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 			"error joining path %s with work dir %s: %w",
 			cfg.Path, stepCtx.WorkDir, err,
 		)
 	}
 	workTree, err := git.LoadWorkTree(path, nil)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error loading working tree from %s: %w", cfg.Path, err)
 	}
 	if err = workTree.AddAll(); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error adding all changes to working tree: %w", err)
 	}
 	hasDiffs, err := workTree.HasDiffs()
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error checking for diffs in working tree: %w", err)
 	}
 	if hasDiffs {
 		var commitMsg string
 		if commitMsg, err = g.buildCommitMessage(stepCtx.SharedState, cfg); err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+			return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 				fmt.Errorf("error building commit message: %w", err)
 		}
 		commitOpts := &git.CommitOptions{}
@@ -98,23 +99,23 @@ func (g *gitCommitter) runPromotionStep(
 			}
 		}
 		if err = workTree.Commit(commitMsg, commitOpts); err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+			return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 				fmt.Errorf("error committing to working tree: %w", err)
 		}
 	}
 	commitID, err := workTree.LastCommitID()
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error getting last commit ID: %w", err)
 	}
-	return PromotionStepResult{
+	return promotion.StepResult{
 		Status: kargoapi.PromotionPhaseSucceeded,
 		Output: map[string]any{stateKeyCommit: commitID},
 	}, nil
 }
 
 func (g *gitCommitter) buildCommitMessage(
-	sharedState State,
+	sharedState promotion.State,
 	cfg builtin.GitCommitConfig,
 ) (string, error) {
 	var commitMsg string

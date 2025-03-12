@@ -11,6 +11,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -21,7 +22,7 @@ type yamlParser struct {
 }
 
 // newYAMLParser returns a new instance of yamlParser.
-func newYAMLParser() PromotionStepRunner {
+func newYAMLParser() promotion.StepRunner {
 	r := &yamlParser{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
@@ -32,35 +33,35 @@ func (yp *yamlParser) Name() string {
 	return "yaml-parse"
 }
 
-func (yp *yamlParser) RunPromotionStep(
+func (yp *yamlParser) Run(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+	stepCtx *promotion.StepContext,
+) (promotion.StepResult, error) {
+	failure := promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if err := yp.validate(stepCtx.Config); err != nil {
 		return failure, err
 	}
 
-	cfg, err := ConfigToStruct[builtin.YAMLParseConfig](stepCtx.Config)
+	cfg, err := promotion.ConfigToStruct[builtin.YAMLParseConfig](stepCtx.Config)
 	if err != nil {
 		return failure, fmt.Errorf("could not convert config into %s config: %w", yp.Name(), err)
 	}
 
-	return yp.runPromotionStep(ctx, stepCtx, cfg)
+	return yp.run(ctx, stepCtx, cfg)
 }
 
 // validate validates yamlParser configuration against a YAML schema.
-func (yp *yamlParser) validate(cfg Config) error {
+func (yp *yamlParser) validate(cfg promotion.Config) error {
 	return validate(yp.schemaLoader, gojsonschema.NewGoLoader(cfg), yp.Name())
 }
 
-func (yp *yamlParser) runPromotionStep(
+func (yp *yamlParser) run(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *promotion.StepContext,
 	cfg builtin.YAMLParseConfig,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+) (promotion.StepResult, error) {
+	failure := promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if cfg.Path == "" {
 		return failure, fmt.Errorf("YAML file path cannot be empty")
@@ -80,7 +81,7 @@ func (yp *yamlParser) runPromotionStep(
 		return failure, fmt.Errorf("failed to extract outputs: %w", err)
 	}
 
-	return PromotionStepResult{
+	return promotion.StepResult{
 		Status: kargoapi.PromotionPhaseSucceeded,
 		Output: extractedValues,
 	}, nil

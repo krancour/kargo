@@ -9,6 +9,7 @@ import (
 	"github.com/xeipuuv/gojsonschema"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/promotion"
 	intyaml "github.com/akuity/kargo/internal/yaml"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
@@ -21,7 +22,7 @@ type yamlUpdater struct {
 
 // newYAMLUpdater returns an implementation of the PromotionStepRunner interface
 // that updates the values of specified keys in a YAML file.
-func newYAMLUpdater() PromotionStepRunner {
+func newYAMLUpdater() promotion.StepRunner {
 	r := &yamlUpdater{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
@@ -33,35 +34,35 @@ func (y *yamlUpdater) Name() string {
 }
 
 // RunPromotionStep implements the PromotionStepRunner interface.
-func (y *yamlUpdater) RunPromotionStep(
+func (y *yamlUpdater) Run(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+	stepCtx *promotion.StepContext,
+) (promotion.StepResult, error) {
+	failure := promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if err := y.validate(stepCtx.Config); err != nil {
 		return failure, err
 	}
 
 	// Convert the configuration into a typed struct
-	cfg, err := ConfigToStruct[builtin.YAMLUpdateConfig](stepCtx.Config)
+	cfg, err := promotion.ConfigToStruct[builtin.YAMLUpdateConfig](stepCtx.Config)
 	if err != nil {
 		return failure, fmt.Errorf("could not convert config into %s config: %w", y.Name(), err)
 	}
 
-	return y.runPromotionStep(ctx, stepCtx, cfg)
+	return y.run(ctx, stepCtx, cfg)
 }
 
 // validate validates yamlImageUpdater configuration against a JSON schema.
-func (y *yamlUpdater) validate(cfg Config) error {
+func (y *yamlUpdater) validate(cfg promotion.Config) error {
 	return validate(y.schemaLoader, gojsonschema.NewGoLoader(cfg), y.Name())
 }
 
-func (y *yamlUpdater) runPromotionStep(
+func (y *yamlUpdater) run(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *promotion.StepContext,
 	cfg builtin.YAMLUpdateConfig,
-) (PromotionStepResult, error) {
+) (promotion.StepResult, error) {
 	updates := make([]intyaml.Update, len(cfg.Updates))
 	for i, update := range cfg.Updates {
 		updates[i] = intyaml.Update{
@@ -70,10 +71,10 @@ func (y *yamlUpdater) runPromotionStep(
 		}
 	}
 
-	result := PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}
+	result := promotion.StepResult{Status: kargoapi.PromotionPhaseSucceeded}
 	if len(updates) > 0 {
 		if err := y.updateFile(stepCtx.WorkDir, cfg.Path, updates); err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+			return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 				fmt.Errorf("values file update failed: %w", err)
 		}
 

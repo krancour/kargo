@@ -12,6 +12,7 @@ import (
 	"github.com/xeipuuv/gojsonschema"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
@@ -23,7 +24,7 @@ type fileDeleter struct {
 
 // newFileDeleter returns an implementation of the PromotionStepRunner interface
 // that deletes a file or directory.
-func newFileDeleter() PromotionStepRunner {
+func newFileDeleter() promotion.StepRunner {
 	r := &fileDeleter{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
@@ -35,50 +36,50 @@ func (f *fileDeleter) Name() string {
 }
 
 // RunPromotionStep implements the PromotionStepRunner interface.
-func (f *fileDeleter) RunPromotionStep(
+func (f *fileDeleter) Run(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *promotion.StepContext,
+) (promotion.StepResult, error) {
 	// Validate the configuration against the JSON Schema.
 	if err := validate(f.schemaLoader, gojsonschema.NewGoLoader(stepCtx.Config), f.Name()); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	// Convert the configuration into a typed object.
-	cfg, err := ConfigToStruct[builtin.DeleteConfig](stepCtx.Config)
+	cfg, err := promotion.ConfigToStruct[builtin.DeleteConfig](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into %s config: %w", f.Name(), err)
 	}
 
-	return f.runPromotionStep(ctx, stepCtx, cfg)
+	return f.run(ctx, stepCtx, cfg)
 }
 
-func (f *fileDeleter) runPromotionStep(
+func (f *fileDeleter) run(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *promotion.StepContext,
 	cfg builtin.DeleteConfig,
-) (PromotionStepResult, error) {
+) (promotion.StepResult, error) {
 	absPath, err := f.resolveAbsPath(stepCtx.WorkDir, cfg.Path)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not secure join path %q: %w", cfg.Path, err)
 	}
 
 	symlink, err := f.isSymlink(absPath)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	if symlink {
 		if f.ignoreNotExist(cfg.Strict, os.Remove(absPath)) != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+			return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored}, err
 		}
 	} else {
 		// Secure join the paths to prevent path traversal.
 		pathToDelete, err := securejoin.SecureJoin(stepCtx.WorkDir, cfg.Path)
 		if err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+			return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 				fmt.Errorf("could not secure join path %q: %w", cfg.Path, err)
 		}
 
@@ -86,12 +87,12 @@ func (f *fileDeleter) runPromotionStep(
 			cfg.Strict,
 			removePath(pathToDelete),
 		); err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+			return promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
 				fmt.Errorf("failed to delete %q: %w", cfg.Path, sanitizePathError(err, stepCtx.WorkDir))
 		}
 	}
 
-	return PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
+	return promotion.StepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
 }
 
 // isSymlink checks if a path is a symlink.

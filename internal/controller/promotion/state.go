@@ -1,4 +1,4 @@
-package directives
+package promotion
 
 import (
 	"encoding/json"
@@ -6,9 +6,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// State is a type that represents shared state between executions of
-// PromotionSteps. It is not safe for concurrent use at present, as we expect
-// PromotionSteps to be executed sequentially.
+// State is a type that represents state shared by Steps in a user-defined
+// promotion process. It is not safe for concurrent use at present, as we expect
+// Steps to be executed sequentially.
 type State map[string]any
 
 // Set stores a value in the shared state.

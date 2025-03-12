@@ -14,6 +14,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/health"
+	"github.com/akuity/kargo/internal/controller/promotion"
 )
 
 // Promote implements the Engine interface.
@@ -55,7 +56,7 @@ func (e *SimpleEngine) executeSteps(
 	// run.
 	state := promoCtx.State.DeepCopy()
 	if state == nil {
-		state = make(State)
+		state = make(promotion.State)
 	}
 
 	var (
@@ -293,36 +294,36 @@ func (e *SimpleEngine) executeStep(
 	ctx context.Context,
 	promoCtx PromotionContext,
 	step PromotionStep,
-	runner PromotionStepRunner,
+	runner promotion.StepRunner,
 	workDir string,
-	state State,
-) (PromotionStepResult, error) {
+	state promotion.State,
+) (promotion.StepResult, error) {
 	stepCtx, err := e.preparePromotionStepContext(ctx, promoCtx, step, workDir, state)
 	if err != nil {
 		// TODO(krancour): We're not yet distinguishing between retryable and
 		// non-retryable errors. When we start to do this, failure to prepare the
 		// step context (likely due to invalid configuration) should be considered
 		// non-retryable.
-		return PromotionStepResult{
+		return promotion.StepResult{
 			Status: kargoapi.PromotionPhaseErrored,
 		}, err
 	}
 
-	result, err := runner.RunPromotionStep(ctx, stepCtx)
+	result, err := runner.Run(ctx, stepCtx)
 	if err != nil {
 		err = fmt.Errorf("failed to run step %q: %w", step.Kind, err)
 	}
 	return result, err
 }
 
-// preparePromotionStepContext prepares a PromotionStepContext for a PromotionStep.
+// preparePromotionStepContext prepares a promotion.StepContext for a PromotionStep.
 func (e *SimpleEngine) preparePromotionStepContext(
 	ctx context.Context,
 	promoCtx PromotionContext,
 	step PromotionStep,
 	workDir string,
-	state State,
-) (*PromotionStepContext, error) {
+	state promotion.State,
+) (*promotion.StepContext, error) {
 	stateCopy := state.DeepCopy()
 
 	stepCfg, err := step.GetConfig(ctx, e.kargoClient, promoCtx, stateCopy)
@@ -330,7 +331,7 @@ func (e *SimpleEngine) preparePromotionStepContext(
 		return nil, fmt.Errorf("failed to get step config: %w", err)
 	}
 
-	return &PromotionStepContext{
+	return &promotion.StepContext{
 		UIBaseURL:       promoCtx.UIBaseURL,
 		WorkDir:         workDir,
 		SharedState:     stateCopy,

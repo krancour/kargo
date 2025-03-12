@@ -25,6 +25,7 @@ import (
 	"github.com/akuity/kargo/internal/api"
 	"github.com/akuity/kargo/internal/controller"
 	argocd "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/internal/directives"
 	"github.com/akuity/kargo/internal/event"
 	"github.com/akuity/kargo/internal/indexer"
@@ -488,7 +489,7 @@ func (r *reconciler) promote(
 		Freight:               *workingPromo.Status.FreightCollection.DeepCopy(),
 		StartFromStep:         promo.Status.CurrentStep,
 		StepExecutionMetadata: promo.Status.StepExecutionMetadata,
-		State:                 directives.State(workingPromo.Status.GetState()),
+		State:                 promotion.State(workingPromo.Status.GetState()),
 		Vars:                  workingPromo.Spec.Vars,
 	}
 	if err := os.Mkdir(promoCtx.WorkDir, 0o700); err == nil {

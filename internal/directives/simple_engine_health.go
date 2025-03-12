@@ -9,6 +9,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/health"
+	"github.com/akuity/kargo/internal/controller/promotion"
 )
 
 // CheckHealth implements the Engine interface.
@@ -44,11 +45,11 @@ func (e *SimpleEngine) executeHealthChecks(
 	project string,
 	stage string,
 	checks []health.Criteria,
-) (kargoapi.HealthState, []string, []State) {
+) (kargoapi.HealthState, []string, []promotion.State) {
 	var (
 		aggregatedStatus = kargoapi.HealthStateHealthy
 		aggregatedIssues []string
-		aggregatedOutput = make([]State, 0, len(checks))
+		aggregatedOutput = make([]promotion.State, 0, len(checks))
 	)
 
 	for _, check := range checks {

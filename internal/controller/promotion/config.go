@@ -1,4 +1,4 @@
-package directives
+package promotion
 
 import (
 	"encoding/json"
@@ -6,10 +6,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// Config is an opaque map of configuration values for both PromotionSteps and
-// HealthChecks. The keys and values are arbitrary and implementations of
-// PromotionStepRunner and HealthCheckRunner are responsible for interpreting
-// them.
+// Config is an opaque map of configuration values for a Step. The keys and
+// values are arbitrary and implementations of StepRunner are responsible for
+// interpreting them.
 type Config map[string]any
 
 // DeepCopy returns a deep copy of the configuration.

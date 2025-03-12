@@ -4,6 +4,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/akuity/kargo/internal/controller/health"
+	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/internal/credentials"
 )
 
@@ -65,12 +66,12 @@ func (s stepRunnerRegistry) register(runner NamedRunner) {
 // with the given name, if no runner is registered with the given name or the
 // runner with the given name does not implement PromotionStepRunner, nil is
 // returned.
-func (s stepRunnerRegistry) getPromotionStepRunner(name string) PromotionStepRunner {
+func (s stepRunnerRegistry) getPromotionStepRunner(name string) promotion.StepRunner {
 	runner, ok := s[name]
 	if !ok {
 		return nil
 	}
-	promoStepRunner, ok := runner.(PromotionStepRunner)
+	promoStepRunner, ok := runner.(promotion.StepRunner)
 	if !ok {
 		return nil
 	}
