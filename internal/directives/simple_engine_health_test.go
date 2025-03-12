@@ -12,7 +12,6 @@ import (
 func TestSimpleEngine_CheckHealth(t *testing.T) {
 	tests := []struct {
 		name       string
-		healthCtx  HealthCheckContext
 		steps      []HealthCheckStep
 		assertions func(*testing.T, kargoapi.Health)
 	}{
@@ -102,7 +101,7 @@ func TestSimpleEngine_CheckHealth(t *testing.T) {
 				registry: testRegistry,
 			}
 
-			health := engine.CheckHealth(ctx, tt.healthCtx, tt.steps)
+			health := engine.CheckHealth(ctx, "fake-project", "fake-stage", tt.steps)
 			tt.assertions(t, health)
 		})
 	}
@@ -111,7 +110,6 @@ func TestSimpleEngine_CheckHealth(t *testing.T) {
 func TestSimpleEngine_executeHealthChecks(t *testing.T) {
 	tests := []struct {
 		name       string
-		healthCtx  HealthCheckContext
 		steps      []HealthCheckStep
 		assertions func(*testing.T, kargoapi.HealthState, []string, []State)
 	}{
@@ -193,7 +191,7 @@ func TestSimpleEngine_executeHealthChecks(t *testing.T) {
 				registry: testRegistry,
 			}
 
-			status, issues, output := engine.executeHealthChecks(ctx, tt.healthCtx, tt.steps)
+			status, issues, output := engine.executeHealthChecks(ctx, "fake-project", "fake-stage", tt.steps)
 			tt.assertions(t, status, issues, output)
 		})
 	}
@@ -202,7 +200,6 @@ func TestSimpleEngine_executeHealthChecks(t *testing.T) {
 func TestSimpleEngine_executeHealthCheck(t *testing.T) {
 	tests := []struct {
 		name       string
-		healthCtx  HealthCheckContext
 		step       HealthCheckStep
 		assertions func(*testing.T, HealthCheckStepResult)
 	}{
@@ -239,24 +236,8 @@ func TestSimpleEngine_executeHealthCheck(t *testing.T) {
 				registry: testRegistry,
 			}
 
-			result := engine.executeHealthCheck(context.Background(), tt.healthCtx, tt.step)
+			result := engine.executeHealthCheck(context.Background(), "fake-project", "fake-stage", tt.step)
 			tt.assertions(t, result)
 		})
 	}
-}
-
-func TestSimpleEngine_prepareHealthCheckStepContext(t *testing.T) {
-	healthCtx := HealthCheckContext{
-		Project: "test-project",
-		Stage:   "test-stage",
-	}
-	step := HealthCheckStep{
-		Config: map[string]any{
-			"key": "value",
-		},
-	}
-	ctx := (&SimpleEngine{}).prepareHealthCheckStepContext(healthCtx, step)
-	assert.Equal(t, "test-project", ctx.Project)
-	assert.Equal(t, "test-stage", ctx.Stage)
-	assert.NotNil(t, ctx.Config)
 }

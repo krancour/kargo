@@ -14,5 +14,5 @@ type Engine interface {
 	Promote(context.Context, PromotionContext, []PromotionStep) (PromotionResult, error)
 	// CheckHealth executes the provided list of HealthCheckSteps in sequence and
 	// and returns a HealthCheckResult that aggregates the results of all steps.
-	CheckHealth(context.Context, HealthCheckContext, []HealthCheckStep) kargoapi.Health
+	CheckHealth(ctx context.Context, project, stage string, step []HealthCheckStep) kargoapi.Health
 }

@@ -16,15 +16,6 @@ type HealthCheckStepRunner interface {
 	RunHealthCheckStep(context.Context, *HealthCheckStepContext) HealthCheckStepResult
 }
 
-// HealthCheckContext is the context of a health check process that is executed
-// by the Engine.
-type HealthCheckContext struct {
-	// Project is the Project that the Stage is associated with.
-	Project string
-	// Stage is the Stage that the health check is targeting.
-	Stage string
-}
-
 // HealthCheckStep describes a single step in a health check process.
 // HealthCheckSteps are executed in sequence by the Engine, which delegates the
 // execution of each step to a HealthCheckStepRunner.

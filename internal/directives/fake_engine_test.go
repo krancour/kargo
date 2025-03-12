@@ -47,30 +47,30 @@ func TestFakeEngine_Promote(t *testing.T) {
 func TestFakeEngine_CheckHealth(t *testing.T) {
 	t.Run("without function injection", func(t *testing.T) {
 		engine := &FakeEngine{}
-		res := engine.CheckHealth(context.Background(), HealthCheckContext{}, nil)
+		res := engine.CheckHealth(context.Background(), "fake-project", "fake-stage", nil)
 		assert.Equal(t, kargoapi.HealthStateHealthy, res.Status)
 	})
 
 	t.Run("with function injection", func(t *testing.T) {
 		ctx := context.Background()
-		healthCtx := HealthCheckContext{
-			Stage: "foo",
-		}
+		const testProject = "fake-project"
+		const testStage = "fake-stage"
 		steps := []HealthCheckStep{{Kind: "mock"}}
-
 		engine := &FakeEngine{
 			CheckHealthFn: func(
 				givenCtx context.Context,
-				givenHealthCtx HealthCheckContext,
+				givenProject string,
+				givenStage string,
 				givenSteps []HealthCheckStep,
 			) kargoapi.Health {
 				assert.Equal(t, ctx, givenCtx)
-				assert.Equal(t, healthCtx, givenHealthCtx)
+				assert.Equal(t, testProject, givenProject)
+				assert.Equal(t, testStage, givenStage)
 				assert.Equal(t, steps, givenSteps)
 				return kargoapi.Health{Status: kargoapi.HealthStateUnhealthy}
 			},
 		}
-		res := engine.CheckHealth(ctx, healthCtx, steps)
+		res := engine.CheckHealth(ctx, testProject, testStage, steps)
 		assert.Equal(t, kargoapi.HealthStateUnhealthy, res.Status)
 	})
 }

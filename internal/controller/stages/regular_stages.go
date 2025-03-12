@@ -755,10 +755,7 @@ func (r *RegularStageReconciler) assessHealth(ctx context.Context, stage *kargoa
 	}
 
 	// Run the health checks.
-	health := r.directivesEngine.CheckHealth(ctx, directives.HealthCheckContext{
-		Project: stage.Namespace,
-		Stage:   stage.Name,
-	}, steps)
+	health := r.directivesEngine.CheckHealth(ctx, stage.Namespace, stage.Name, steps)
 	newStatus.Health = &health
 
 	// Set the Healthy condition based on the health status.

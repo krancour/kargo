@@ -13,10 +13,11 @@ import (
 // CheckHealth implements the Engine interface.
 func (e *SimpleEngine) CheckHealth(
 	ctx context.Context,
-	healthCtx HealthCheckContext,
+	project string,
+	stage string,
 	steps []HealthCheckStep,
 ) kargoapi.Health {
-	status, issues, output := e.executeHealthChecks(ctx, healthCtx, steps)
+	status, issues, output := e.executeHealthChecks(ctx, project, stage, steps)
 	if len(output) == 0 {
 		return kargoapi.Health{
 			Status: status,
@@ -39,7 +40,8 @@ func (e *SimpleEngine) CheckHealth(
 // executeHealthChecks executes a list of HealthCheckSteps in sequence.
 func (e *SimpleEngine) executeHealthChecks(
 	ctx context.Context,
-	healthCtx HealthCheckContext,
+	project string,
+	stage string,
 	steps []HealthCheckStep,
 ) (kargoapi.HealthState, []string, []State) {
 	var (
@@ -57,7 +59,7 @@ func (e *SimpleEngine) executeHealthChecks(
 		default:
 		}
 
-		result := e.executeHealthCheck(ctx, healthCtx, step)
+		result := e.executeHealthCheck(ctx, project, stage, step)
 		aggregatedStatus = aggregatedStatus.Merge(result.Status)
 		aggregatedIssues = append(aggregatedIssues, result.Issues...)
 
@@ -72,7 +74,8 @@ func (e *SimpleEngine) executeHealthChecks(
 // executeHealthCheck executes a single HealthCheckStep.
 func (e *SimpleEngine) executeHealthCheck(
 	ctx context.Context,
-	healthCtx HealthCheckContext,
+	project string,
+	stage string,
 	step HealthCheckStep,
 ) HealthCheckStepResult {
 	runner := e.registry.getHealthCheckStepRunner(step.Kind)
@@ -84,19 +87,10 @@ func (e *SimpleEngine) executeHealthCheck(
 			},
 		}
 	}
-	stepCtx := e.prepareHealthCheckStepContext(healthCtx, step)
-	return runner.RunHealthCheckStep(ctx, stepCtx)
-}
-
-// prepareHealthCheckStepContext prepares a HealthCheckStepContext for a HealthCheckStep.
-func (e *SimpleEngine) prepareHealthCheckStepContext(
-	healthCtx HealthCheckContext,
-	step HealthCheckStep,
-) *HealthCheckStepContext {
 	stepCtx := &HealthCheckStepContext{
 		Config:  step.Config.DeepCopy(),
-		Project: healthCtx.Project,
-		Stage:   healthCtx.Stage,
+		Project: project,
+		Stage:   stage,
 	}
-	return stepCtx
+	return runner.RunHealthCheckStep(ctx, stepCtx)
 }

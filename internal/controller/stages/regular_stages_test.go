@@ -1394,7 +1394,7 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 	tests := []struct {
 		name          string
 		stage         *kargoapi.Stage
-		checkHealthFn func(context.Context, directives.HealthCheckContext, []directives.HealthCheckStep) kargoapi.Health
+		checkHealthFn func(ctx context.Context, project, stage string, steps []directives.HealthCheckStep) kargoapi.Health
 		assertions    func(*testing.T, kargoapi.StageStatus)
 	}{
 		{
@@ -1494,7 +1494,8 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 			},
 			checkHealthFn: func(
 				context.Context,
-				directives.HealthCheckContext,
+				string,
+				string,
 				[]directives.HealthCheckStep,
 			) kargoapi.Health {
 				return kargoapi.Health{Status: kargoapi.HealthStateHealthy}
@@ -1532,7 +1533,8 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 			},
 			checkHealthFn: func(
 				context.Context,
-				directives.HealthCheckContext,
+				string,
+				string,
 				[]directives.HealthCheckStep,
 			) kargoapi.Health {
 				return kargoapi.Health{
@@ -1577,7 +1579,8 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 			},
 			checkHealthFn: func(
 				context.Context,
-				directives.HealthCheckContext,
+				string,
+				string,
 				[]directives.HealthCheckStep,
 			) kargoapi.Health {
 				return kargoapi.Health{Status: kargoapi.HealthStateNotApplicable}
@@ -1613,7 +1616,8 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 			},
 			checkHealthFn: func(
 				context.Context,
-				directives.HealthCheckContext,
+				string,
+				string,
 				[]directives.HealthCheckStep,
 			) kargoapi.Health {
 				return kargoapi.Health{Status: kargoapi.HealthStateUnknown}
