@@ -15,9 +15,9 @@ func (e *SimpleEngine) CheckHealth(
 	ctx context.Context,
 	project string,
 	stage string,
-	steps []HealthCheckStep,
+	checks []HealthCheck,
 ) kargoapi.Health {
-	status, issues, output := e.executeHealthChecks(ctx, project, stage, steps)
+	status, issues, output := e.executeHealthChecks(ctx, project, stage, checks)
 	if len(output) == 0 {
 		return kargoapi.Health{
 			Status: status,
@@ -37,20 +37,20 @@ func (e *SimpleEngine) CheckHealth(
 	}
 }
 
-// executeHealthChecks executes a list of HealthCheckSteps in sequence.
+// executeHealthChecks executes a list of HealthChecks in sequence.
 func (e *SimpleEngine) executeHealthChecks(
 	ctx context.Context,
 	project string,
 	stage string,
-	steps []HealthCheckStep,
+	checks []HealthCheck,
 ) (kargoapi.HealthState, []string, []State) {
 	var (
 		aggregatedStatus = kargoapi.HealthStateHealthy
 		aggregatedIssues []string
-		aggregatedOutput = make([]State, 0, len(steps))
+		aggregatedOutput = make([]State, 0, len(checks))
 	)
 
-	for _, step := range steps {
+	for _, step := range checks {
 		select {
 		case <-ctx.Done():
 			aggregatedStatus = aggregatedStatus.Merge(kargoapi.HealthStateUnknown)
@@ -71,21 +71,21 @@ func (e *SimpleEngine) executeHealthChecks(
 	return aggregatedStatus, aggregatedIssues, aggregatedOutput
 }
 
-// executeHealthCheck executes a single HealthCheckStep.
+// executeHealthCheck executes a single HealthCheck.
 func (e *SimpleEngine) executeHealthCheck(
 	ctx context.Context,
 	project string,
 	stage string,
-	step HealthCheckStep,
-) HealthCheckStepResult {
-	runner := e.registry.getHealthCheckStepRunner(step.Kind)
+	check HealthCheck,
+) HealthCheckResult {
+	runner := e.registry.getHealthCheckRunner(check.Kind)
 	if runner == nil {
-		return HealthCheckStepResult{
+		return HealthCheckResult{
 			Status: kargoapi.HealthStateUnknown,
 			Issues: []string{
-				fmt.Sprintf("no promotion step runner registered for step kind %q", step.Kind),
+				fmt.Sprintf("no promotion step runner registered for step kind %q", check.Kind),
 			},
 		}
 	}
-	return runner.RunHealthCheckStep(ctx, project, stage, step.Config.DeepCopy())
+	return runner.Check(ctx, project, stage, check.Config.DeepCopy())
 }

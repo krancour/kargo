@@ -2,34 +2,34 @@ package directives
 
 import "context"
 
-// mockHealthCheckStepRunner is a mock implementation of the
-// HealthCheckStepRunner interface, which can be used for testing.
-type mockHealthCheckStepRunner struct {
-	// name is the name of the HealthCheckStepRunner.
+// mockHealthCheckRunner is a mock implementation of the HealthCheckRunner
+// interface, which can be used for testing.
+type mockHealthCheckRunner struct {
+	// name is the name of the HealthCheckRunner.
 	name string
-	// runFunc is the function that the step should call when
-	// RunHealthCheckStep is called. If set, this function will be called instead
-	// of returning healthResult.
-	runFunc func(ctx context.Context, project, stage string, config Config) HealthCheckStepResult
-	// runResult is the result that the HealthCheckStepRunner should return when
-	// RunHealthCheckStep is called.
-	runResult HealthCheckStepResult
+	// checkFunc is the function that this runner should call when Check is
+	// called. If set, this function will be called instead of returning
+	// checkResult.
+	checkFunc func(ctx context.Context, project, stage string, config Config) HealthCheckResult
+	// checkResult is the result that this runner should return when Check is
+	// called.
+	checkResult HealthCheckResult
 }
 
-// Name implements the HealthCheckStepRunner interface.
-func (m *mockHealthCheckStepRunner) Name() string {
+// Name implements the NamedRunner interface.
+func (m *mockHealthCheckRunner) Name() string {
 	return m.name
 }
 
-// RunHealthCheckStep implements the HealthCheckStepRunner interface.
-func (m *mockHealthCheckStepRunner) RunHealthCheckStep(
+// Check implements the HealthCheckRunner interface.
+func (m *mockHealthCheckRunner) Check(
 	ctx context.Context,
 	project,
 	stage string,
 	config Config,
-) HealthCheckStepResult {
-	if m.runFunc != nil {
-		return m.runFunc(ctx, project, stage, config)
+) HealthCheckResult {
+	if m.checkFunc != nil {
+		return m.checkFunc(ctx, project, stage, config)
 	}
-	return m.runResult
+	return m.checkResult
 }

@@ -516,7 +516,7 @@ func (r *reconciler) promote(
 	workingPromo.Status.CurrentStep = res.CurrentStep
 	workingPromo.Status.StepExecutionMetadata = res.StepExecutionMetadata
 	workingPromo.Status.State = &apiextensionsv1.JSON{Raw: res.State.ToJSON()}
-	for _, step := range res.HealthCheckSteps {
+	for _, step := range res.HealthChecks {
 		workingPromo.Status.HealthChecks = append(
 			workingPromo.Status.HealthChecks,
 			kargoapi.HealthCheckStep{

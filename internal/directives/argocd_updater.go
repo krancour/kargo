@@ -84,8 +84,8 @@ type argocdUpdater struct {
 }
 
 // newArgocdUpdater returns a implementation of the PromotionStepRunner and
-// HealthCheckStepRunner interfaces that updates Argo CD Application resources
-// and monitors their health.
+// HealthCheckRunner interfaces that updates Argo CD Application resources and
+// monitors their health.
 func newArgocdUpdater(argocdClient client.Client) *argocdUpdater {
 	r := &argocdUpdater{
 		argocdClient: argocdClient,
@@ -265,7 +265,7 @@ func (a *argocdUpdater) runPromotionStep(
 
 	return PromotionStepResult{
 		Status: aggregatedStatus,
-		HealthCheckStep: &HealthCheckStep{
+		HealthCheck: &HealthCheck{
 			Kind: a.Name(),
 			Config: Config{
 				"apps": appHealthChecks,

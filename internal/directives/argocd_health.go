@@ -54,16 +54,16 @@ type compositeError interface {
 	Unwrap() []error
 }
 
-// RunHealthCheckStep implements the Directive interface.
-func (a *argocdUpdater) RunHealthCheckStep(
+// Check implements the HealthCheckRunner interface.
+func (a *argocdUpdater) Check(
 	ctx context.Context,
 	_ string,
 	_ string,
 	config Config,
-) HealthCheckStepResult {
+) HealthCheckResult {
 	cfg, err := ConfigToStruct[ArgoCDHealthConfig](config)
 	if err != nil {
-		return HealthCheckStepResult{
+		return HealthCheckResult{
 			Status: kargoapi.HealthStateUnknown,
 			Issues: []string{
 				fmt.Sprintf(
@@ -73,15 +73,15 @@ func (a *argocdUpdater) RunHealthCheckStep(
 			},
 		}
 	}
-	return a.runHealthCheckStep(ctx, cfg)
+	return a.runHealthCheck(ctx, cfg)
 }
 
-func (a *argocdUpdater) runHealthCheckStep(
+func (a *argocdUpdater) runHealthCheck(
 	ctx context.Context,
 	healthCfg ArgoCDHealthConfig,
-) HealthCheckStepResult {
+) HealthCheckResult {
 	if a.argocdClient == nil {
-		return HealthCheckStepResult{
+		return HealthCheckResult{
 			Status: kargoapi.HealthStateUnknown,
 			Issues: []string{
 				"Argo CD integration is disabled on this controller; cannot assess " +
@@ -89,7 +89,7 @@ func (a *argocdUpdater) runHealthCheckStep(
 			},
 		}
 	}
-	health := HealthCheckStepResult{
+	health := HealthCheckResult{
 		Status: kargoapi.HealthStateHealthy,
 		Issues: make([]string, 0),
 	}

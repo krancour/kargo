@@ -58,7 +58,7 @@ func (e *SimpleEngine) executeSteps(
 	}
 
 	var (
-		healthChecks  []HealthCheckStep
+		healthChecks  []HealthCheck
 		err           error
 		stepExecMetas = promoCtx.StepExecutionMetadata.DeepCopy()
 	)
@@ -73,7 +73,7 @@ func (e *SimpleEngine) executeSteps(
 				CurrentStep:           i,
 				StepExecutionMetadata: stepExecMetas,
 				State:                 state,
-				HealthCheckSteps:      healthChecks,
+				HealthChecks:          healthChecks,
 			}, ctx.Err()
 		default:
 		}
@@ -87,7 +87,7 @@ func (e *SimpleEngine) executeSteps(
 				CurrentStep:           i,
 				StepExecutionMetadata: stepExecMetas,
 				State:                 state,
-				HealthCheckSteps:      healthChecks,
+				HealthChecks:          healthChecks,
 			}, fmt.Errorf("error getting step alias for step %d: %w", i, err)
 		}
 
@@ -99,7 +99,7 @@ func (e *SimpleEngine) executeSteps(
 				CurrentStep:           i,
 				StepExecutionMetadata: stepExecMetas,
 				State:                 state,
-				HealthCheckSteps:      healthChecks,
+				HealthChecks:          healthChecks,
 			}, fmt.Errorf("no promotion step runner found for kind %d", i)
 		}
 
@@ -119,7 +119,7 @@ func (e *SimpleEngine) executeSteps(
 				CurrentStep:           i,
 				StepExecutionMetadata: stepExecMetas,
 				State:                 state,
-				HealthCheckSteps:      healthChecks,
+				HealthChecks:          healthChecks,
 			}, fmt.Errorf("error checking if step %d should be skipped: %w", i, err)
 		} else if skip {
 			// TODO(hidde): We should probably set the status to skipped here,
@@ -165,7 +165,7 @@ func (e *SimpleEngine) executeSteps(
 				CurrentStep:           i,
 				StepExecutionMetadata: stepExecMetas,
 				State:                 state,
-				HealthCheckSteps:      healthChecks,
+				HealthChecks:          healthChecks,
 			}, fmt.Errorf("step %d returned an invalid status", i)
 		}
 
@@ -198,7 +198,7 @@ func (e *SimpleEngine) executeSteps(
 		case stepExecMeta.Status == kargoapi.PromotionPhaseSucceeded:
 			// Best case scenario: The step succeeded.
 			stepExecMeta.FinishedAt = ptr.To(metav1.Now())
-			if healthCheck := result.HealthCheckStep; healthCheck != nil {
+			if healthCheck := result.HealthCheck; healthCheck != nil {
 				healthChecks = append(healthChecks, *healthCheck)
 			}
 			continue // Move on to the next step
@@ -210,7 +210,7 @@ func (e *SimpleEngine) executeSteps(
 				CurrentStep:           i,
 				StepExecutionMetadata: stepExecMetas,
 				State:                 state,
-				HealthCheckSteps:      healthChecks,
+				HealthChecks:          healthChecks,
 			}, fmt.Errorf("an unrecoverable error occurred: %w", err)
 		case err != nil:
 			// If we get to here, the error is POTENTIALLY recoverable.
@@ -225,7 +225,7 @@ func (e *SimpleEngine) executeSteps(
 						CurrentStep:           i,
 						StepExecutionMetadata: stepExecMetas,
 						State:                 state,
-						HealthCheckSteps:      healthChecks,
+						HealthChecks:          healthChecks,
 					}, fmt.Errorf(
 						"step %d met error threshold of %d: %s", i,
 						errorThreshold, stepExecMeta.Message,
@@ -247,7 +247,7 @@ func (e *SimpleEngine) executeSteps(
 				CurrentStep:           i,
 				StepExecutionMetadata: stepExecMetas,
 				State:                 state,
-				HealthCheckSteps:      healthChecks,
+				HealthChecks:          healthChecks,
 			}, fmt.Errorf("step %d timeout of %s has elapsed", i, timeout.String())
 		}
 
@@ -261,7 +261,7 @@ func (e *SimpleEngine) executeSteps(
 				CurrentStep:           i,
 				StepExecutionMetadata: stepExecMetas,
 				State:                 state,
-				HealthCheckSteps:      healthChecks,
+				HealthChecks:          healthChecks,
 			}, nil
 		}
 
@@ -273,7 +273,7 @@ func (e *SimpleEngine) executeSteps(
 			CurrentStep:           i,
 			StepExecutionMetadata: stepExecMetas,
 			State:                 state,
-			HealthCheckSteps:      healthChecks,
+			HealthChecks:          healthChecks,
 		}, nil
 	}
 
@@ -283,7 +283,7 @@ func (e *SimpleEngine) executeSteps(
 		CurrentStep:           int64(len(steps)) - 1,
 		StepExecutionMetadata: stepExecMetas,
 		State:                 state,
-		HealthCheckSteps:      healthChecks,
+		HealthChecks:          healthChecks,
 	}, nil
 }
 

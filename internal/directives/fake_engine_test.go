@@ -55,22 +55,22 @@ func TestFakeEngine_CheckHealth(t *testing.T) {
 		ctx := context.Background()
 		const testProject = "fake-project"
 		const testStage = "fake-stage"
-		steps := []HealthCheckStep{{Kind: "mock"}}
+		checks := []HealthCheck{{Kind: "mock"}}
 		engine := &FakeEngine{
 			CheckHealthFn: func(
 				givenCtx context.Context,
 				givenProject string,
 				givenStage string,
-				givenSteps []HealthCheckStep,
+				givenChecks []HealthCheck,
 			) kargoapi.Health {
 				assert.Equal(t, ctx, givenCtx)
 				assert.Equal(t, testProject, givenProject)
 				assert.Equal(t, testStage, givenStage)
-				assert.Equal(t, steps, givenSteps)
+				assert.Equal(t, checks, givenChecks)
 				return kargoapi.Health{Status: kargoapi.HealthStateUnhealthy}
 			},
 		}
-		res := engine.CheckHealth(ctx, testProject, testStage, steps)
+		res := engine.CheckHealth(ctx, testProject, testStage, checks)
 		assert.Equal(t, kargoapi.HealthStateUnhealthy, res.Status)
 	})
 }

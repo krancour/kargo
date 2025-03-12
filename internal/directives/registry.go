@@ -46,7 +46,7 @@ func Register(runner NamedRunner) {
 	runnerReg.register(runner)
 }
 
-// runnerReg is a registry of PromotionStepRunner and HealthCheckStepRunner
+// runnerReg is a registry of PromotionStepRunner and HealthCheckRunner
 // implementations.
 var runnerReg = stepRunnerRegistry{}
 
@@ -76,17 +76,16 @@ func (s stepRunnerRegistry) getPromotionStepRunner(name string) PromotionStepRun
 	return promoStepRunner
 }
 
-// GetHealthCheckStepRunnerRegistration returns the HealthStepRunnerRegistration
-// for the health check step with the given name, or an error if no such
-// HealthCheckStepRunner is registered.
-func (s stepRunnerRegistry) getHealthCheckStepRunner(name string) HealthCheckStepRunner {
+// getHealthCheckRunner returns the HealthCheckRunner for the health check with
+// the given name, or an error if no such HealthCheckRunner is registered.
+func (s stepRunnerRegistry) getHealthCheckRunner(name string) HealthCheckRunner {
 	runner, ok := s[name]
 	if !ok {
 		return nil
 	}
-	healthCheckStepRunner, ok := runner.(HealthCheckStepRunner)
+	healthCheckRunner, ok := runner.(HealthCheckRunner)
 	if !ok {
 		return nil
 	}
-	return healthCheckStepRunner
+	return healthCheckRunner
 }

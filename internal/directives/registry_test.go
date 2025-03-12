@@ -43,17 +43,17 @@ func TestStepRunnerRegistry_getPromotionStepRunner(t *testing.T) {
 	})
 }
 
-func TestStepRunnerRegistry_getHealthCheckStepRunner(t *testing.T) {
+func TestStepRunnerRegistry_getHealthCheckRunner(t *testing.T) {
 	t.Run("registration exists", func(t *testing.T) {
 		registry := stepRunnerRegistry{}
-		runner := &mockHealthCheckStepRunner{}
+		runner := &mockHealthCheckRunner{}
 		registry.register(runner)
-		r := registry.getHealthCheckStepRunner(runner.Name())
+		r := registry.getHealthCheckRunner(runner.Name())
 		assert.Same(t, r, runner)
 	})
 
 	t.Run("registration does not exist", func(t *testing.T) {
-		runner := stepRunnerRegistry{}.getHealthCheckStepRunner("nonexistent")
+		runner := stepRunnerRegistry{}.getHealthCheckRunner("nonexistent")
 		assert.Nil(t, runner)
 	})
 }

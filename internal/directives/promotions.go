@@ -339,11 +339,11 @@ type PromotionResult struct {
 	// Message is an optional message that provides additional context about the
 	// outcome of the user-defined promotion executed by the Engine.
 	Message string
-	// HealthCheckSteps collects health check configuration returned from the
+	// HealthChecks collects health check configuration returned from the
 	// execution of individual PromotionSteps by their corresponding
 	// PromotionStepRunners. This configuration can later be used as input to
-	// health check processes.
-	HealthCheckSteps []HealthCheckStep
+	// a HealthCheckRunner.
+	HealthChecks []HealthCheck
 	// If the promotion process remains in-progress, perhaps waiting for a change
 	// in some external state, the value of this field will indicate where to
 	// resume the process in the next reconciliation.
@@ -414,10 +414,10 @@ type PromotionStepResult struct {
 	// PromotionStepRunner. The Engine will update shared state with this output,
 	// making it available to subsequent steps.
 	Output map[string]any
-	// HealthCheckStep is health check opaque configuration optionally returned by
-	// a PromotionStepRunner's successful execution of a PromotionStep. This
-	// configuration can later be used as input to health check processes.
-	HealthCheckStep *HealthCheckStep
+	// HealthCheck is health check with opaque configuration optionally returned
+	// by a PromotionStepRunner's successful execution of a PromotionStep. This
+	// configuration can later be used as input to a HealthCheckRunner.
+	HealthCheck *HealthCheck
 }
 
 // getTaskOutputs returns the outputs of a task that are relevant to the current

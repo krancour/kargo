@@ -20,7 +20,7 @@ import (
 	argocd "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
 )
 
-func Test_argocdUpdater_runHealthCheckStep(t *testing.T) {
+func Test_argocdUpdater_runHealthCheck(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, argocd.AddToScheme(scheme))
 
@@ -31,11 +31,11 @@ func Test_argocdUpdater_runHealthCheckStep(t *testing.T) {
 	testCases := []struct {
 		name       string
 		client     client.Client
-		assertions func(*testing.T, HealthCheckStepResult)
+		assertions func(*testing.T, HealthCheckResult)
 	}{
 		{
 			name: "Argo CD integration disabled",
-			assertions: func(t *testing.T, res HealthCheckStepResult) {
+			assertions: func(t *testing.T, res HealthCheckResult) {
 				require.Equal(t, kargoapi.HealthStateUnknown, res.Status)
 				require.Len(t, res.Issues, 1)
 				require.Contains(t, res.Issues[0], "Argo CD integration is disabled")
@@ -85,7 +85,7 @@ func Test_argocdUpdater_runHealthCheckStep(t *testing.T) {
 					},
 				).
 				Build(),
-			assertions: func(t *testing.T, res HealthCheckStepResult) {
+			assertions: func(t *testing.T, res HealthCheckResult) {
 				require.Equal(t, kargoapi.HealthStateUnhealthy, res.Status)
 				require.Contains(t, res.Output, applicationStatusesKey)
 				require.Len(t, res.Issues, 2)
@@ -144,7 +144,7 @@ func Test_argocdUpdater_runHealthCheckStep(t *testing.T) {
 					},
 				).
 				Build(),
-			assertions: func(t *testing.T, res HealthCheckStepResult) {
+			assertions: func(t *testing.T, res HealthCheckResult) {
 				require.Equal(t, kargoapi.HealthStateHealthy, res.Status)
 				require.Contains(t, res.Output, applicationStatusesKey)
 				require.Empty(t, res.Issues)
@@ -159,7 +159,7 @@ func Test_argocdUpdater_runHealthCheckStep(t *testing.T) {
 			}
 			testCase.assertions(
 				t,
-				runner.runHealthCheckStep(
+				runner.runHealthCheck(
 					context.Background(),
 					ArgoCDHealthConfig{
 						Apps: []ArgoCDAppHealthCheck{

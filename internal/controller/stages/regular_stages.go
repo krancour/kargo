@@ -746,9 +746,9 @@ func (r *RegularStageReconciler) assessHealth(ctx context.Context, stage *kargoa
 
 	// Compose the health check steps.
 	healthChecks := lastPromo.Status.HealthChecks
-	var steps []directives.HealthCheckStep
+	var steps []directives.HealthCheck
 	for _, step := range healthChecks {
-		steps = append(steps, directives.HealthCheckStep{
+		steps = append(steps, directives.HealthCheck{
 			Kind:   step.Uses,
 			Config: step.GetConfig(),
 		})
