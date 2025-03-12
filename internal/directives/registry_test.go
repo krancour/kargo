@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/akuity/kargo/internal/controller/health"
 	"github.com/akuity/kargo/internal/controller/promotion"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestStepRunnerRegistry_register(t *testing.T) {

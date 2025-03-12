@@ -145,7 +145,7 @@ func (e *SimpleEngine) executeSteps(
 		// inflated from tasks, we need to apply a special treatment to the output
 		// to allow it to become available under the alias of the "task".
 		aliasNamespace := getAliasNamespace(step.Alias)
-		if aliasNamespace != "" && runner.Name() == (&outputComposer{}).Name() {
+		if aliasNamespace != "" && runner.Name() == "compose-output" {
 			if state[aliasNamespace] == nil {
 				state[aliasNamespace] = make(map[string]any)
 			}
@@ -204,7 +204,7 @@ func (e *SimpleEngine) executeSteps(
 				healthChecks = append(healthChecks, *healthCheck)
 			}
 			continue // Move on to the next step
-		case isTerminal(err):
+		case promotion.IsTerminal(err):
 			// This is an unrecoverable error.
 			stepExecMeta.FinishedAt = ptr.To(metav1.Now())
 			return PromotionResult{

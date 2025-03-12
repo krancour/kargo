@@ -1,41 +1,9 @@
 package directives
 
 import (
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/akuity/kargo/internal/controller/health"
 	"github.com/akuity/kargo/internal/controller/promotion"
-	"github.com/akuity/kargo/internal/credentials"
 )
-
-// InitializeBuiltins registers all built-in step runners with the package's
-// internal step runner registry.
-func InitializeBuiltins(kargoClient, argocdClient client.Client, credsDB credentials.Database) {
-	builtIns := []NamedRunner{
-		newArgocdUpdater(argocdClient),
-		newHelmChartUpdater(credsDB),
-		newFileCopier(),
-		newFileDeleter(),
-		newGitCloner(credsDB),
-		newGitCommitter(),
-		newGitPROpener(credsDB),
-		newGitPRWaiter(credsDB),
-		newGitPusher(credsDB),
-		newGitTreeClearer(),
-		newHelmTemplateRunner(),
-		newHTTPRequester(),
-		newJSONParser(),
-		newJSONUpdater(),
-		newKustomizeBuilder(),
-		newKustomizeImageSetter(kargoClient),
-		newOutputComposer(),
-		newYAMLParser(),
-		newYAMLUpdater(),
-	}
-	for _, builtIn := range builtIns {
-		Register(builtIn)
-	}
-}
 
 // NamedRunner is an interface for runners that can self-report their name.
 type NamedRunner interface {

@@ -454,7 +454,7 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 			testRegistry.register(&promotion.MockStepRunner{
 				RunnerName: "terminal-error-step",
 				RunResult:  promotion.StepResult{Status: kargoapi.PromotionPhaseErrored},
-				RunErr:     &terminalError{err: errors.New("something went wrong")},
+				RunErr:     &promotion.TerminalError{Err: errors.New("something went wrong")},
 			})
 			testRegistry.register(&promotion.MockStepRunner{
 				RunnerName: "context-waiter",
@@ -521,7 +521,14 @@ func TestSimpleEngine_executeStep(t *testing.T) {
 				kargoClient: fake.NewClientBuilder().Build(),
 			}
 
-			result, err := engine.executeStep(context.Background(), tt.promoCtx, tt.step, tt.runner, t.TempDir(), make(promotion.State))
+			result, err := engine.executeStep(
+				context.Background(),
+				tt.promoCtx,
+				tt.step,
+				tt.runner,
+				t.TempDir(),
+				make(promotion.State),
+			)
 			tt.assertions(t, result, err)
 		})
 	}

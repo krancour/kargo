@@ -21,6 +21,7 @@ import (
 	libargocd "github.com/akuity/kargo/internal/argocd"
 	"github.com/akuity/kargo/internal/controller"
 	argocd "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
+	"github.com/akuity/kargo/internal/controller/promotion/builtin"
 	"github.com/akuity/kargo/internal/controller/promotions"
 	"github.com/akuity/kargo/internal/controller/stages"
 	"github.com/akuity/kargo/internal/controller/warehouses"
@@ -316,7 +317,7 @@ func (o *controllerOptions) setupReconcilers(
 		argoCDClient = argocdMgr.GetClient()
 	}
 
-	directives.InitializeBuiltins(kargoMgr.GetClient(), argoCDClient, credentialsDB)
+	builtin.Initialize(kargoMgr.GetClient(), argoCDClient, credentialsDB)
 	directivesEngine := directives.NewSimpleEngine(kargoMgr.GetClient())
 
 	sharedIndexer := indexer.NewSharedFieldIndexer(kargoMgr.GetFieldIndexer())
