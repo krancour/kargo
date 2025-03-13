@@ -757,17 +757,17 @@ func (r *RegularStageReconciler) assessHealth(ctx context.Context, stage *kargoa
 		})
 	}
 
-	// Run the health checks.
-	health := r.healthEngine.Check(ctx, stage.Namespace, stage.Name, criteria)
-	newStatus.Health = &health
+	// Run the hlth checks.
+	hlth := r.healthEngine.Check(ctx, stage.Namespace, stage.Name, criteria)
+	newStatus.Health = &hlth
 
 	// Set the Healthy condition based on the health status.
-	switch health.Status {
+	switch hlth.Status {
 	case kargoapi.HealthStateHealthy:
 		conditions.Set(&newStatus, &metav1.Condition{
 			Type:               kargoapi.ConditionTypeHealthy,
 			Status:             metav1.ConditionTrue,
-			Reason:             string(health.Status),
+			Reason:             string(hlth.Status),
 			Message:            fmt.Sprintf("Stage is healthy (performed %d health checks)", len(healthChecks)),
 			ObservedGeneration: stage.Generation,
 		})
@@ -775,10 +775,10 @@ func (r *RegularStageReconciler) assessHealth(ctx context.Context, stage *kargoa
 		conditions.Set(&newStatus, &metav1.Condition{
 			Type:   kargoapi.ConditionTypeHealthy,
 			Status: metav1.ConditionFalse,
-			Reason: string(health.Status),
+			Reason: string(hlth.Status),
 			Message: fmt.Sprintf(
 				"Stage is unhealthy (%d issues in %d health checks)",
-				len(health.Issues), len(healthChecks),
+				len(hlth.Issues), len(healthChecks),
 			),
 			ObservedGeneration: stage.Generation,
 		})
@@ -786,7 +786,7 @@ func (r *RegularStageReconciler) assessHealth(ctx context.Context, stage *kargoa
 		conditions.Set(&newStatus, &metav1.Condition{
 			Type:               kargoapi.ConditionTypeHealthy,
 			Status:             metav1.ConditionUnknown,
-			Reason:             string(health.Status),
+			Reason:             string(hlth.Status),
 			ObservedGeneration: stage.Generation,
 		})
 	}

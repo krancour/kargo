@@ -23,7 +23,7 @@ import (
 	"github.com/akuity/kargo/internal/git"
 	"github.com/akuity/kargo/internal/kubeclient"
 	"github.com/akuity/kargo/internal/logging"
-	"github.com/akuity/kargo/pkg/x/directive/builtin"
+	"github.com/akuity/kargo/pkg/x/promotion/runners/builtin"
 )
 
 const (

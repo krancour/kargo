@@ -10,7 +10,7 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/git"
 	"github.com/akuity/kargo/internal/controller/promotion"
-	"github.com/akuity/kargo/pkg/x/directive/builtin"
+	"github.com/akuity/kargo/pkg/x/promotion/runners/builtin"
 )
 
 // stateKeyCommit is the key used to store the commit ID in the shared State.

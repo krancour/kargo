@@ -18,7 +18,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/promotion"
-	"github.com/akuity/kargo/pkg/x/directive/builtin"
+	"github.com/akuity/kargo/pkg/x/promotion/runners/builtin"
 )
 
 // kustomizeRenderMutex is a mutex that ensures only one kustomize build is

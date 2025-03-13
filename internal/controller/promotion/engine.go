@@ -17,9 +17,9 @@ import (
 	"github.com/akuity/kargo/internal/controller/health"
 )
 
-// reservedStepAliasRegex is a regular expression that matches step aliases that
+// ReservedStepAliasRegex is a regular expression that matches step aliases that
 // are reserved for internal use.
-var reservedStepAliasRegex = regexp.MustCompile(`^(step|task)-\d+$`)
+var ReservedStepAliasRegex = regexp.MustCompile(`^(step|task)-\d+$`)
 
 // Engine is an interface for executing a sequence of promotion steps.
 type Engine interface {
@@ -379,7 +379,7 @@ func (e *simpleEngine) stepAlias(alias string, index int64) (string, error) {
 		// A webhook enforces this regex as well, but we're checking here to
 		// account for the possibility of EXISTING Stages with a promotionTemplate
 		// containing a step with a now-reserved alias.
-		if reservedStepAliasRegex.MatchString(alias) {
+		if ReservedStepAliasRegex.MatchString(alias) {
 			return "", fmt.Errorf("step alias %q is forbidden", alias)
 		}
 		return alias, nil

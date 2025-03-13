@@ -19,7 +19,7 @@ import (
 	argocd "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/internal/kubeclient"
-	"github.com/akuity/kargo/pkg/x/directive/builtin"
+	"github.com/akuity/kargo/pkg/x/promotion/runners/builtin"
 )
 
 func Test_newArgocdUpdater(t *testing.T) {

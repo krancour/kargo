@@ -26,7 +26,7 @@ import (
 	"github.com/akuity/kargo/internal/credentials"
 	"github.com/akuity/kargo/internal/helm"
 	intyaml "github.com/akuity/kargo/internal/yaml"
-	"github.com/akuity/kargo/pkg/x/directive/builtin"
+	"github.com/akuity/kargo/pkg/x/promotion/runners/builtin"
 )
 
 func Test_helmChartUpdater_validate(t *testing.T) {

@@ -1623,7 +1623,7 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 			r := &RegularStageReconciler{
 				client: c,
 				healthEngine: &health.FakeEngine{
-					CheckHealthFn: tt.checkHealthFn,
+					CheckFn: tt.checkHealthFn,
 				},
 			}
 

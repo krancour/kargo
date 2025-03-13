@@ -22,7 +22,7 @@ import (
 	"github.com/akuity/kargo/internal/controller/freight"
 	"github.com/akuity/kargo/internal/controller/promotion"
 	intyaml "github.com/akuity/kargo/internal/yaml"
-	"github.com/akuity/kargo/pkg/x/directive/builtin"
+	"github.com/akuity/kargo/pkg/x/promotion/runners/builtin"
 )
 
 // preserveSeparator is the separator used to preserve values in the

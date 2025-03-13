@@ -26,7 +26,6 @@ import (
 	"github.com/akuity/kargo/internal/controller"
 	argocd "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/promotion"
-	"github.com/akuity/kargo/internal/directives"
 	"github.com/akuity/kargo/internal/event"
 	"github.com/akuity/kargo/internal/indexer"
 	"github.com/akuity/kargo/internal/kargo"
@@ -95,7 +94,7 @@ func SetupReconcilerWithManager(
 	ctx context.Context,
 	kargoMgr manager.Manager,
 	argocdMgr manager.Manager,
-	directivesEngine promotion.Engine,
+	promoEngine promotion.Engine,
 	cfg ReconcilerConfig,
 ) error {
 	// Index running Promotions by Argo CD Applications
@@ -111,7 +110,7 @@ func SetupReconcilerWithManager(
 	reconciler := newReconciler(
 		kargoMgr.GetClient(),
 		libEvent.NewRecorder(ctx, kargoMgr.GetScheme(), kargoMgr.GetClient(), cfg.Name()),
-		directivesEngine,
+		promoEngine,
 		cfg,
 	)
 
@@ -172,12 +171,12 @@ func SetupReconcilerWithManager(
 func newReconciler(
 	kargoClient client.Client,
 	recorder record.EventRecorder,
-	directivesEngine promotion.Engine,
+	promoEngine promotion.Engine,
 	cfg ReconcilerConfig,
 ) *reconciler {
 	r := &reconciler{
 		kargoClient: kargoClient,
-		promoEngine: directivesEngine,
+		promoEngine: promoEngine,
 		recorder:    recorder,
 		cfg:         cfg,
 	}
@@ -467,9 +466,9 @@ func (r *reconciler) promote(
 	)
 
 	// Prepare promotion steps and vars for the promotion execution engine.
-	steps := make([]directives.PromotionStep, len(workingPromo.Spec.Steps))
+	steps := make([]promotion.Step, len(workingPromo.Spec.Steps))
 	for i, step := range workingPromo.Spec.Steps {
-		steps[i] = directives.PromotionStep{
+		steps[i] = promotion.Step{
 			Kind:   step.Uses,
 			Alias:  step.As,
 			If:     step.If,
@@ -479,7 +478,7 @@ func (r *reconciler) promote(
 		}
 	}
 
-	promoCtx := directives.PromotionContext{
+	promoCtx := promotion.Context{
 		UIBaseURL:             r.cfg.APIServerBaseURL,
 		WorkDir:               filepath.Join(os.TempDir(), "promotion-"+string(workingPromo.UID)),
 		Project:               stageNamespace,

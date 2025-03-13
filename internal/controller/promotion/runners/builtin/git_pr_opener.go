@@ -14,7 +14,7 @@ import (
 	"github.com/akuity/kargo/internal/controller/promotion"
 	"github.com/akuity/kargo/internal/credentials"
 	"github.com/akuity/kargo/internal/gitprovider"
-	"github.com/akuity/kargo/pkg/x/directive/builtin"
+	"github.com/akuity/kargo/pkg/x/promotion/runners/builtin"
 
 	_ "github.com/akuity/kargo/internal/gitprovider/azure"  // Azure provider registration
 	_ "github.com/akuity/kargo/internal/gitprovider/gitea"  // Gitea provider registration

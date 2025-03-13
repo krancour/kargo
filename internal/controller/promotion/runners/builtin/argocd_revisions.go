@@ -2,7 +2,7 @@ package builtin
 
 import (
 	argocd "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
-	"github.com/akuity/kargo/pkg/x/directive/builtin"
+	"github.com/akuity/kargo/pkg/x/promotion/runners/builtin"
 )
 
 // getDesiredRevisions returns the desired revisions for all sources of the given

@@ -28,7 +28,7 @@ import (
 	"github.com/akuity/kargo/internal/helm"
 	"github.com/akuity/kargo/internal/logging"
 	intyaml "github.com/akuity/kargo/internal/yaml"
-	"github.com/akuity/kargo/pkg/x/directive/builtin"
+	"github.com/akuity/kargo/pkg/x/promotion/runners/builtin"
 )
 
 // helmChartUpdater is an implementation of the promotion.StepRunner interface
