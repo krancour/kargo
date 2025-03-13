@@ -23,7 +23,7 @@ func (m *MockStepRunner) Name() string {
 	return m.RunnerName
 }
 
-// Run implements the StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (m *MockStepRunner) Run(ctx context.Context, stepCtx *StepContext) (StepResult, error) {
 	if m.RunFunc != nil {
 		return m.RunFunc(ctx, stepCtx)

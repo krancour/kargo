@@ -146,7 +146,7 @@ func Test_kustomizeImageSetter_validate(t *testing.T) {
 	}
 }
 
-func Test_kustomizeImageSetter_runPromotionStep(t *testing.T) {
+func Test_kustomizeImageSetter_run(t *testing.T) {
 	const testNamespace = "test-project-run"
 
 	scheme := runtime.NewScheme()

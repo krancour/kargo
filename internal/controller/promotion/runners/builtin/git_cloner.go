@@ -59,7 +59,7 @@ func (g *gitCloner) Name() string {
 	return "git-clone"
 }
 
-// RunPromotionStep implements the promotion.StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (g *gitCloner) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

@@ -51,7 +51,7 @@ func (h *helmTemplateRunner) Name() string {
 	return "helm-template"
 }
 
-// RunPromotionStep implements the promotion.StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (h *helmTemplateRunner) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

@@ -125,7 +125,7 @@ func Test_yamlParser_validate(t *testing.T) {
 	}
 }
 
-func Test_yamlParser_runPromotionStep(t *testing.T) {
+func Test_yamlParser_run(t *testing.T) {
 	tests := []struct {
 		name       string
 		stepCtx    *promotion.StepContext

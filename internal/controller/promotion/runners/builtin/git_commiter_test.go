@@ -157,7 +157,7 @@ func Test_gitCommitter_validate(t *testing.T) {
 	}
 }
 
-func Test_gitCommitter_runPromotionStep(t *testing.T) {
+func Test_gitCommitter_run(t *testing.T) {
 	// Set up a test Git server in-process
 	service := gitkit.New(
 		gitkit.Config{

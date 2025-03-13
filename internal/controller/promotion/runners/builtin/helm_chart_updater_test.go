@@ -160,7 +160,7 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 	}
 }
 
-func Test_helmChartUpdater_runPromotionStep(t *testing.T) {
+func Test_helmChartUpdater_run(t *testing.T) {
 	tests := []struct {
 		name            string
 		context         *promotion.StepContext

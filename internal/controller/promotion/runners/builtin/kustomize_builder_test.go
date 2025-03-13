@@ -17,7 +17,7 @@ import (
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
-func Test_kustomizeBuilder_runPromotionStep(t *testing.T) {
+func Test_kustomizeBuilder_run(t *testing.T) {
 	tests := []struct {
 		name       string
 		setupFiles func(*testing.T, string)

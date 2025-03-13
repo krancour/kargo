@@ -35,7 +35,7 @@ func (f *fileDeleter) Name() string {
 	return "delete"
 }
 
-// RunPromotionStep implements the promotion.StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (f *fileDeleter) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

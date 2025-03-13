@@ -118,7 +118,7 @@ func (a *argocdUpdater) DefaultErrorThreshold() uint32 {
 	return 0 // Will fall back to the system default.
 }
 
-// RunPromotionStep implements the promotion.StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (a *argocdUpdater) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

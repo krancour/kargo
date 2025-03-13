@@ -14,7 +14,7 @@ import (
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
-func Test_fileDeleter_runPromotionStep(t *testing.T) {
+func Test_fileDeleter_run(t *testing.T) {
 	tests := []struct {
 		name       string
 		setupFiles func(*testing.T) string

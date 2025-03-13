@@ -34,7 +34,7 @@ func (j *jsonUpdater) Name() string {
 	return "json-update"
 }
 
-// RunPromotionStep implements the promotion.StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (j *jsonUpdater) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

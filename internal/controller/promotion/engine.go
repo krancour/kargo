@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -16,11 +17,15 @@ import (
 	"github.com/akuity/kargo/internal/controller/health"
 )
 
+// reservedStepAliasRegex is a regular expression that matches step aliases that
+// are reserved for internal use.
+var reservedStepAliasRegex = regexp.MustCompile(`^(step|task)-\d+$`)
+
 // Engine is an interface for executing a sequence of promotion steps.
 type Engine interface {
 	// Promote executes the specified sequence of Steps and returns a Result
 	// that aggregates the results of all steps.
-	Promote(context.Context, PromotionContext, []PromotionStep) (PromotionResult, error)
+	Promote(context.Context, Context, []Step) (Result, error)
 }
 
 // simpleEngine is a simple implementation of the Engine interface that uses
@@ -42,19 +47,19 @@ func NewSimpleEngine(kargoClient client.Client) Engine {
 // Promote implements the Engine interface.
 func (e *simpleEngine) Promote(
 	ctx context.Context,
-	promoCtx PromotionContext,
-	steps []PromotionStep,
-) (PromotionResult, error) {
+	promoCtx Context,
+	steps []Step,
+) (Result, error) {
 	workDir, err := e.setupWorkDir(promoCtx.WorkDir)
 	if err != nil {
-		return PromotionResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return Result{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 	if workDir != promoCtx.WorkDir {
 		defer os.RemoveAll(workDir)
 	}
 
 	if promoCtx.Secrets, err = e.getProjectSecrets(ctx, promoCtx.Project); err != nil {
-		return PromotionResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return Result{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	result, err := e.executeSteps(ctx, promoCtx, steps, workDir)
@@ -65,13 +70,13 @@ func (e *simpleEngine) Promote(
 	return result, nil
 }
 
-// executeSteps executes a list of PromotionSteps in sequence.
+// executeSteps executes a list of Steps in sequence.
 func (e *simpleEngine) executeSteps(
 	ctx context.Context,
-	promoCtx PromotionContext,
-	steps []PromotionStep,
+	promoCtx Context,
+	steps []Step,
 	workDir string,
-) (PromotionResult, error) {
+) (Result, error) {
 	// Initialize the state which will be passed to each step.
 	// This is the state that will be updated by each step,
 	// and returned as the final state after all steps have
@@ -87,12 +92,12 @@ func (e *simpleEngine) executeSteps(
 		stepExecMetas = promoCtx.StepExecutionMetadata.DeepCopy()
 	)
 
-	// Execute each step in sequence, starting from the step index
-	// specified in the PromotionContext if provided.
+	// Execute each step in sequence, starting from the step index specified in
+	// the Context if provided.
 	for i := promoCtx.StartFromStep; i < int64(len(steps)); i++ {
 		select {
 		case <-ctx.Done():
-			return PromotionResult{
+			return Result{
 				Status:                kargoapi.PromotionPhaseErrored,
 				CurrentStep:           i,
 				StepExecutionMetadata: stepExecMetas,
@@ -106,7 +111,7 @@ func (e *simpleEngine) executeSteps(
 
 		// Prepare the step for execution by setting the alias.
 		if step.Alias, err = e.stepAlias(step.Alias, i); err != nil {
-			return PromotionResult{
+			return Result{
 				Status:                kargoapi.PromotionPhaseErrored,
 				CurrentStep:           i,
 				StepExecutionMetadata: stepExecMetas,
@@ -118,7 +123,7 @@ func (e *simpleEngine) executeSteps(
 		// Get the StepRunner for the step.
 		runner := e.registry.getStepRunner(step.Kind)
 		if runner == nil {
-			return PromotionResult{
+			return Result{
 				Status:                kargoapi.PromotionPhaseErrored,
 				CurrentStep:           i,
 				StepExecutionMetadata: stepExecMetas,
@@ -138,7 +143,7 @@ func (e *simpleEngine) executeSteps(
 		// Check if the step should be skipped.
 		var skip bool
 		if skip, err = step.Skip(promoCtx, state); err != nil {
-			return PromotionResult{
+			return Result{
 				Status:                kargoapi.PromotionPhaseErrored,
 				CurrentStep:           i,
 				StepExecutionMetadata: stepExecMetas,
@@ -184,7 +189,7 @@ func (e *simpleEngine) executeSteps(
 		default:
 			// Deal with statuses that no step should have returned.
 			stepExecMeta.FinishedAt = ptr.To(metav1.Now())
-			return PromotionResult{
+			return Result{
 				Status:                kargoapi.PromotionPhaseErrored,
 				CurrentStep:           i,
 				StepExecutionMetadata: stepExecMetas,
@@ -229,7 +234,7 @@ func (e *simpleEngine) executeSteps(
 		case IsTerminal(err):
 			// This is an unrecoverable error.
 			stepExecMeta.FinishedAt = ptr.To(metav1.Now())
-			return PromotionResult{
+			return Result{
 				Status:                stepExecMeta.Status,
 				CurrentStep:           i,
 				StepExecutionMetadata: stepExecMetas,
@@ -244,7 +249,7 @@ func (e *simpleEngine) executeSteps(
 			if stepExecMeta.ErrorCount >= errorThreshold {
 				// The error threshold has been met.
 				stepExecMeta.FinishedAt = ptr.To(metav1.Now())
-				return PromotionResult{
+				return Result{
 						Status:                kargoapi.PromotionPhaseErrored,
 						CurrentStep:           i,
 						StepExecutionMetadata: stepExecMetas,
@@ -266,7 +271,7 @@ func (e *simpleEngine) executeSteps(
 		if timeout != nil && *timeout > 0 && metav1.Now().Sub(stepExecMeta.StartedAt.Time) > *timeout {
 			// Timeout has elapsed.
 			stepExecMeta.FinishedAt = ptr.To(metav1.Now())
-			return PromotionResult{
+			return Result{
 				Status:                kargoapi.PromotionPhaseErrored,
 				CurrentStep:           i,
 				StepExecutionMetadata: stepExecMetas,
@@ -280,7 +285,7 @@ func (e *simpleEngine) executeSteps(
 			// Promotion will be requeued. The step will be retried on the next
 			// reconciliation.
 			stepExecMeta.Message += "; step will be retried"
-			return PromotionResult{
+			return Result{
 				Status:                kargoapi.PromotionPhaseRunning,
 				CurrentStep:           i,
 				StepExecutionMetadata: stepExecMetas,
@@ -292,7 +297,7 @@ func (e *simpleEngine) executeSteps(
 		// If we get to here, the step is still Running (waiting for some external
 		// condition to be met).
 		stepExecMeta.ErrorCount = 0 // Reset the error count
-		return PromotionResult{
+		return Result{
 			Status:                kargoapi.PromotionPhaseRunning,
 			CurrentStep:           i,
 			StepExecutionMetadata: stepExecMetas,
@@ -302,7 +307,7 @@ func (e *simpleEngine) executeSteps(
 	}
 
 	// All steps have succeeded, return the final state.
-	return PromotionResult{
+	return Result{
 		Status:                kargoapi.PromotionPhaseSucceeded,
 		CurrentStep:           int64(len(steps)) - 1,
 		StepExecutionMetadata: stepExecMetas,
@@ -311,16 +316,16 @@ func (e *simpleEngine) executeSteps(
 	}, nil
 }
 
-// executeStep executes a single PromotionStep.
+// executeStep executes a single Step.
 func (e *simpleEngine) executeStep(
 	ctx context.Context,
-	promoCtx PromotionContext,
-	step PromotionStep,
+	promoCtx Context,
+	step Step,
 	runner StepRunner,
 	workDir string,
 	state State,
 ) (StepResult, error) {
-	stepCtx, err := e.preparePromotionStepContext(ctx, promoCtx, step, workDir, state)
+	stepCtx, err := e.prepareStepContext(ctx, promoCtx, step, workDir, state)
 	if err != nil {
 		// TODO(krancour): We're not yet distinguishing between retryable and
 		// non-retryable errors. When we start to do this, failure to prepare the
@@ -338,11 +343,11 @@ func (e *simpleEngine) executeStep(
 	return result, err
 }
 
-// preparePromotionStepContext prepares a StepContext for a PromotionStep.
-func (e *simpleEngine) preparePromotionStepContext(
+// prepareStepContext prepares a StepContext corresponding to the provided Step.
+func (e *simpleEngine) prepareStepContext(
 	ctx context.Context,
-	promoCtx PromotionContext,
-	step PromotionStep,
+	promoCtx Context,
+	step Step,
 	workDir string,
 	state State,
 ) (*StepContext, error) {
@@ -374,7 +379,7 @@ func (e *simpleEngine) stepAlias(alias string, index int64) (string, error) {
 		// A webhook enforces this regex as well, but we're checking here to
 		// account for the possibility of EXISTING Stages with a promotionTemplate
 		// containing a step with a now-reserved alias.
-		if ReservedStepAliasRegex.MatchString(alias) {
+		if reservedStepAliasRegex.MatchString(alias) {
 			return "", fmt.Errorf("step alias %q is forbidden", alias)
 		}
 		return alias, nil

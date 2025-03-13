@@ -53,7 +53,7 @@ func (h *helmChartUpdater) Name() string {
 	return "helm-update-chart"
 }
 
-// RunPromotionStep implements the promotion.StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (h *helmChartUpdater) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

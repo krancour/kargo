@@ -334,7 +334,7 @@ func Test_argoCDUpdater_validate(t *testing.T) {
 	}
 }
 
-func Test_argoCDUpdater_runPromotionStep(t *testing.T) {
+func Test_argoCDUpdater_run(t *testing.T) {
 	testCases := []struct {
 		name       string
 		runner     *argocdUpdater

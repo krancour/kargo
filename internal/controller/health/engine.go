@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
-	"github.com/akuity/kargo/internal/controller/promotion"
 )
 
 // Engine is an interface for executing a sequence of health checks.
@@ -61,11 +62,11 @@ func (e *simpleEngine) executeHealthChecks(
 	project string,
 	stage string,
 	checks []Criteria,
-) (kargoapi.HealthState, []string, []promotion.State) {
+) (kargoapi.HealthState, []string, []map[string]any) {
 	var (
 		aggregatedStatus = kargoapi.HealthStateHealthy
 		aggregatedIssues []string
-		aggregatedOutput = make([]promotion.State, 0, len(checks))
+		aggregatedOutput = make([]map[string]any, 0, len(checks))
 	)
 
 	for _, check := range checks {

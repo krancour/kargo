@@ -50,7 +50,7 @@ func (k *kustomizeImageSetter) Name() string {
 	return "kustomize-set-image"
 }
 
-// RunPromotionStep implements the promotion.StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (k *kustomizeImageSetter) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

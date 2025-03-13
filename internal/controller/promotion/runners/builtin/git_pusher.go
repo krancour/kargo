@@ -47,7 +47,7 @@ func (g *gitPushPusher) Name() string {
 	return "git-push"
 }
 
-// RunPromotionStep implements the promotion.StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (g *gitPushPusher) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

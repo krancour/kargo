@@ -59,7 +59,7 @@ func Test_gitTreeOverwriter_validate(t *testing.T) {
 	}
 }
 
-func Test_gitTreeOverwriter_runPromotionStep(t *testing.T) {
+func Test_gitTreeOverwriter_run(t *testing.T) {
 	// Set up a test Git server in-process
 	service := gitkit.New(
 		gitkit.Config{

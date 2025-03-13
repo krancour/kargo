@@ -194,7 +194,7 @@ func Test_gitCloner_validate(t *testing.T) {
 	}
 }
 
-func Test_gitCloner_runPromotionStep(t *testing.T) {
+func Test_gitCloner_run(t *testing.T) {
 	// Set up a test Git server in-process
 	service := gitkit.New(
 		gitkit.Config{

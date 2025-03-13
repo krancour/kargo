@@ -286,7 +286,7 @@ func Test_jsonUpdater_generateCommitMessage(t *testing.T) {
 	}
 }
 
-func Test_jsonUpdater_runPromotionStep(t *testing.T) {
+func Test_jsonUpdater_run(t *testing.T) {
 	tests := []struct {
 		name       string
 		stepCtx    *promotion.StepContext

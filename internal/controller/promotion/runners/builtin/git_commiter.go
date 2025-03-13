@@ -35,7 +35,7 @@ func (g *gitCommitter) Name() string {
 	return "git-commit"
 }
 
-// RunPromotionStep implements the promotion.StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (g *gitCommitter) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

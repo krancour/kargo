@@ -32,7 +32,7 @@ func (g *gitTreeClearer) Name() string {
 	return "git-clear"
 }
 
-// RunPromotionStep implements the promotion.StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (g *gitTreeClearer) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

@@ -125,7 +125,7 @@ func Test_jsonParser_validate(t *testing.T) {
 	}
 }
 
-func Test_jsonParser_runPromotionStep(t *testing.T) {
+func Test_jsonParser_run(t *testing.T) {
 	tests := []struct {
 		name       string
 		stepCtx    *promotion.StepContext

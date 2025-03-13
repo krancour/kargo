@@ -33,6 +33,7 @@ func (yp *yamlParser) Name() string {
 	return "yaml-parse"
 }
 
+// Run implements the promotion.StepRunner interface.
 func (yp *yamlParser) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

@@ -50,7 +50,7 @@ func (c *outputComposer) Name() string {
 	return "compose-output"
 }
 
-// RunPromotionStep implements the promotion.StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (c *outputComposer) Run(
 	_ context.Context,
 	stepCtx *promotion.StepContext,

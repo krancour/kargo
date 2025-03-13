@@ -45,6 +45,7 @@ func (h *httpRequester) Name() string {
 	return "http"
 }
 
+// Run implements the promotion.StepRunner interface.
 func (h *httpRequester) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

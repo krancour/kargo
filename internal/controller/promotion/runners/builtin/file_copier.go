@@ -44,7 +44,7 @@ func (f *fileCopier) Name() string {
 	return "copy"
 }
 
-// RunPromotionStep implements the promotion.StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (f *fileCopier) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

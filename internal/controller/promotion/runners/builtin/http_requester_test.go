@@ -224,7 +224,7 @@ func Test_httpRequester_validate(t *testing.T) {
 	}
 }
 
-func Test_httpRequester_runPromotionStep(t *testing.T) {
+func Test_httpRequester_run(t *testing.T) {
 	testCases := []struct {
 		name       string
 		cfg        builtin.HTTPConfig

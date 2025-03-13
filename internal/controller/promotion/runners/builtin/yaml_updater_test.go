@@ -118,7 +118,7 @@ func Test_yamlUpdater_validate(t *testing.T) {
 	}
 }
 
-func Test_yamlUpdater_runPromotionStep(t *testing.T) {
+func Test_yamlUpdater_run(t *testing.T) {
 	tests := []struct {
 		name       string
 		stepCtx    *promotion.StepContext

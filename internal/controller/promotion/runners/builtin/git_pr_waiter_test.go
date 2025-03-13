@@ -100,7 +100,7 @@ func Test_gitPRWaiter_validate(t *testing.T) {
 	}
 }
 
-func Test_gitPRWaiter_runPromotionStep(t *testing.T) {
+func Test_gitPRWaiter_run(t *testing.T) {
 	testCases := []struct {
 		name       string
 		provider   gitprovider.Interface

@@ -33,7 +33,7 @@ func (y *yamlUpdater) Name() string {
 	return "yaml-update"
 }
 
-// RunPromotionStep implements the promotion.StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (y *yamlUpdater) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

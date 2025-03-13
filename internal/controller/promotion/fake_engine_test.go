@@ -14,28 +14,28 @@ import (
 func TestFakeEngine_Promote(t *testing.T) {
 	t.Run("without function injection", func(t *testing.T) {
 		engine := &FakeEngine{}
-		res, err := engine.Promote(context.Background(), PromotionContext{}, nil)
+		res, err := engine.Promote(context.Background(), Context{}, nil)
 		assert.NoError(t, err)
 		assert.Equal(t, kargoapi.PromotionPhaseSucceeded, res.Status)
 	})
 
 	t.Run("with function injection", func(t *testing.T) {
 		ctx := context.Background()
-		promoCtx := PromotionContext{
+		promoCtx := Context{
 			Stage: "foo",
 		}
-		steps := []PromotionStep{{Kind: "mock"}}
+		steps := []Step{{Kind: "mock"}}
 
 		engine := &FakeEngine{
 			ExecuteFn: func(
 				givenCtx context.Context,
-				givenPromoCtx PromotionContext,
-				givenSteps []PromotionStep,
-			) (PromotionResult, error) {
+				givenPromoCtx Context,
+				givenSteps []Step,
+			) (Result, error) {
 				assert.Equal(t, ctx, givenCtx)
 				assert.Equal(t, promoCtx, givenPromoCtx)
 				assert.Equal(t, steps, givenSteps)
-				return PromotionResult{Status: kargoapi.PromotionPhaseErrored},
+				return Result{Status: kargoapi.PromotionPhaseErrored},
 					errors.New("something went wrong")
 			},
 		}

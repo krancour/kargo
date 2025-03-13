@@ -47,7 +47,7 @@ func (k *kustomizeBuilder) Name() string {
 	return "kustomize-build"
 }
 
-// RunPromotionStep implements the promotion.StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (k *kustomizeBuilder) Run(
 	_ context.Context,
 	stepCtx *promotion.StepContext,

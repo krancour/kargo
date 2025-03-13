@@ -10,18 +10,18 @@ import (
 // FakeEngine is a mock implementation of the Engine interface that can be used
 // to facilitate unit testing.
 type FakeEngine struct {
-	ExecuteFn     func(context.Context, PromotionContext, []PromotionStep) (PromotionResult, error)
+	ExecuteFn     func(context.Context, Context, []Step) (Result, error)
 	CheckHealthFn func(ctx context.Context, project, stage string, criteria []health.Criteria) kargoapi.Health
 }
 
 // Promote implements the Engine interface.
 func (e *FakeEngine) Promote(
 	ctx context.Context,
-	promoCtx PromotionContext,
-	steps []PromotionStep,
-) (PromotionResult, error) {
+	promoCtx Context,
+	steps []Step,
+) (Result, error) {
 	if e.ExecuteFn == nil {
-		return PromotionResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
+		return Result{Status: kargoapi.PromotionPhaseSucceeded}, nil
 	}
 	return e.ExecuteFn(ctx, promoCtx, steps)
 }

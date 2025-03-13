@@ -33,6 +33,7 @@ func (jp *jsonParser) Name() string {
 	return "json-parse"
 }
 
+// Run implements the promotion.StepRunner interface.
 func (jp *jsonParser) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

@@ -18,7 +18,7 @@ import (
 	"github.com/akuity/kargo/pkg/x/directive/builtin"
 )
 
-func Test_helmTemplateRunner_runPromotionStep(t *testing.T) {
+func Test_helmTemplateRunner_run(t *testing.T) {
 	tests := []struct {
 		name       string
 		files      map[string]string

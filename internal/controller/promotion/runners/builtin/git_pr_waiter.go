@@ -36,7 +36,7 @@ func (g *gitPRWaiter) Name() string {
 	return "git-wait-for-pr"
 }
 
-// RunPromotionStep implements the promotion.StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (g *gitPRWaiter) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

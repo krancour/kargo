@@ -47,7 +47,7 @@ func (g *gitPROpener) Name() string {
 	return "git-open-pr"
 }
 
-// RunPromotionStep implements the promotion.StepRunner interface.
+// Run implements the promotion.StepRunner interface.
 func (g *gitPROpener) Run(
 	ctx context.Context,
 	stepCtx *promotion.StepContext,

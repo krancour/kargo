@@ -122,7 +122,7 @@ func Test_gitPROpener_validate(t *testing.T) {
 	}
 }
 
-func Test_gitPROpener_runPromotionStep(t *testing.T) {
+func Test_gitPROpener_run(t *testing.T) {
 	const testSourceBranch = "source"
 	const testTargetBranch = "target"
 
