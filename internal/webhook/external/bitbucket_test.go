@@ -3,7 +3,6 @@ package external
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -76,27 +75,6 @@ func TestBitbucketHandler(t *testing.T) {
 					`{"error":"event type nonsense is not supported"}`,
 					rr.Body.String(),
 				)
-			},
-		},
-		{
-			name:       "request body too large",
-			secretData: testSecretData,
-			req: func() *http.Request {
-				body := make([]byte, 2<<20+1)
-				req := httptest.NewRequest(
-					http.MethodPost,
-					testURL,
-					io.NopCloser(bytes.NewBuffer(body)),
-				)
-				req.Header.Set("X-Event-Key", bitbucketPushEvent)
-				return req
-			},
-			assertions: func(t *testing.T, rr *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusRequestEntityTooLarge, rr.Code)
-				res := map[string]string{}
-				err := json.Unmarshal(rr.Body.Bytes(), &res)
-				require.NoError(t, err)
-				require.Contains(t, res["error"], "content exceeds limit")
 			},
 		},
 		{
@@ -246,6 +224,10 @@ func TestBitbucketHandler(t *testing.T) {
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
+			requestBody, err := io.ReadAll(testCase.req().Body)
+			require.NoError(t, err)
+			defer testCase.req().Body.Close()
+
 			w := httptest.NewRecorder()
 			(&bitbucketWebhookReceiver{
 				baseWebhookReceiver: &baseWebhookReceiver{
@@ -253,7 +235,8 @@ func TestBitbucketHandler(t *testing.T) {
 					project:    testProjectName,
 					secretData: testCase.secretData,
 				},
-			}).GetHandler()(w, testCase.req())
+			}).getHandler(requestBody)(w, testCase.req())
+
 			testCase.assertions(t, w)
 		})
 	}

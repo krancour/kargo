@@ -3,7 +3,6 @@ package external
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -29,31 +28,12 @@ func TestQuayHandler(t *testing.T) {
 	testScheme := runtime.NewScheme()
 	require.NoError(t, kargoapi.AddToScheme(testScheme))
 
-	for _, testCase := range []struct {
+	testCases := []struct {
 		name       string
 		client     client.Client
 		req        func() *http.Request
 		assertions func(*testing.T, *httptest.ResponseRecorder)
 	}{
-		{
-			name: "request body too large",
-			req: func() *http.Request {
-				body := make([]byte, quayWebhookBodyMaxBytes+1)
-				req := httptest.NewRequest(
-					http.MethodPost,
-					testURL,
-					io.NopCloser(bytes.NewBuffer(body)),
-				)
-				return req
-			},
-			assertions: func(t *testing.T, rr *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusRequestEntityTooLarge, rr.Code)
-				res := map[string]string{}
-				err := json.Unmarshal(rr.Body.Bytes(), &res)
-				require.NoError(t, err)
-				require.Contains(t, res["error"], "content exceeds limit")
-			},
-		},
 		{
 			name: "partial success",
 			client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(
@@ -155,15 +135,21 @@ func TestQuayHandler(t *testing.T) {
 				)
 			},
 		},
-	} {
+	}
+	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
+			requestBody, err := io.ReadAll(testCase.req().Body)
+			require.NoError(t, err)
+			defer testCase.req().Body.Close()
+
 			w := httptest.NewRecorder()
 			(&quayWebhookReceiver{
 				baseWebhookReceiver: &baseWebhookReceiver{
 					client:  testCase.client,
 					project: testProjectName,
 				},
-			}).GetHandler()(w, testCase.req())
+			}).getHandler(requestBody)(w, testCase.req())
+
 			testCase.assertions(t, w)
 		})
 	}

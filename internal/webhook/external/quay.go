@@ -11,14 +11,12 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	xhttp "github.com/akuity/kargo/internal/http"
 	"github.com/akuity/kargo/internal/image"
-	"github.com/akuity/kargo/internal/io"
 	"github.com/akuity/kargo/internal/logging"
 )
 
 const (
-	quaySecretDataKey       = "secret"
-	quay                    = "quay"
-	quayWebhookBodyMaxBytes = 2 << 20 // 2MB
+	quaySecretDataKey = "secret"
+	quay              = "quay"
 )
 
 func init() {
@@ -71,42 +69,19 @@ func (q *quayWebhookReceiver) getSecretValues(
 	return []string{string(secretValue)}, nil
 }
 
-// GetHandler implements WebhookReceiver.
-func (q *quayWebhookReceiver) GetHandler() http.HandlerFunc {
+// getHandler implements WebhookReceiver.
+func (q *quayWebhookReceiver) getHandler(requestBody []byte) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		logger := logging.LoggerFromContext(ctx)
 		logger.Debug("identifying source repository")
-
-		if contentLength := r.ContentLength; contentLength > quayWebhookBodyMaxBytes {
-			xhttp.WriteErrorJSON(
-				w,
-				xhttp.Error(
-					fmt.Errorf("content exceeds limit of %d bytes", quayWebhookBodyMaxBytes),
-					http.StatusRequestEntityTooLarge,
-				),
-			)
-			return
-		}
-
-		b, err := io.LimitRead(r.Body, quayWebhookBodyMaxBytes)
-		if err != nil {
-			if errors.Is(err, &io.BodyTooLargeError{}) {
-				xhttp.WriteErrorJSON(
-					w,
-					xhttp.Error(err, http.StatusRequestEntityTooLarge),
-				)
-				return
-			}
-			xhttp.WriteErrorJSON(w, err)
-		}
 
 		payload := struct {
 			// format: quay.io/mynamespace/repository
 			DockerURL string `json:"docker_url"`
 		}{}
 
-		if err = json.Unmarshal(b, &payload); err != nil {
+		if err := json.Unmarshal(requestBody, &payload); err != nil {
 			xhttp.WriteErrorJSON(
 				w,
 				xhttp.Error(errors.New("invalid request body"),
