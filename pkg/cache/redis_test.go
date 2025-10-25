@@ -31,7 +31,7 @@ func TestNewRedisCache(t *testing.T) {
 	}{
 		{
 			name: "failed connection",
-			setup: func(t *testing.T) *redis.Client {
+			setup: func(_ *testing.T) *redis.Client {
 				return redis.NewClient(&redis.Options{Addr: "invalid:9999"})
 			},
 			expectErr: true,
@@ -97,7 +97,7 @@ func TestRedisCache_Get(t *testing.T) {
 				client.Set(t.Context(), testKey, "invalid", 0)
 				return client
 			},
-			assertions: func(t *testing.T, ts testStruct, b bool, err error) {
+			assertions: func(t *testing.T, _ testStruct, _ bool, err error) {
 				require.ErrorContains(t, err, "error unmarshaling cached value")
 			},
 		},
