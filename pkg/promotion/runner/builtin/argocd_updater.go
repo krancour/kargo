@@ -152,7 +152,7 @@ func (a *argocdUpdater) run(
 	}
 
 	logger := logging.LoggerFromContext(ctx)
-	logger.Debug("executing argocd-update promotion step")
+	logger.Info("executing argocd-update promotion step")
 
 	updateResults := make([]argocd.OperationPhase, 0, len(stepCfg.Apps))
 	appHealthChecks := make([]checkers.ArgoCDAppHealthCheck, len(stepCfg.Apps))
@@ -183,6 +183,17 @@ func (a *argocdUpdater) run(
 
 		// Check if the update needs to be performed and retrieve its phase.
 		phase, mustUpdate, err := a.mustPerformUpdateFn(stepCtx, update, app)
+		if mustUpdate {
+			logger.Info(
+				"Argo CD Application %q in namespace %q requires update",
+				app.Name, app.Namespace,
+			)
+		} else {
+			logger.Info(
+				"Argo CD Application %q in namespace %q does not require update",
+				app.Name, app.Namespace,
+			)
+		}
 
 		// If we have a phase, append it to the results.
 		if phase != "" {
@@ -199,7 +210,10 @@ func (a *argocdUpdater) run(
 					return promotion.StepResult{Status: kargoapi.PromotionStepStatusErrored}, err
 				}
 				// Log the error as a warning, but continue to the next update.
-				logger.Info(err.Error())
+				logger.Info(
+					"reason for not updating Argo CD Application %q in namespace %q: %s",
+					app.Name, app.Namespace, err.Error(),
+				)
 			}
 			if phase.Failed() {
 				// Record the reason for the failure if available.
@@ -223,7 +237,10 @@ func (a *argocdUpdater) run(
 		// Log the error, as it contains information about why we need to
 		// perform an update.
 		if err != nil {
-			logger.Debug(err.Error())
+			logger.Info(
+				"reason for updating Argo CD Application %q in namespace %q: %s",
+				app.Name, app.Namespace, err.Error(),
+			)
 		}
 
 		// Build the desired source(s) for the Argo CD Application.
@@ -263,7 +280,10 @@ func (a *argocdUpdater) run(
 		)
 	}
 
-	logger.Debug("done executing argocd-update promotion step")
+	logger.Info(
+		"done executing argocd-update promotion step",
+		"status", aggregatedStatus,
+	)
 
 	// TODO(krancour): This enables more aggressive requeuing while waiting to
 	// observe the Application has successfully synced. This is a workaround for
@@ -273,6 +293,7 @@ func (a *argocdUpdater) run(
 	var requeueAfter *time.Duration
 	if aggregatedStatus == kargoapi.PromotionStepStatusRunning {
 		requeueAfter = ptr.To(30 * time.Second)
+		logger.Info("promotion to be requeued", "interval", requeueAfter)
 	}
 
 	return promotion.StepResult{
