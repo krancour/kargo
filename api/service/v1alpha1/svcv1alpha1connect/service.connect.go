@@ -246,6 +246,21 @@ const (
 	KargoServiceRevokeProcedure = "/akuity.io.kargo.service.v1alpha1.KargoService/Revoke"
 	// KargoServiceUpdateRoleProcedure is the fully-qualified name of the KargoService's UpdateRole RPC.
 	KargoServiceUpdateRoleProcedure = "/akuity.io.kargo.service.v1alpha1.KargoService/UpdateRole"
+	// KargoServiceCreateServiceAccountProcedure is the fully-qualified name of the KargoService's
+	// CreateServiceAccount RPC.
+	KargoServiceCreateServiceAccountProcedure = "/akuity.io.kargo.service.v1alpha1.KargoService/CreateServiceAccount"
+	// KargoServiceDeleteServiceAccountProcedure is the fully-qualified name of the KargoService's
+	// DeleteServiceAccount RPC.
+	KargoServiceDeleteServiceAccountProcedure = "/akuity.io.kargo.service.v1alpha1.KargoService/DeleteServiceAccount"
+	// KargoServiceGetNewServiceAccountTokenProcedure is the fully-qualified name of the KargoService's
+	// GetNewServiceAccountToken RPC.
+	KargoServiceGetNewServiceAccountTokenProcedure = "/akuity.io.kargo.service.v1alpha1.KargoService/GetNewServiceAccountToken"
+	// KargoServiceGetServiceAccountProcedure is the fully-qualified name of the KargoService's
+	// GetServiceAccount RPC.
+	KargoServiceGetServiceAccountProcedure = "/akuity.io.kargo.service.v1alpha1.KargoService/GetServiceAccount"
+	// KargoServiceListServiceAccountsProcedure is the fully-qualified name of the KargoService's
+	// ListServiceAccounts RPC.
+	KargoServiceListServiceAccountsProcedure = "/akuity.io.kargo.service.v1alpha1.KargoService/ListServiceAccounts"
 	// KargoServiceListClusterSecretsProcedure is the fully-qualified name of the KargoService's
 	// ListClusterSecrets RPC.
 	KargoServiceListClusterSecretsProcedure = "/akuity.io.kargo.service.v1alpha1.KargoService/ListClusterSecrets"
@@ -339,6 +354,11 @@ var (
 	kargoServiceListRolesMethodDescriptor                     = kargoServiceServiceDescriptor.Methods().ByName("ListRoles")
 	kargoServiceRevokeMethodDescriptor                        = kargoServiceServiceDescriptor.Methods().ByName("Revoke")
 	kargoServiceUpdateRoleMethodDescriptor                    = kargoServiceServiceDescriptor.Methods().ByName("UpdateRole")
+	kargoServiceCreateServiceAccountMethodDescriptor          = kargoServiceServiceDescriptor.Methods().ByName("CreateServiceAccount")
+	kargoServiceDeleteServiceAccountMethodDescriptor          = kargoServiceServiceDescriptor.Methods().ByName("DeleteServiceAccount")
+	kargoServiceGetNewServiceAccountTokenMethodDescriptor     = kargoServiceServiceDescriptor.Methods().ByName("GetNewServiceAccountToken")
+	kargoServiceGetServiceAccountMethodDescriptor             = kargoServiceServiceDescriptor.Methods().ByName("GetServiceAccount")
+	kargoServiceListServiceAccountsMethodDescriptor           = kargoServiceServiceDescriptor.Methods().ByName("ListServiceAccounts")
 	kargoServiceListClusterSecretsMethodDescriptor            = kargoServiceServiceDescriptor.Methods().ByName("ListClusterSecrets")
 	kargoServiceCreateClusterSecretMethodDescriptor           = kargoServiceServiceDescriptor.Methods().ByName("CreateClusterSecret")
 	kargoServiceUpdateClusterSecretMethodDescriptor           = kargoServiceServiceDescriptor.Methods().ByName("UpdateClusterSecret")
@@ -487,20 +507,37 @@ type KargoServiceClient interface {
 	GetPromotionTask(context.Context, *connect.Request[v1alpha1.GetPromotionTaskRequest]) (*connect.Response[v1alpha1.GetPromotionTaskResponse], error)
 	// GetClusterPromotionTask retrieves details of a specific cluster-scoped PromotionTask.
 	GetClusterPromotionTask(context.Context, *connect.Request[v1alpha1.GetClusterPromotionTaskRequest]) (*connect.Response[v1alpha1.GetClusterPromotionTaskResponse], error)
-	// CreateRole creates a new RBAC role within a project.
+	// CreateRole creates a new Kargo Role virtual resource.
 	CreateRole(context.Context, *connect.Request[v1alpha1.CreateRoleRequest]) (*connect.Response[v1alpha1.CreateRoleResponse], error)
-	// DeleteRole removes an RBAC role from a project.
+	// DeleteRole deletes a Kargo Role virtual resource.
 	DeleteRole(context.Context, *connect.Request[v1alpha1.DeleteRoleRequest]) (*connect.Response[v1alpha1.DeleteRoleResponse], error)
-	// GetRole retrieves details of a specific RBAC role.
+	// GetRole retrieves details of a specific Kargo Role virtual resource or its
+	// underlying Kubernetes resources.
 	GetRole(context.Context, *connect.Request[v1alpha1.GetRoleRequest]) (*connect.Response[v1alpha1.GetRoleResponse], error)
-	// Grant assigns permissions or binds users/services to a role.
+	// Grant assigns permissions to a Kargo Role; or binds users having specific
+	// OIDC claims OR a Kargo ServiceAccount to a Kargo Role.
 	Grant(context.Context, *connect.Request[v1alpha1.GrantRequest]) (*connect.Response[v1alpha1.GrantResponse], error)
-	// ListRoles retrieves all RBAC roles within a project.
+	// ListRoles retrieves details of all Kargo Role virtual resources or their
+	// underlying Kubernetes resources.
 	ListRoles(context.Context, *connect.Request[v1alpha1.ListRolesRequest]) (*connect.Response[v1alpha1.ListRolesResponse], error)
-	// Revoke removes permissions or unbinds users/services from a role.
+	// Revoke removes permissions from a Kargo Role; or unbinds users having
+	// specific OIDC claims OR a Kargo ServiceAccount from a Kargo Role.
 	Revoke(context.Context, *connect.Request[v1alpha1.RevokeRequest]) (*connect.Response[v1alpha1.RevokeResponse], error)
-	// UpdateRole modifies an existing RBAC role.
+	// UpdateRole modifies an existing Kargo Role virtual resource.
 	UpdateRole(context.Context, *connect.Request[v1alpha1.UpdateRoleRequest]) (*connect.Response[v1alpha1.UpdateRoleResponse], error)
+	// CreateServiceAccount creates a new Kargo ServiceAccount.
+	CreateServiceAccount(context.Context, *connect.Request[v1alpha1.CreateServiceAccountRequest]) (*connect.Response[v1alpha1.CreateServiceAccountResponse], error)
+	// DeleteServiceAccount removes a Kargo ServiceAccount.
+	DeleteServiceAccount(context.Context, *connect.Request[v1alpha1.DeleteServiceAccountRequest]) (*connect.Response[v1alpha1.DeleteServiceAccountResponse], error)
+	// GetNewServiceAccountToken generates and returns a new bearer token
+	// associated with the ServiceAccount. Any existing token is REVOKED. i.e.
+	// This is NOT for retrieval of existing tokens. That operation is not
+	// supported.
+	GetNewServiceAccountToken(context.Context, *connect.Request[v1alpha1.GetNewServiceAccountTokenRequest]) (*connect.Response[v1alpha1.GetNewServiceAccountTokenResponse], error)
+	// GetServiceAccount retrieves details of a specific Kargo ServiceAccount.
+	GetServiceAccount(context.Context, *connect.Request[v1alpha1.GetServiceAccountRequest]) (*connect.Response[v1alpha1.GetServiceAccountResponse], error)
+	// ListServiceAccounts retrieves details of all Kargo ServiceAccounts.
+	ListServiceAccounts(context.Context, *connect.Request[v1alpha1.ListServiceAccountsRequest]) (*connect.Response[v1alpha1.ListServiceAccountsResponse], error)
 	// ListClusterSecrets retrieves all cluster-scoped secrets.
 	ListClusterSecrets(context.Context, *connect.Request[v1alpha1.ListClusterSecretsRequest]) (*connect.Response[v1alpha1.ListClusterSecretsResponse], error)
 	// CreateClusterSecret creates a new cluster-scoped secret.
@@ -977,6 +1014,36 @@ func NewKargoServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(kargoServiceUpdateRoleMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
+		createServiceAccount: connect.NewClient[v1alpha1.CreateServiceAccountRequest, v1alpha1.CreateServiceAccountResponse](
+			httpClient,
+			baseURL+KargoServiceCreateServiceAccountProcedure,
+			connect.WithSchema(kargoServiceCreateServiceAccountMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
+		deleteServiceAccount: connect.NewClient[v1alpha1.DeleteServiceAccountRequest, v1alpha1.DeleteServiceAccountResponse](
+			httpClient,
+			baseURL+KargoServiceDeleteServiceAccountProcedure,
+			connect.WithSchema(kargoServiceDeleteServiceAccountMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
+		getNewServiceAccountToken: connect.NewClient[v1alpha1.GetNewServiceAccountTokenRequest, v1alpha1.GetNewServiceAccountTokenResponse](
+			httpClient,
+			baseURL+KargoServiceGetNewServiceAccountTokenProcedure,
+			connect.WithSchema(kargoServiceGetNewServiceAccountTokenMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
+		getServiceAccount: connect.NewClient[v1alpha1.GetServiceAccountRequest, v1alpha1.GetServiceAccountResponse](
+			httpClient,
+			baseURL+KargoServiceGetServiceAccountProcedure,
+			connect.WithSchema(kargoServiceGetServiceAccountMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
+		listServiceAccounts: connect.NewClient[v1alpha1.ListServiceAccountsRequest, v1alpha1.ListServiceAccountsResponse](
+			httpClient,
+			baseURL+KargoServiceListServiceAccountsProcedure,
+			connect.WithSchema(kargoServiceListServiceAccountsMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
 		listClusterSecrets: connect.NewClient[v1alpha1.ListClusterSecretsRequest, v1alpha1.ListClusterSecretsResponse](
 			httpClient,
 			baseURL+KargoServiceListClusterSecretsProcedure,
@@ -1082,6 +1149,11 @@ type kargoServiceClient struct {
 	listRoles                     *connect.Client[v1alpha1.ListRolesRequest, v1alpha1.ListRolesResponse]
 	revoke                        *connect.Client[v1alpha1.RevokeRequest, v1alpha1.RevokeResponse]
 	updateRole                    *connect.Client[v1alpha1.UpdateRoleRequest, v1alpha1.UpdateRoleResponse]
+	createServiceAccount          *connect.Client[v1alpha1.CreateServiceAccountRequest, v1alpha1.CreateServiceAccountResponse]
+	deleteServiceAccount          *connect.Client[v1alpha1.DeleteServiceAccountRequest, v1alpha1.DeleteServiceAccountResponse]
+	getNewServiceAccountToken     *connect.Client[v1alpha1.GetNewServiceAccountTokenRequest, v1alpha1.GetNewServiceAccountTokenResponse]
+	getServiceAccount             *connect.Client[v1alpha1.GetServiceAccountRequest, v1alpha1.GetServiceAccountResponse]
+	listServiceAccounts           *connect.Client[v1alpha1.ListServiceAccountsRequest, v1alpha1.ListServiceAccountsResponse]
 	listClusterSecrets            *connect.Client[v1alpha1.ListClusterSecretsRequest, v1alpha1.ListClusterSecretsResponse]
 	createClusterSecret           *connect.Client[v1alpha1.CreateClusterSecretRequest, v1alpha1.CreateClusterSecretResponse]
 	updateClusterSecret           *connect.Client[v1alpha1.UpdateClusterSecretRequest, v1alpha1.UpdateClusterSecretResponse]
@@ -1475,6 +1547,32 @@ func (c *kargoServiceClient) UpdateRole(ctx context.Context, req *connect.Reques
 	return c.updateRole.CallUnary(ctx, req)
 }
 
+// CreateServiceAccount calls akuity.io.kargo.service.v1alpha1.KargoService.CreateServiceAccount.
+func (c *kargoServiceClient) CreateServiceAccount(ctx context.Context, req *connect.Request[v1alpha1.CreateServiceAccountRequest]) (*connect.Response[v1alpha1.CreateServiceAccountResponse], error) {
+	return c.createServiceAccount.CallUnary(ctx, req)
+}
+
+// DeleteServiceAccount calls akuity.io.kargo.service.v1alpha1.KargoService.DeleteServiceAccount.
+func (c *kargoServiceClient) DeleteServiceAccount(ctx context.Context, req *connect.Request[v1alpha1.DeleteServiceAccountRequest]) (*connect.Response[v1alpha1.DeleteServiceAccountResponse], error) {
+	return c.deleteServiceAccount.CallUnary(ctx, req)
+}
+
+// GetNewServiceAccountToken calls
+// akuity.io.kargo.service.v1alpha1.KargoService.GetNewServiceAccountToken.
+func (c *kargoServiceClient) GetNewServiceAccountToken(ctx context.Context, req *connect.Request[v1alpha1.GetNewServiceAccountTokenRequest]) (*connect.Response[v1alpha1.GetNewServiceAccountTokenResponse], error) {
+	return c.getNewServiceAccountToken.CallUnary(ctx, req)
+}
+
+// GetServiceAccount calls akuity.io.kargo.service.v1alpha1.KargoService.GetServiceAccount.
+func (c *kargoServiceClient) GetServiceAccount(ctx context.Context, req *connect.Request[v1alpha1.GetServiceAccountRequest]) (*connect.Response[v1alpha1.GetServiceAccountResponse], error) {
+	return c.getServiceAccount.CallUnary(ctx, req)
+}
+
+// ListServiceAccounts calls akuity.io.kargo.service.v1alpha1.KargoService.ListServiceAccounts.
+func (c *kargoServiceClient) ListServiceAccounts(ctx context.Context, req *connect.Request[v1alpha1.ListServiceAccountsRequest]) (*connect.Response[v1alpha1.ListServiceAccountsResponse], error) {
+	return c.listServiceAccounts.CallUnary(ctx, req)
+}
+
 // ListClusterSecrets calls akuity.io.kargo.service.v1alpha1.KargoService.ListClusterSecrets.
 func (c *kargoServiceClient) ListClusterSecrets(ctx context.Context, req *connect.Request[v1alpha1.ListClusterSecretsRequest]) (*connect.Response[v1alpha1.ListClusterSecretsResponse], error) {
 	return c.listClusterSecrets.CallUnary(ctx, req)
@@ -1638,20 +1736,37 @@ type KargoServiceHandler interface {
 	GetPromotionTask(context.Context, *connect.Request[v1alpha1.GetPromotionTaskRequest]) (*connect.Response[v1alpha1.GetPromotionTaskResponse], error)
 	// GetClusterPromotionTask retrieves details of a specific cluster-scoped PromotionTask.
 	GetClusterPromotionTask(context.Context, *connect.Request[v1alpha1.GetClusterPromotionTaskRequest]) (*connect.Response[v1alpha1.GetClusterPromotionTaskResponse], error)
-	// CreateRole creates a new RBAC role within a project.
+	// CreateRole creates a new Kargo Role virtual resource.
 	CreateRole(context.Context, *connect.Request[v1alpha1.CreateRoleRequest]) (*connect.Response[v1alpha1.CreateRoleResponse], error)
-	// DeleteRole removes an RBAC role from a project.
+	// DeleteRole deletes a Kargo Role virtual resource.
 	DeleteRole(context.Context, *connect.Request[v1alpha1.DeleteRoleRequest]) (*connect.Response[v1alpha1.DeleteRoleResponse], error)
-	// GetRole retrieves details of a specific RBAC role.
+	// GetRole retrieves details of a specific Kargo Role virtual resource or its
+	// underlying Kubernetes resources.
 	GetRole(context.Context, *connect.Request[v1alpha1.GetRoleRequest]) (*connect.Response[v1alpha1.GetRoleResponse], error)
-	// Grant assigns permissions or binds users/services to a role.
+	// Grant assigns permissions to a Kargo Role; or binds users having specific
+	// OIDC claims OR a Kargo ServiceAccount to a Kargo Role.
 	Grant(context.Context, *connect.Request[v1alpha1.GrantRequest]) (*connect.Response[v1alpha1.GrantResponse], error)
-	// ListRoles retrieves all RBAC roles within a project.
+	// ListRoles retrieves details of all Kargo Role virtual resources or their
+	// underlying Kubernetes resources.
 	ListRoles(context.Context, *connect.Request[v1alpha1.ListRolesRequest]) (*connect.Response[v1alpha1.ListRolesResponse], error)
-	// Revoke removes permissions or unbinds users/services from a role.
+	// Revoke removes permissions from a Kargo Role; or unbinds users having
+	// specific OIDC claims OR a Kargo ServiceAccount from a Kargo Role.
 	Revoke(context.Context, *connect.Request[v1alpha1.RevokeRequest]) (*connect.Response[v1alpha1.RevokeResponse], error)
-	// UpdateRole modifies an existing RBAC role.
+	// UpdateRole modifies an existing Kargo Role virtual resource.
 	UpdateRole(context.Context, *connect.Request[v1alpha1.UpdateRoleRequest]) (*connect.Response[v1alpha1.UpdateRoleResponse], error)
+	// CreateServiceAccount creates a new Kargo ServiceAccount.
+	CreateServiceAccount(context.Context, *connect.Request[v1alpha1.CreateServiceAccountRequest]) (*connect.Response[v1alpha1.CreateServiceAccountResponse], error)
+	// DeleteServiceAccount removes a Kargo ServiceAccount.
+	DeleteServiceAccount(context.Context, *connect.Request[v1alpha1.DeleteServiceAccountRequest]) (*connect.Response[v1alpha1.DeleteServiceAccountResponse], error)
+	// GetNewServiceAccountToken generates and returns a new bearer token
+	// associated with the ServiceAccount. Any existing token is REVOKED. i.e.
+	// This is NOT for retrieval of existing tokens. That operation is not
+	// supported.
+	GetNewServiceAccountToken(context.Context, *connect.Request[v1alpha1.GetNewServiceAccountTokenRequest]) (*connect.Response[v1alpha1.GetNewServiceAccountTokenResponse], error)
+	// GetServiceAccount retrieves details of a specific Kargo ServiceAccount.
+	GetServiceAccount(context.Context, *connect.Request[v1alpha1.GetServiceAccountRequest]) (*connect.Response[v1alpha1.GetServiceAccountResponse], error)
+	// ListServiceAccounts retrieves details of all Kargo ServiceAccounts.
+	ListServiceAccounts(context.Context, *connect.Request[v1alpha1.ListServiceAccountsRequest]) (*connect.Response[v1alpha1.ListServiceAccountsResponse], error)
 	// ListClusterSecrets retrieves all cluster-scoped secrets.
 	ListClusterSecrets(context.Context, *connect.Request[v1alpha1.ListClusterSecretsRequest]) (*connect.Response[v1alpha1.ListClusterSecretsResponse], error)
 	// CreateClusterSecret creates a new cluster-scoped secret.
@@ -2124,6 +2239,36 @@ func NewKargoServiceHandler(svc KargoServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(kargoServiceUpdateRoleMethodDescriptor),
 		connect.WithHandlerOptions(opts...),
 	)
+	kargoServiceCreateServiceAccountHandler := connect.NewUnaryHandler(
+		KargoServiceCreateServiceAccountProcedure,
+		svc.CreateServiceAccount,
+		connect.WithSchema(kargoServiceCreateServiceAccountMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
+	kargoServiceDeleteServiceAccountHandler := connect.NewUnaryHandler(
+		KargoServiceDeleteServiceAccountProcedure,
+		svc.DeleteServiceAccount,
+		connect.WithSchema(kargoServiceDeleteServiceAccountMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
+	kargoServiceGetNewServiceAccountTokenHandler := connect.NewUnaryHandler(
+		KargoServiceGetNewServiceAccountTokenProcedure,
+		svc.GetNewServiceAccountToken,
+		connect.WithSchema(kargoServiceGetNewServiceAccountTokenMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
+	kargoServiceGetServiceAccountHandler := connect.NewUnaryHandler(
+		KargoServiceGetServiceAccountProcedure,
+		svc.GetServiceAccount,
+		connect.WithSchema(kargoServiceGetServiceAccountMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
+	kargoServiceListServiceAccountsHandler := connect.NewUnaryHandler(
+		KargoServiceListServiceAccountsProcedure,
+		svc.ListServiceAccounts,
+		connect.WithSchema(kargoServiceListServiceAccountsMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
 	kargoServiceListClusterSecretsHandler := connect.NewUnaryHandler(
 		KargoServiceListClusterSecretsProcedure,
 		svc.ListClusterSecrets,
@@ -2302,6 +2447,16 @@ func NewKargoServiceHandler(svc KargoServiceHandler, opts ...connect.HandlerOpti
 			kargoServiceRevokeHandler.ServeHTTP(w, r)
 		case KargoServiceUpdateRoleProcedure:
 			kargoServiceUpdateRoleHandler.ServeHTTP(w, r)
+		case KargoServiceCreateServiceAccountProcedure:
+			kargoServiceCreateServiceAccountHandler.ServeHTTP(w, r)
+		case KargoServiceDeleteServiceAccountProcedure:
+			kargoServiceDeleteServiceAccountHandler.ServeHTTP(w, r)
+		case KargoServiceGetNewServiceAccountTokenProcedure:
+			kargoServiceGetNewServiceAccountTokenHandler.ServeHTTP(w, r)
+		case KargoServiceGetServiceAccountProcedure:
+			kargoServiceGetServiceAccountHandler.ServeHTTP(w, r)
+		case KargoServiceListServiceAccountsProcedure:
+			kargoServiceListServiceAccountsHandler.ServeHTTP(w, r)
 		case KargoServiceListClusterSecretsProcedure:
 			kargoServiceListClusterSecretsHandler.ServeHTTP(w, r)
 		case KargoServiceCreateClusterSecretProcedure:
@@ -2621,6 +2776,26 @@ func (UnimplementedKargoServiceHandler) Revoke(context.Context, *connect.Request
 
 func (UnimplementedKargoServiceHandler) UpdateRole(context.Context, *connect.Request[v1alpha1.UpdateRoleRequest]) (*connect.Response[v1alpha1.UpdateRoleResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("akuity.io.kargo.service.v1alpha1.KargoService.UpdateRole is not implemented"))
+}
+
+func (UnimplementedKargoServiceHandler) CreateServiceAccount(context.Context, *connect.Request[v1alpha1.CreateServiceAccountRequest]) (*connect.Response[v1alpha1.CreateServiceAccountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("akuity.io.kargo.service.v1alpha1.KargoService.CreateServiceAccount is not implemented"))
+}
+
+func (UnimplementedKargoServiceHandler) DeleteServiceAccount(context.Context, *connect.Request[v1alpha1.DeleteServiceAccountRequest]) (*connect.Response[v1alpha1.DeleteServiceAccountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("akuity.io.kargo.service.v1alpha1.KargoService.DeleteServiceAccount is not implemented"))
+}
+
+func (UnimplementedKargoServiceHandler) GetNewServiceAccountToken(context.Context, *connect.Request[v1alpha1.GetNewServiceAccountTokenRequest]) (*connect.Response[v1alpha1.GetNewServiceAccountTokenResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("akuity.io.kargo.service.v1alpha1.KargoService.GetNewServiceAccountToken is not implemented"))
+}
+
+func (UnimplementedKargoServiceHandler) GetServiceAccount(context.Context, *connect.Request[v1alpha1.GetServiceAccountRequest]) (*connect.Response[v1alpha1.GetServiceAccountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("akuity.io.kargo.service.v1alpha1.KargoService.GetServiceAccount is not implemented"))
+}
+
+func (UnimplementedKargoServiceHandler) ListServiceAccounts(context.Context, *connect.Request[v1alpha1.ListServiceAccountsRequest]) (*connect.Response[v1alpha1.ListServiceAccountsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("akuity.io.kargo.service.v1alpha1.KargoService.ListServiceAccounts is not implemented"))
 }
 
 func (UnimplementedKargoServiceHandler) ListClusterSecrets(context.Context, *connect.Request[v1alpha1.ListClusterSecretsRequest]) (*connect.Response[v1alpha1.ListClusterSecretsResponse], error) {

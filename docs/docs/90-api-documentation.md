@@ -89,6 +89,11 @@ Stability is not guaranteed.
 | ListRoles | [ListRolesRequest](#akuity-io-kargo-service-v1alpha1-ListRolesRequest) | [ListRolesResponse](#akuity-io-kargo-service-v1alpha1-ListRolesResponse) |
 | Revoke | [RevokeRequest](#akuity-io-kargo-service-v1alpha1-RevokeRequest) | [RevokeResponse](#akuity-io-kargo-service-v1alpha1-RevokeResponse) |
 | UpdateRole | [UpdateRoleRequest](#akuity-io-kargo-service-v1alpha1-UpdateRoleRequest) | [UpdateRoleResponse](#akuity-io-kargo-service-v1alpha1-UpdateRoleResponse) |
+| CreateServiceAccount | [CreateServiceAccountRequest](#akuity-io-kargo-service-v1alpha1-CreateServiceAccountRequest) | [CreateServiceAccountResponse](#akuity-io-kargo-service-v1alpha1-CreateServiceAccountResponse) |
+| DeleteServiceAccount | [DeleteServiceAccountRequest](#akuity-io-kargo-service-v1alpha1-DeleteServiceAccountRequest) | [DeleteServiceAccountResponse](#akuity-io-kargo-service-v1alpha1-DeleteServiceAccountResponse) |
+| GetNewServiceAccountToken | [GetNewServiceAccountTokenRequest](#akuity-io-kargo-service-v1alpha1-GetNewServiceAccountTokenRequest) | [GetNewServiceAccountTokenResponse](#akuity-io-kargo-service-v1alpha1-GetNewServiceAccountTokenResponse) |
+| GetServiceAccount | [GetServiceAccountRequest](#akuity-io-kargo-service-v1alpha1-GetServiceAccountRequest) | [GetServiceAccountResponse](#akuity-io-kargo-service-v1alpha1-GetServiceAccountResponse) |
+| ListServiceAccounts | [ListServiceAccountsRequest](#akuity-io-kargo-service-v1alpha1-ListServiceAccountsRequest) | [ListServiceAccountsResponse](#akuity-io-kargo-service-v1alpha1-ListServiceAccountsResponse) |
 | ListClusterSecrets | [ListClusterSecretsRequest](#akuity-io-kargo-service-v1alpha1-ListClusterSecretsRequest) | [ListClusterSecretsResponse](#akuity-io-kargo-service-v1alpha1-ListClusterSecretsResponse) |
 | CreateClusterSecret | [CreateClusterSecretRequest](#akuity-io-kargo-service-v1alpha1-CreateClusterSecretRequest) | [CreateClusterSecretResponse](#akuity-io-kargo-service-v1alpha1-CreateClusterSecretResponse) |
 | UpdateClusterSecret | [UpdateClusterSecretRequest](#akuity-io-kargo-service-v1alpha1-UpdateClusterSecretRequest) | [UpdateClusterSecretResponse](#akuity-io-kargo-service-v1alpha1-UpdateClusterSecretResponse) |
@@ -163,10 +168,10 @@ Stability is not guaranteed.
 <a name="akuity-io-kargo-service-v1alpha1-Claims"></a>
 
 ### Claims
- Claims represents a collection of OIDC claims for role-based access control.
+ Claims represents a collection of OIDC claims.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| claims | [github.com.akuity.kargo.api.rbac.v1alpha1.Claim](#github-com-akuity-kargo-api-rbac-v1alpha1-Claim) |  Note: oneof and repeated do not work together claims is the list of claims associated with a user or service account. |
+| claims | [github.com.akuity.kargo.api.rbac.v1alpha1.Claim](#github-com-akuity-kargo-api-rbac-v1alpha1-Claim) |  Note: oneof and repeated do not work together claims is a list of OIDC claims. |
 
 <a name="akuity-io-kargo-service-v1alpha1-ComponentVersions"></a>
 
@@ -308,18 +313,34 @@ Stability is not guaranteed.
 <a name="akuity-io-kargo-service-v1alpha1-CreateRoleRequest"></a>
 
 ### CreateRoleRequest
- CreateRoleRequest is the request for creating a new RBAC role.
+ CreateRoleRequest is a request to create a new Kargo Role virtual resource.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| role | [github.com.akuity.kargo.api.rbac.v1alpha1.Role](#github-com-akuity-kargo-api-rbac-v1alpha1-Role) |  role is the Role resource to create. |
+| role | [github.com.akuity.kargo.api.rbac.v1alpha1.Role](#github-com-akuity-kargo-api-rbac-v1alpha1-Role) |  role is the Kargo Role virtual resource to create. |
 
 <a name="akuity-io-kargo-service-v1alpha1-CreateRoleResponse"></a>
 
 ### CreateRoleResponse
- CreateRoleResponse contains the newly created role information.
+ CreateRoleResponse contains the details of a newly created Kargo Role virtual resource.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| role | [github.com.akuity.kargo.api.rbac.v1alpha1.Role](#github-com-akuity-kargo-api-rbac-v1alpha1-Role) |  role is the created Role resource. |
+| role | [github.com.akuity.kargo.api.rbac.v1alpha1.Role](#github-com-akuity-kargo-api-rbac-v1alpha1-Role) |  role is the newly created Kargo Role virtual resource. |
+
+<a name="akuity-io-kargo-service-v1alpha1-CreateServiceAccountRequest"></a>
+
+### CreateServiceAccountRequest
+ CreateServiceAccountRequest is a request to create a new Kargo ServiceAccount resource.
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| serviceAccount | k8s.io.api.core.v1.ServiceAccount |  serviceAccount is the Kargo ServiceAccount to create. |
+
+<a name="akuity-io-kargo-service-v1alpha1-CreateServiceAccountResponse"></a>
+
+### CreateServiceAccountResponse
+ CreateServiceAccountResponse contains the details of a newly created Kargo ServiceAccount resource.
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| serviceAccount | k8s.io.api.core.v1.ServiceAccount |  serviceAccount is the newly created Kargo ServiceAccount resource. |
 
 <a name="akuity-io-kargo-service-v1alpha1-DeleteAnalysisTemplateRequest"></a>
 
@@ -458,16 +479,29 @@ Stability is not guaranteed.
 <a name="akuity-io-kargo-service-v1alpha1-DeleteRoleRequest"></a>
 
 ### DeleteRoleRequest
- DeleteRoleRequest is the request for deleting an RBAC role.
+ DeleteRoleRequest is a request to delete a Kargo Role virtual resource.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| project | [string](#string) |  project is the name of the project containing the role. |
-| name | [string](#string) |  name is the name of the role to delete. |
+| project | [string](#string) |  project is the name of the project containing the Kargo Role. |
+| name | [string](#string) |  name is the name of the Kargo Role to delete. |
 
 <a name="akuity-io-kargo-service-v1alpha1-DeleteRoleResponse"></a>
 
 ### DeleteRoleResponse
- DeleteRoleResponse is the response returned after deleting a role.  explicitly empty
+ DeleteRoleResponse is the response returned after deleting a Kargo Role virtual resource.  explicitly empty
+<a name="akuity-io-kargo-service-v1alpha1-DeleteServiceAccountRequest"></a>
+
+### DeleteServiceAccountRequest
+ DeleteServiceAccountRequest is a request to delete a Kargo ServiceAccount resource.
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| project | [string](#string) |  project is the name of the project containing the Kargo ServiceAccount resource. |
+| name | [string](#string) |  name is the name of the Kargo ServiceAccount resource to delete. |
+
+<a name="akuity-io-kargo-service-v1alpha1-DeleteServiceAccountResponse"></a>
+
+### DeleteServiceAccountResponse
+ DeleteServiceAccountResponse is the response returned after deleting a Kargo ServiceAccount resource.  explicitly empty
 <a name="akuity-io-kargo-service-v1alpha1-DeleteStageRequest"></a>
 
 ### DeleteStageRequest
@@ -694,6 +728,24 @@ Stability is not guaranteed.
 | freight | [github.com.akuity.kargo.api.v1alpha1.Freight](#github-com-akuity-kargo-api-v1alpha1-Freight) |  freight contains the Freight resource in structured format. |
 | raw | [bytes](#bytes) |  raw contains the Freight resource in the requested raw format. |
 
+<a name="akuity-io-kargo-service-v1alpha1-GetNewServiceAccountTokenRequest"></a>
+
+### GetNewServiceAccountTokenRequest
+ GetNewServiceAccountTokenRequest is a request to generate and retrieve a new bearer token associated with a Kargo ServiceAccount resource.
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| project | [string](#string) |  project is the name of the project containing the Kargo ServiceAccount resource. |
+| name | [string](#string) |  name is the name of the Kargo ServiceAccount for which to generate a new bearer token. |
+
+<a name="akuity-io-kargo-service-v1alpha1-GetNewServiceAccountTokenResponse"></a>
+
+### GetNewServiceAccountTokenResponse
+ GetNewServiceAccountTokenResponse is contains the newly generated bearer token associated with a Kargo ServiceAccount resource.
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| project | [string](#string) |  project is the name of the project containing the Kargo ServiceAccount resource. |
+| token | [string](#string) |  token is the newly generated bearer token. |
+
 <a name="akuity-io-kargo-service-v1alpha1-GetProjectConfigRequest"></a>
 
 ### GetProjectConfigRequest
@@ -785,23 +837,42 @@ Stability is not guaranteed.
 <a name="akuity-io-kargo-service-v1alpha1-GetRoleRequest"></a>
 
 ### GetRoleRequest
- GetRoleRequest is the request for retrieving a specific RBAC role.
+ GetRoleRequest is a request for the details of a specific Kargo Role virtual resource or its underlying Kubernetes resources.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| project | [string](#string) |  project is the name of the project containing the role. |
-| name | [string](#string) |  name is the name of the role to retrieve. |
-| as_resources | [bool](#bool) |  as_resources indicates whether to return the role as resources or as a role object. |
-| format | [RawFormat](#akuity-io-kargo-service-v1alpha1-RawFormat) |  format specifies the desired response format (structured object or raw YAML). |
+| project | [string](#string) |  project is the name of the project containing the Kargo Role virtual resource. |
+| name | [string](#string) |  name is the name of the Kargo Role to retrieve. |
+| as_resources | [bool](#bool) |  as_resources indicates whether to return the Kargo Role's underlying Kubernetes resources instead of the Kargo Role virtual resource. |
+| format | [RawFormat](#akuity-io-kargo-service-v1alpha1-RawFormat) |  format specifies the desired response format (structured object or raw YAML or JSON). |
 
 <a name="akuity-io-kargo-service-v1alpha1-GetRoleResponse"></a>
 
 ### GetRoleResponse
- GetRoleResponse contains the requested role information.
+ GetRoleResponse contains the details of a Kargo Role virtual resource or its underlying Kubernetes resources.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| role | [github.com.akuity.kargo.api.rbac.v1alpha1.Role](#github-com-akuity-kargo-api-rbac-v1alpha1-Role) |  role is the structured Role resource. |
-| resources | [github.com.akuity.kargo.api.rbac.v1alpha1.RoleResources](#github-com-akuity-kargo-api-rbac-v1alpha1-RoleResources) |  resources is the structured RoleResources containing the role's resources. |
-| raw | [bytes](#bytes) |  raw is the raw YAML representation of the role. |
+| role | [github.com.akuity.kargo.api.rbac.v1alpha1.Role](#github-com-akuity-kargo-api-rbac-v1alpha1-Role) |  role is a structured Kargo Role virtual resource. |
+| resources | [github.com.akuity.kargo.api.rbac.v1alpha1.RoleResources](#github-com-akuity-kargo-api-rbac-v1alpha1-RoleResources) |  resources is a structured RoleResources object encapsulating the Kargo Role's underlying Kubernetes resources. |
+| raw | [bytes](#bytes) |  raw is a raw YAML or JSON representation of the requested resource(s). |
+
+<a name="akuity-io-kargo-service-v1alpha1-GetServiceAccountRequest"></a>
+
+### GetServiceAccountRequest
+ GetServiceAccountRequest is a request for the details of specific Kargo ServiceAccount resource.
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| project | [string](#string) |  project is the name of the project containing the Kargo ServiceAccount resource. |
+| name | [string](#string) |  name is the name of the Kargo ServiceAccount to retrieve. |
+| format | [RawFormat](#akuity-io-kargo-service-v1alpha1-RawFormat) |  format specifies the desired response format (structured object or raw YAML or JSON). |
+
+<a name="akuity-io-kargo-service-v1alpha1-GetServiceAccountResponse"></a>
+
+### GetServiceAccountResponse
+ GetServiceAccountResponse contains the details of the requested Kargo ServiceAccount resource.
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| serviceAccount | k8s.io.api.core.v1.ServiceAccount |  serviceAccount is a structured ServiceAccount. |
+| raw | [bytes](#bytes) |  raw is a raw YAML or JSON representation of the requested resource. |
 
 <a name="akuity-io-kargo-service-v1alpha1-GetStageRequest"></a>
 
@@ -856,21 +927,22 @@ Stability is not guaranteed.
 <a name="akuity-io-kargo-service-v1alpha1-GrantRequest"></a>
 
 ### GrantRequest
- GrantRequest is the request for granting a role to a user or resource.
+ GrantRequest is a request to assign permissions to a Kargo Role; or to bind users having specific ODIC claims OR a Kargo ServiceAccount to a Kargo Role.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| project | [string](#string) |  project is the name of the project where the role will be granted. |
-| role | [string](#string) |  role is the name of the role to grant. |
-| user_claims | [Claims](#akuity-io-kargo-service-v1alpha1-Claims) |  user_claims are the OIDC claims for the user being granted the role. |
-| resource_details | [github.com.akuity.kargo.api.rbac.v1alpha1.ResourceDetails](#github-com-akuity-kargo-api-rbac-v1alpha1-ResourceDetails) |  resource_details are the details of the resource being granted the role. |
+| project | [string](#string) |  project is the name of the project containing the Kargo Role virtual resource. |
+| role | [string](#string) |  role is the name of the Kargo Role virtual resource to which permissions will be granted; or to which users having specific OIDC claims OR a Kargo ServiceAccount will be bound. |
+| user_claims | [Claims](#akuity-io-kargo-service-v1alpha1-Claims) |  user_claims are OIDC claims to which the Kargo Role virtual resource will be mapped. i.e. All users having these claims will have this Kargo Role. |
+| service_accounts | [ServiceAccounts](#akuity-io-kargo-service-v1alpha1-ServiceAccounts) |  service_accounts are Kargo ServiceAccounts to be bound to this Kargo Role. |
+| resource_details | [github.com.akuity.kargo.api.rbac.v1alpha1.ResourceDetails](#github-com-akuity-kargo-api-rbac-v1alpha1-ResourceDetails) |  resource_details are the details of permissions being granted to the Kargo Role virtual resource. |
 
 <a name="akuity-io-kargo-service-v1alpha1-GrantResponse"></a>
 
 ### GrantResponse
- GrantResponse contains information about the granted role.
+ GrantResponse contains the details of a Kargo Role virtual resource after a new grant.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| role | [github.com.akuity.kargo.api.rbac.v1alpha1.Role](#github-com-akuity-kargo-api-rbac-v1alpha1-Role) |  role is the Role resource that was granted. |
+| role | [github.com.akuity.kargo.api.rbac.v1alpha1.Role](#github-com-akuity-kargo-api-rbac-v1alpha1-Role) |  role is the Kargo Role virtual resource that was the subject of the grant. |
 
 <a name="akuity-io-kargo-service-v1alpha1-ImageStageMap"></a>
 
@@ -1086,20 +1158,36 @@ Stability is not guaranteed.
 <a name="akuity-io-kargo-service-v1alpha1-ListRolesRequest"></a>
 
 ### ListRolesRequest
- ListRolesRequest is the request for listing all roles in a project.
+ ListRolesRequests is a request to retrieve the details of all Kargo Role virtual resources or their underlying Kubernetes resources.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| project | [string](#string) |  project is the name of the project whose roles will be listed. |
-| as_resources | [bool](#bool) |  as_resources indicates whether to return roles as resources or as role objects. |
+| project | [string](#string) |  project is the name of the project for which to list all Kargo Role virtual resources. |
+| as_resources | [bool](#bool) |  as_resources indicates whether to return each Kargo Role's underlying Kubernetes resources instead of the Kargo Role virtual resource(s). |
 
 <a name="akuity-io-kargo-service-v1alpha1-ListRolesResponse"></a>
 
 ### ListRolesResponse
- ListRolesResponse contains a list of roles for the specified project.
+ ListRolesResponse contains a list of Kargo Role virtual resources or their underlying Kubernetes resources.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| roles | [github.com.akuity.kargo.api.rbac.v1alpha1.Role](#github-com-akuity-kargo-api-rbac-v1alpha1-Role) |  Note: oneof and repeated do not work together roles is the list of Role resources when requested as roles. |
-| resources | [github.com.akuity.kargo.api.rbac.v1alpha1.RoleResources](#github-com-akuity-kargo-api-rbac-v1alpha1-RoleResources) |  resources is the list of RoleResources when requested as resources. |
+| roles | [github.com.akuity.kargo.api.rbac.v1alpha1.Role](#github-com-akuity-kargo-api-rbac-v1alpha1-Role) |  Note: oneof and repeated do not work together roles is a list of Kargo Role virtual resources. |
+| resources | [github.com.akuity.kargo.api.rbac.v1alpha1.RoleResources](#github-com-akuity-kargo-api-rbac-v1alpha1-RoleResources) |  resources is a list of RoleResource objects encapsulating the Kargo Roles' underlying Kubernetes resources. |
+
+<a name="akuity-io-kargo-service-v1alpha1-ListServiceAccountsRequest"></a>
+
+### ListServiceAccountsRequest
+ ListServiceAccountRequest is a request to retrieve all Kargo ServiceAccount resources.
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| project | [string](#string) |  project is the name of the project for which to list all Kargo ServiceAccount resources. |
+
+<a name="akuity-io-kargo-service-v1alpha1-ListServiceAccountsResponse"></a>
+
+### ListServiceAccountsResponse
+ ListServiceAccountsResponse contains a list of Kargo ServiceAccount resources.
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| serviceAccounts | k8s.io.api.core.v1.ServiceAccount |  serviceAccounts is the list of Kargo ServiceAccount resources. |
 
 <a name="akuity-io-kargo-service-v1alpha1-ListStagesRequest"></a>
 
@@ -1291,21 +1379,30 @@ Stability is not guaranteed.
 <a name="akuity-io-kargo-service-v1alpha1-RevokeRequest"></a>
 
 ### RevokeRequest
- RevokeRequest is the request for revoking a role from a user or resource.
+ RevokeRequest is a request to remove permissions from a Kargo Role; or to unbind users having specific OIDC claims OR a Kargo ServiceAccount from a Kargo Role.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| project | [string](#string) |  project is the name of the project where the role will be revoked. |
-| role | [string](#string) |  role is the name of the role to revoke. |
-| user_claims | [Claims](#akuity-io-kargo-service-v1alpha1-Claims) |  user_claims are the OIDC claims for the user whose role is being revoked. |
-| resource_details | [github.com.akuity.kargo.api.rbac.v1alpha1.ResourceDetails](#github-com-akuity-kargo-api-rbac-v1alpha1-ResourceDetails) |  resource_details are the details of the resource whose role is being revoked. |
+| project | [string](#string) |  project is the name of the project containing the Kargo Role virtual resource. |
+| role | [string](#string) |  role is the name of the Kargo Role virtual resource from which permissions will be removed; or from which users having specific OIDC claims OR a Kargo ServiceAccount will be unbound. |
+| user_claims | [Claims](#akuity-io-kargo-service-v1alpha1-Claims) |  user_claims are OIDC claims from which the Kargo Role virtual resource will be unmapped. i.e. All users having these claims will be unbound from this Kargo Role. |
+| service_accounts | [ServiceAccounts](#akuity-io-kargo-service-v1alpha1-ServiceAccounts) |  service_accounts are Kargo ServiceAccounts to be unbound from this Kargo Role. |
+| resource_details | [github.com.akuity.kargo.api.rbac.v1alpha1.ResourceDetails](#github-com-akuity-kargo-api-rbac-v1alpha1-ResourceDetails) |  resource_details are the details of permissions to be revoked from the Kargo Role virtual resource. |
 
 <a name="akuity-io-kargo-service-v1alpha1-RevokeResponse"></a>
 
 ### RevokeResponse
- RevokeResponse contains information about the revoked role.
+ RevokeResponse contains the details of a Kargo Role virtual resource after a revocation.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| role | [github.com.akuity.kargo.api.rbac.v1alpha1.Role](#github-com-akuity-kargo-api-rbac-v1alpha1-Role) |  role is the Role resource that was revoked. |
+| role | [github.com.akuity.kargo.api.rbac.v1alpha1.Role](#github-com-akuity-kargo-api-rbac-v1alpha1-Role) |  role is the Kargo Role virtual resource that was the subject of the revocation. |
+
+<a name="akuity-io-kargo-service-v1alpha1-ServiceAccounts"></a>
+
+### ServiceAccounts
+ 
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| service_accounts | [string](#string) |  Note: oneof and repeated do not work together service_accounts is a list of Kargo ServiceAccounts. |
 
 <a name="akuity-io-kargo-service-v1alpha1-TagMap"></a>
 
@@ -1444,18 +1541,18 @@ Stability is not guaranteed.
 <a name="akuity-io-kargo-service-v1alpha1-UpdateRoleRequest"></a>
 
 ### UpdateRoleRequest
- UpdateRoleRequest is the request for updating an existing RBAC role.
+ UpdateRoleRequest is a request to update an existing Kargo Role virtual resource.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| role | [github.com.akuity.kargo.api.rbac.v1alpha1.Role](#github-com-akuity-kargo-api-rbac-v1alpha1-Role) |  role is the updated Role resource. |
+| role | [github.com.akuity.kargo.api.rbac.v1alpha1.Role](#github-com-akuity-kargo-api-rbac-v1alpha1-Role) |  role is the Kargo Role virtual resource to update. |
 
 <a name="akuity-io-kargo-service-v1alpha1-UpdateRoleResponse"></a>
 
 ### UpdateRoleResponse
- UpdateRoleResponse contains the updated role information.
+ UpdateRoleResponse contains the details of the updated Kargo Role virtual resource.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| role | [github.com.akuity.kargo.api.rbac.v1alpha1.Role](#github-com-akuity-kargo-api-rbac-v1alpha1-Role) |  role is the updated Role resource. |
+| role | [github.com.akuity.kargo.api.rbac.v1alpha1.Role](#github-com-akuity-kargo-api-rbac-v1alpha1-Role) |  role is the updated Kargo Role virtual resource. |
 
 <a name="akuity-io-kargo-service-v1alpha1-VersionInfo"></a>
 
@@ -1636,6 +1733,7 @@ RawFormat specifies the format for raw resource representation.
 | metadata | k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta |   |
 | kargoManaged | [bool](#bool) |   |
 | claims | [Claim](#github-com-akuity-kargo-api-rbac-v1alpha1-Claim) |   |
+| serviceAccounts | [string](#string) |   |
 | rules | k8s.io.api.rbac.v1.PolicyRule |   |
 
 <a name="github-com-akuity-kargo-api-rbac-v1alpha1-RoleResources"></a>

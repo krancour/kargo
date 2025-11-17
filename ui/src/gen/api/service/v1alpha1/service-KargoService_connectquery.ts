@@ -434,53 +434,95 @@ export const getPromotionTask = KargoService.method.getPromotionTask;
 export const getClusterPromotionTask = KargoService.method.getClusterPromotionTask;
 
 /**
- * CreateRole creates a new RBAC role within a project.
+ * CreateRole creates a new Kargo Role virtual resource.
  *
  * @generated from rpc akuity.io.kargo.service.v1alpha1.KargoService.CreateRole
  */
 export const createRole = KargoService.method.createRole;
 
 /**
- * DeleteRole removes an RBAC role from a project.
+ * DeleteRole deletes a Kargo Role virtual resource.
  *
  * @generated from rpc akuity.io.kargo.service.v1alpha1.KargoService.DeleteRole
  */
 export const deleteRole = KargoService.method.deleteRole;
 
 /**
- * GetRole retrieves details of a specific RBAC role.
+ * GetRole retrieves details of a specific Kargo Role virtual resource or its
+ * underlying Kubernetes resources.
  *
  * @generated from rpc akuity.io.kargo.service.v1alpha1.KargoService.GetRole
  */
 export const getRole = KargoService.method.getRole;
 
 /**
- * Grant assigns permissions or binds users/services to a role.
+ * Grant assigns permissions to a Kargo Role; or binds users having specific
+ * OIDC claims OR a Kargo ServiceAccount to a Kargo Role.
  *
  * @generated from rpc akuity.io.kargo.service.v1alpha1.KargoService.Grant
  */
 export const grant = KargoService.method.grant;
 
 /**
- * ListRoles retrieves all RBAC roles within a project.
+ * ListRoles retrieves details of all Kargo Role virtual resources or their
+ * underlying Kubernetes resources.
  *
  * @generated from rpc akuity.io.kargo.service.v1alpha1.KargoService.ListRoles
  */
 export const listRoles = KargoService.method.listRoles;
 
 /**
- * Revoke removes permissions or unbinds users/services from a role.
+ * Revoke removes permissions from a Kargo Role; or unbinds users having
+ * specific OIDC claims OR a Kargo ServiceAccount from a Kargo Role.
  *
  * @generated from rpc akuity.io.kargo.service.v1alpha1.KargoService.Revoke
  */
 export const revoke = KargoService.method.revoke;
 
 /**
- * UpdateRole modifies an existing RBAC role.
+ * UpdateRole modifies an existing Kargo Role virtual resource.
  *
  * @generated from rpc akuity.io.kargo.service.v1alpha1.KargoService.UpdateRole
  */
 export const updateRole = KargoService.method.updateRole;
+
+/**
+ * CreateServiceAccount creates a new Kargo ServiceAccount.
+ *
+ * @generated from rpc akuity.io.kargo.service.v1alpha1.KargoService.CreateServiceAccount
+ */
+export const createServiceAccount = KargoService.method.createServiceAccount;
+
+/**
+ * DeleteServiceAccount removes a Kargo ServiceAccount.
+ *
+ * @generated from rpc akuity.io.kargo.service.v1alpha1.KargoService.DeleteServiceAccount
+ */
+export const deleteServiceAccount = KargoService.method.deleteServiceAccount;
+
+/**
+ * GetNewServiceAccountToken generates and returns a new bearer token
+ * associated with the ServiceAccount. Any existing token is REVOKED. i.e.
+ * This is NOT for retrieval of existing tokens. That operation is not
+ * supported.
+ *
+ * @generated from rpc akuity.io.kargo.service.v1alpha1.KargoService.GetNewServiceAccountToken
+ */
+export const getNewServiceAccountToken = KargoService.method.getNewServiceAccountToken;
+
+/**
+ * GetServiceAccount retrieves details of a specific Kargo ServiceAccount.
+ *
+ * @generated from rpc akuity.io.kargo.service.v1alpha1.KargoService.GetServiceAccount
+ */
+export const getServiceAccount = KargoService.method.getServiceAccount;
+
+/**
+ * ListServiceAccounts retrieves details of all Kargo ServiceAccounts.
+ *
+ * @generated from rpc akuity.io.kargo.service.v1alpha1.KargoService.ListServiceAccounts
+ */
+export const listServiceAccounts = KargoService.method.listServiceAccounts;
 
 /**
  * ListClusterSecrets retrieves all cluster-scoped secrets.
