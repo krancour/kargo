@@ -41,7 +41,7 @@ func init() {
 	}
 }
 
-func TestCreate(t *testing.T) {
+func Test_rolesDatabase_Create(t *testing.T) {
 	t.Run("ServiceAccount already exists", func(t *testing.T) {
 		testKargoRole := &rbacapi.Role{
 			ObjectMeta: metav1.ObjectMeta{
@@ -179,7 +179,7 @@ func TestCreate(t *testing.T) {
 	})
 }
 
-func TestDelete(t *testing.T) {
+func Test_rolesDatabase_Delete(t *testing.T) {
 	t.Run("ServiceAccount not found", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).Build()
 		db := NewKubernetesRolesDatabase(c)
@@ -217,7 +217,7 @@ func TestDelete(t *testing.T) {
 	})
 }
 
-func TestGet(t *testing.T) {
+func Test_rolesDatabase_Get(t *testing.T) {
 	t.Run("ServiceAccount does not exist", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).Build()
 		db := NewKubernetesRolesDatabase(c)
@@ -357,7 +357,7 @@ func TestGet(t *testing.T) {
 	})
 }
 
-func TestGetAsResources(t *testing.T) {
+func Test_rolesDatabase_GetAsResources(t *testing.T) {
 	t.Run("ServiceAccount not found", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).Build()
 		db := NewKubernetesRolesDatabase(c)
@@ -402,7 +402,7 @@ func TestGetAsResources(t *testing.T) {
 	})
 }
 
-func TestGrantPermissionToRole(t *testing.T) {
+func Test_rolesDatabase_GrantPermissionToRole(t *testing.T) {
 	t.Run("ServiceAccount not found", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).Build()
 		db := NewKubernetesRolesDatabase(c)
@@ -532,7 +532,7 @@ func TestGrantPermissionToRole(t *testing.T) {
 	})
 }
 
-func TestGrantRoleToUsers(t *testing.T) {
+func Test_rolesDatabase_GrantRoleToUsers(t *testing.T) {
 	t.Run("ServiceAccount not found", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).Build()
 		db := NewKubernetesRolesDatabase(c)
@@ -617,7 +617,7 @@ func TestGrantRoleToUsers(t *testing.T) {
 	})
 }
 
-func TestList(t *testing.T) {
+func Test_rolesDatabase_List(t *testing.T) {
 	t.Run("with only kargo-managed roles", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 			managedServiceAccount(map[string]string{
@@ -755,7 +755,7 @@ func TestList(t *testing.T) {
 	})
 }
 
-func TestRevokePermissionsFromRole(t *testing.T) {
+func Test_rolesDatabase_RevokePermissionsFromRole(t *testing.T) {
 	t.Run("ServiceAccount not found", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).Build()
 		db := NewKubernetesRolesDatabase(c)
@@ -843,7 +843,7 @@ func TestRevokePermissionsFromRole(t *testing.T) {
 	})
 }
 
-func TestRevokeRoleFromUsers(t *testing.T) {
+func Test_rolesDatabase_RevokeRoleFromUsers(t *testing.T) {
 	t.Run("ServiceAccount not found", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).Build()
 		db := NewKubernetesRolesDatabase(c)
@@ -928,7 +928,7 @@ func TestRevokeRoleFromUsers(t *testing.T) {
 	})
 }
 
-func TestUpdate(t *testing.T) {
+func Test_rolesDatabase_Update(t *testing.T) {
 	t.Run("ServiceAccount not found", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).Build()
 		db := NewKubernetesRolesDatabase(c)
@@ -1132,7 +1132,7 @@ func TestUpdate(t *testing.T) {
 	})
 }
 
-func TestManageableResources(t *testing.T) {
+func Test_manageableResources(t *testing.T) {
 	t.Run("ServiceAccount is not annotated correctly", func(t *testing.T) {
 		_, _, err := manageableResources(
 			*plainServiceAccount(nil),
