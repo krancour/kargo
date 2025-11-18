@@ -51,6 +51,8 @@ kargo get promotions --project=my-project --stage=my-stage
 	cmd.AddCommand(newGetProjectsCommand(cfg, streams, cmdOpts))
 	cmd.AddCommand(newGetPromotionsCommand(cfg, streams, cmdOpts))
 	cmd.AddCommand(newRolesCommand(cfg, streams, cmdOpts))
+	cmd.AddCommand(newGetServiceAccountsCommand(cfg, streams, cmdOpts))
+	cmd.AddCommand(newGetServiceAccountTokenCommand(cfg, streams))
 	cmd.AddCommand(newGetStagesCommand(cfg, streams, cmdOpts))
 	cmd.AddCommand(newGetWarehousesCommand(cfg, streams, cmdOpts))
 
@@ -95,6 +97,8 @@ func printObjects[T runtime.Object](
 	switch any(t).(type) {
 	case *corev1.Secret:
 		printObj = newCredentialsTable(list)
+	case *corev1.ServiceAccount:
+		printObj = newServiceAccountTable(list)
 	case *kargoapi.ClusterConfig:
 		printObj = newClusterConfigTable(list)
 	case *kargoapi.Freight:
