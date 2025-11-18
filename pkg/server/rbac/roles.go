@@ -50,6 +50,16 @@ type RolesDatabase interface {
 		name string,
 		resourceDetails *rbacapi.ResourceDetails,
 	) (*rbacapi.Role, error)
+	// GrantRoleToServiceAccounts amends the RoleBinding underlying a Kargo Role
+	// to bind it to the specified Kargo ServiceAccount. It will return an error
+	// if the Kargo Role has no underlying Kubernetes ServiceAccount or any
+	// underlying resources are not Kargo-manageable.
+	GrantRoleToServiceAccounts(
+		ctx context.Context,
+		project string,
+		roleName string,
+		saNames []string,
+	) (*rbacapi.Role, error)
 	// GrantRoleToUsers amends claim annotations of the ServiceAccount underlying
 	// a Kargo Role. It will return an error if no underlying ServiceAccount
 	// exists or any underlying resources are not Kargo-manageable.
@@ -72,6 +82,16 @@ type RolesDatabase interface {
 		project string,
 		name string,
 		resourceDetails *rbacapi.ResourceDetails,
+	) (*rbacapi.Role, error)
+	// RevokeRoleFromServiceAccounts amends the RoleBinding underlying a Kargo
+	// Role to unbind it from the specified Kargo ServiceAccount. It will return
+	// an error if the Kargo Role has no underlying Kubernetes ServiceAccount or
+	// any underlying resources are not Kargo-manageable. Kargo-manageable.
+	RevokeRoleFromServiceAccounts(
+		ctx context.Context,
+		project string,
+		roleName string,
+		saNames []string,
 	) (*rbacapi.Role, error)
 	// RevokeRoleFromUsers removes select claims from claim annotations of the
 	// ServiceAccount underlying a Kargo Role. It will return an error if no
@@ -389,13 +409,83 @@ func (r *rolesDatabase) GrantPermissionsToRole(
 	}
 
 	if rb == nil {
-		rb = buildNewRoleBinding(project, name)
+		rb = buildNewRoleBinding(project, name, nil)
 		if err = r.client.Create(ctx, rb); err != nil {
 			return nil, fmt.Errorf("error creating RoleBinding %q in namespace %q: %w", name, project, err)
 		}
 	}
 
 	return ResourcesToRole(sa, []rbacv1.Role{*newRole}, []rbacv1.RoleBinding{*rb})
+}
+
+// GrantRoleToServiceAccounts implements the RolesDatabase interface.
+func (r *rolesDatabase) GrantRoleToServiceAccounts(
+	ctx context.Context,
+	project string,
+	roleName string,
+	saNames []string,
+) (*rbacapi.Role, error) {
+	roleSA, roles, rbs, err := r.GetAsResources(ctx, project, roleName)
+	if err != nil {
+		return nil, err
+	}
+	// This will return an error if these resources are not manageable for any
+	// reason.
+	_, rb, err := manageableResources(*roleSA, roles, rbs)
+	if err != nil {
+		return nil, err
+	}
+	if rb == nil {
+		rb = buildNewRoleBinding(project, roleName, nil)
+		if err = r.client.Create(ctx, rb); err != nil {
+			return nil, fmt.Errorf(
+				"error creating RoleBinding %q in namespace %q: %w",
+				rb.Name, rb.Namespace, err,
+			)
+		}
+	}
+	for _, saName := range saNames {
+		sa := &corev1.ServiceAccount{}
+		if err = r.client.Get(
+			ctx,
+			client.ObjectKey{
+				Namespace: project,
+				Name:      saName,
+			},
+			sa,
+		); err != nil {
+			return nil, fmt.Errorf(
+				"error getting ServiceAccount %q in namespace %q: %w",
+				saName, project, err,
+			)
+		}
+		if !isKargoServiceAccount(sa) {
+			return nil, apierrors.NewBadRequest(
+				fmt.Sprintf(
+					"ServiceAccount %q in namespace %q is not a Kargo ServiceAccount",
+					saName, project,
+				),
+			)
+		}
+		if !isKargoManaged(sa) {
+			return nil, apierrors.NewBadRequest(
+				fmt.Sprintf(
+					"ServiceAccount %q in namespace %q is not annotated as Kargo-managed",
+					saName, project,
+				),
+			)
+		}
+	}
+	for _, saName := range saNames {
+		addServiceAccountToRoleBinding(rb, saName)
+		if err = r.client.Update(ctx, rb); err != nil {
+			return nil, fmt.Errorf(
+				"error updating RoleBinding %q in namespace %q: %w",
+				roleName, project, err,
+			)
+		}
+	}
+	return ResourcesToRole(roleSA, roles, []rbacv1.RoleBinding{*rb})
 }
 
 // GrantRoleToUsers implements the RolesDatabase interface.
@@ -554,6 +644,38 @@ func (r *rolesDatabase) RevokePermissionsFromRole(
 	return ResourcesToRole(sa, []rbacv1.Role{*role}, rbs)
 }
 
+// RevokeRoleFromServiceAccounts implements the RolesDatabase interface.
+func (r *rolesDatabase) RevokeRoleFromServiceAccounts(
+	ctx context.Context,
+	project string,
+	roleName string,
+	saNames []string,
+) (*rbacapi.Role, error) {
+	roleSA, roles, rbs, err := r.GetAsResources(ctx, project, roleName)
+	if err != nil {
+		return nil, err
+	}
+	// This will return an error if these resources are not manageable for any
+	// reason.
+	_, rb, err := manageableResources(*roleSA, roles, rbs)
+	if err != nil {
+		return nil, err
+	}
+	if rb != nil {
+		for _, saName := range saNames {
+			dropServiceAccountFromRoleBinding(rb, saName)
+			if err = r.client.Update(ctx, rb); err != nil {
+				return nil, fmt.Errorf(
+					"error updating RoleBinding %q in namespace %q: %w",
+					roleName, project, err,
+				)
+			}
+		}
+		return ResourcesToRole(roleSA, roles, []rbacv1.RoleBinding{*rb})
+	}
+	return ResourcesToRole(roleSA, roles, nil)
+}
+
 // RevokeRoleFromUsers implements the RolesDatabase interface.
 func (r *rolesDatabase) RevokeRoleFromUsers(
 	ctx context.Context,
@@ -641,7 +763,11 @@ func (r *rolesDatabase) Update(
 	}
 
 	if rb == nil {
-		rb = buildNewRoleBinding(kargoRole.Namespace, kargoRole.Name)
+		rb = buildNewRoleBinding(
+			kargoRole.Namespace,
+			kargoRole.Name,
+			kargoRole.ServiceAccounts,
+		)
 		if err := r.client.Create(ctx, rb); err != nil {
 			return nil, fmt.Errorf(
 				"error creating RoleBinding %q in namespace %q: %w", kargoRole.Name, kargoRole.Namespace, err,
@@ -695,10 +821,22 @@ func ResourcesToRole(
 			},
 		)
 	}
-
 	slices.SortFunc(kargoRole.Claims, func(lhs, rhs rbacapi.Claim) int {
 		return strings.Compare(lhs.Name, rhs.Name)
 	})
+
+	kargoRole.ServiceAccounts = []string{}
+	for _, rb := range rbs {
+		for _, subject := range rb.Subjects {
+			if subject.Kind == rbacv1.ServiceAccountKind &&
+				subject.Namespace == sa.Namespace &&
+				subject.Name != sa.Name {
+				kargoRole.ServiceAccounts = append(kargoRole.ServiceAccounts, subject.Name)
+			}
+		}
+	}
+	slices.Sort(kargoRole.ServiceAccounts)
+	kargoRole.ServiceAccounts = slices.Compact(kargoRole.ServiceAccounts)
 
 	kargoRole.Rules = []rbacv1.PolicyRule{}
 	for _, role := range roles {
@@ -738,7 +876,11 @@ func RoleToResources(
 		return nil, nil, nil, fmt.Errorf("error normalizing RBAC policy rules: %w", err)
 	}
 
-	rb := buildNewRoleBinding(kargoRole.Namespace, kargoRole.Name)
+	rb := buildNewRoleBinding(
+		kargoRole.Namespace,
+		kargoRole.Name,
+		kargoRole.ServiceAccounts,
+	)
 
 	return sa, role, rb, nil
 }
@@ -815,11 +957,15 @@ func buildNewRole(namespace, name string) *rbacv1.Role {
 	}
 }
 
-func buildNewRoleBinding(namespace, name string) *rbacv1.RoleBinding {
-	return &rbacv1.RoleBinding{
+func buildNewRoleBinding(
+	namespace string,
+	roleName string,
+	saList []string,
+) *rbacv1.RoleBinding {
+	rb := &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
-			Name:      name,
+			Name:      roleName,
 			Annotations: map[string]string{
 				rbacapi.AnnotationKeyManaged: rbacapi.AnnotationValueTrue,
 			},
@@ -828,19 +974,56 @@ func buildNewRoleBinding(namespace, name string) *rbacv1.RoleBinding {
 			{
 				Kind:      rbacv1.ServiceAccountKind,
 				Namespace: namespace,
-				Name:      name,
+				Name:      roleName,
 			},
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: rbacv1.GroupName,
 			Kind:     "Role",
-			Name:     name,
+			Name:     roleName,
 		},
 	}
+	slices.Sort(saList)
+	for _, saName := range saList {
+		if saName != roleName {
+			rb.Subjects = append(
+				rb.Subjects,
+				rbacv1.Subject{
+					Kind:      rbacv1.ServiceAccountKind,
+					Namespace: namespace,
+					Name:      saName,
+				},
+			)
+		}
+	}
+	return rb
 }
 
 func isKargoManaged(obj metav1.Object) bool {
 	return obj.GetAnnotations()[rbacapi.AnnotationKeyManaged] == rbacapi.AnnotationValueTrue
+}
+
+func addServiceAccountToRoleBinding(rb *rbacv1.RoleBinding, saName string) {
+	for _, subject := range rb.Subjects {
+		if subject.Kind == rbacv1.ServiceAccountKind &&
+			subject.Namespace == rb.Namespace &&
+			subject.Name == saName {
+			return // Already exists, nothing to do
+		}
+	}
+	rb.Subjects = append(rb.Subjects, rbacv1.Subject{
+		Kind:      rbacv1.ServiceAccountKind,
+		Namespace: rb.Namespace,
+		Name:      saName,
+	})
+}
+
+func dropServiceAccountFromRoleBinding(rb *rbacv1.RoleBinding, saName string) {
+	rb.Subjects = slices.DeleteFunc(rb.Subjects, func(subject rbacv1.Subject) bool {
+		return subject.Kind == rbacv1.ServiceAccountKind &&
+			subject.Namespace == rb.Namespace &&
+			subject.Name == saName
+	})
 }
 
 func manageableResources(
