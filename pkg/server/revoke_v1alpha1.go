@@ -36,6 +36,13 @@ func (s *server) Revoke(
 		); err != nil {
 			return nil, fmt.Errorf("error revoking Kargo Role from users: %w", err)
 		}
+	} else if serviceAccounts := req.Msg.GetServiceAccounts(); serviceAccounts != nil {
+		if role, err = s.rolesDB.RevokeRoleFromServiceAccounts(
+			ctx, project, req.Msg.Role, serviceAccounts.ServiceAccounts,
+		); err != nil {
+			return nil,
+				fmt.Errorf("error revoking Kargo Role from ServiceAccounts: %w", err)
+		}
 	} else if resources := req.Msg.GetResourceDetails(); resources != nil {
 		if role, err = s.rolesDB.RevokePermissionsFromRole(
 			ctx, project, req.Msg.Role, resources,
@@ -45,7 +52,10 @@ func (s *server) Revoke(
 	} else {
 		return nil, connect.NewError(
 			connect.CodeInvalidArgument,
-			errors.New("either userClaims or resourceDetails must be provided"),
+			errors.New(
+				"one of userClaims, serviceAccount, or resourceDetails must be "+
+					"provided",
+			),
 		)
 	}
 

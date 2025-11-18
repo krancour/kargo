@@ -36,6 +36,13 @@ func (s *server) Grant(
 		); err != nil {
 			return nil, fmt.Errorf("error granting Kargo Role to users: %w", err)
 		}
+	} else if serviceAccounts := req.Msg.GetServiceAccounts(); serviceAccounts != nil {
+		if role, err = s.rolesDB.GrantRoleToServiceAccounts(
+			ctx, project, req.Msg.Role, serviceAccounts.ServiceAccounts,
+		); err != nil {
+			return nil,
+				fmt.Errorf("error granting Kargo Role to ServiceAccounts: %w", err)
+		}
 	} else if resources := req.Msg.GetResourceDetails(); resources != nil {
 		if role, err = s.rolesDB.GrantPermissionsToRole(
 			ctx, project, req.Msg.Role, resources,
@@ -45,7 +52,10 @@ func (s *server) Grant(
 	} else {
 		return nil, connect.NewError(
 			connect.CodeInvalidArgument,
-			errors.New("either userClaims or resourceDetails must be provided"),
+			errors.New(
+				"one of userClaims, serviceAccount, or resourceDetails must be "+
+					"provided",
+			),
 		)
 	}
 
