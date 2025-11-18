@@ -41,9 +41,10 @@ func newRoleCommand(cfg config.CLIConfig, streams genericiooptions.IOStreams) *c
 	}
 
 	cmd := &cobra.Command{
-		Use:   "role [--project=project] (NAME ...)",
-		Short: "Delete role by name",
-		Args:  option.MinimumNArgs(1),
+		Use:     "role [--project=project] (NAME ...)",
+		Aliases: []string{"roles"},
+		Short:   "Delete role by name",
+		Args:    option.MinimumNArgs(1),
 		Example: templates.Example(`
 # Delete a role
 kargo delete role --project=my-project my-role

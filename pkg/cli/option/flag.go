@@ -100,6 +100,9 @@ const (
 	// RoleFlag is the flag name for the role flag.
 	RoleFlag = "role"
 
+	// ServiceAccountFlag is the flag name for the service-account flag.
+	ServiceAccountFlag = "service-account"
+
 	// StageFlag is the flag name for the stage flag.
 	StageFlag = "stage"
 
@@ -280,6 +283,11 @@ func ResourceType(fs *pflag.FlagSet, repoType *string, usage string) {
 // Role adds the RoleFlag to the provided flag set.
 func Role(fs *pflag.FlagSet, role *string, usage string) {
 	fs.StringVar(role, RoleFlag, "", usage)
+}
+
+// Claims adds a multi-value ServiceAccountFlag to the provided flag set.
+func ServiceAccounts(fs *pflag.FlagSet, serviceAccounts *[]string, usage string) {
+	fs.StringSliceVar(serviceAccounts, ServiceAccountFlag, nil, usage)
 }
 
 // Stage adds the StageFlag to the provided flag set.
