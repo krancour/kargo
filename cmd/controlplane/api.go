@@ -133,6 +133,7 @@ func (o *apiOptions) run(ctx context.Context) error {
 		serverCfg,
 		kubeClient,
 		rbac.NewKubernetesRolesDatabase(kubeClient),
+		rbac.NewKubernetesServiceAccountsDatabase(kubeClient),
 		k8sevent.NewEventSender(
 			event.NewRecorder(
 				ctx,
