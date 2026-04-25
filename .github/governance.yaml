@@ -97,7 +97,7 @@ pullRequests:
   # /policy bypass exemptions and always re-evaluate.
   exemptions:
     # Policy doesn't apply to PRs authored by maintainers.
-    maintainers: true
+    maintainers: false
     # Bot-authored PRs (e.g. dependabot) skip policy.
     bots: true
     # Drive-by typo fixes are exempt — saves the friction of opening an
