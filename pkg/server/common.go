@@ -214,3 +214,34 @@ func annotateResourceWithCreator(
 		obj.SetAnnotations(annotations)
 	}
 }
+
+// authorizeResourceCreate enforces authorization checks that Kargo's authorizing
+// client cannot perform implicitly. That client authorizes only standard
+// Kubernetes verbs, but creating a Promotion additionally requires the custom
+// "promote" verb on the target Stage. Without this explicit check, a user
+// permitted to create Promotion resources could create one targeting any Stage
+// in a Project -- bypassing the per-Stage authorization the "promote" verb
+// exists to enforce -- because the Promotion mutating webhook's own "promote"
+// check evaluates the API server's identity, not the requesting user's, when
+// the API server creates the resource on the user's behalf.
+func (s *server) authorizeResourceCreate(
+	ctx context.Context,
+	obj *unstructured.Unstructured,
+) error {
+	if obj == nil || obj.GroupVersionKind() != promotionGVK {
+		return nil
+	}
+	stage, _, err := unstructured.NestedString(obj.Object, "spec", "stage")
+	if err != nil || stage == "" {
+		// A Promotion with no target Stage cannot promote anywhere; leave
+		// rejection of the malformed resource to normal validation.
+		return nil
+	}
+	return s.authorizeFn(
+		ctx,
+		"promote",
+		kargoapi.GroupVersion.WithResource("stages"),
+		"",
+		client.ObjectKey{Namespace: obj.GetNamespace(), Name: stage},
+	)
+}

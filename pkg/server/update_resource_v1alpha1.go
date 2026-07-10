@@ -175,6 +175,11 @@ func (s *server) updateResource(
 				Error: "resource does not exist",
 			}, libhttp.ErrorStr("resource does not exist", http.StatusNotFound)
 		}
+		// Enforce authorization checks the authorizing client cannot perform
+		// implicitly (e.g. the "promote" verb required to create a Promotion).
+		if err := s.authorizeResourceCreate(ctx, obj); err != nil {
+			return createOrUpdateResourceResult{Error: err.Error()}, err
+		}
 		// Annotate the object with information about the user who created it,
 		// if it is of a type for which that annotation is load-bearing.
 		annotateResourceWithCreator(ctx, obj)
