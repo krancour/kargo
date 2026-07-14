@@ -194,6 +194,10 @@ func (s *server) createResource(
 	if err := s.authorizeResourceCreate(ctx, obj); err != nil {
 		return createResourceResult{Error: err.Error()}, err
 	}
+	// Block RBAC privilege escalation via this generic path.
+	if err := s.verifyNoEscalation(ctx, obj); err != nil {
+		return createResourceResult{Error: err.Error()}, err
+	}
 
 	// Note: We don't blindly attempt creating the resource because many resource
 	// types have defaulting and/or validating webhooks and what we do not want is

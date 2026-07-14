@@ -153,6 +153,13 @@ func (s *server) updateResource(
 		}, errSecretManagementDisabled
 	}
 
+	// Block RBAC privilege escalation via this generic path. Applies to both
+	// creating and replacing (e.g. rewriting a Role's rules), so it runs before
+	// the create/update decision below.
+	if err := s.verifyNoEscalation(ctx, obj); err != nil {
+		return createOrUpdateResourceResult{Error: err.Error()}, err
+	}
+
 	// Note: It would be tempting to blindly attempt creating the resource and
 	// then update it instead if it already exists, but many resource types have
 	// defaulting and/or validating webhooks and what we do not want is for some

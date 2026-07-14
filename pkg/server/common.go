@@ -19,6 +19,7 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/pkg/api"
 	libhttp "github.com/akuity/kargo/pkg/http"
+	"github.com/akuity/kargo/pkg/server/rbac"
 	"github.com/akuity/kargo/pkg/server/user"
 )
 
@@ -243,5 +244,26 @@ func (s *server) authorizeResourceCreate(
 		kargoapi.GroupVersion.WithResource("stages"),
 		"",
 		client.ObjectKey{Namespace: obj.GetNamespace(), Name: stage},
+	)
+}
+
+// verifyNoEscalation blocks a generic resource create or update from conferring
+// RBAC permissions the requester does not already hold. It supplies the
+// configured global ServiceAccount namespaces and delegates to
+// rbac.VerifyResourceNotEscalating.
+func (s *server) verifyNoEscalation(
+	ctx context.Context,
+	obj *unstructured.Unstructured,
+) error {
+	var globalNamespaces []string
+	if s.cfg.OIDCConfig != nil {
+		globalNamespaces = s.cfg.OIDCConfig.GlobalServiceAccountNamespaces
+	}
+	return rbac.VerifyResourceNotEscalating(
+		ctx,
+		s.client,
+		s.client.InternalClient(),
+		globalNamespaces,
+		obj,
 	)
 }
