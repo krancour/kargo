@@ -43,6 +43,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/adrg/xdg v0.5.3
+	github.com/akuity/kargo-spike v0.0.0-00010101000000-000000000000
 	github.com/akuity/kargo/api v0.0.0
 	github.com/akuity/kargo/pkg/client/generated v0.0.0
 	github.com/aws/aws-lambda-go v1.54.0
@@ -441,3 +442,5 @@ tool (
 	sigs.k8s.io/controller-tools/cmd/controller-gen
 	sigs.k8s.io/kind
 )
+
+replace github.com/akuity/kargo-spike => ./hack/testing/openapi-generator-spike/generated
