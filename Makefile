@@ -80,7 +80,7 @@ format: format-go format-ui
 lint-go: install-golangci-lint
 	{ \
 		set -e; \
-		for mod in $$(find . -maxdepth 4 -type f -name 'go.mod' | grep -v tools); do \
+		for mod in $$(find . -maxdepth 5 -type f -name 'go.mod' | grep -v tools); do \
 			echo "Linting $$(dirname $${mod}) ..."; \
 			cd $$(dirname $${mod}); \
 			$(GOLANGCI_LINT) run --config $(CURDIR)/.golangci.yaml $(GO_LINT_EXTRA_FLAGS); \
@@ -92,7 +92,7 @@ lint-go: install-golangci-lint
 format-go:
 	{ \
 		set -e; \
-		for mod in $$(find . -maxdepth 4 -type f -name 'go.mod' | grep -v tools); do \
+		for mod in $$(find . -maxdepth 5 -type f -name 'go.mod' | grep -v tools); do \
 			echo "Fixing $$(dirname $${mod}) ..."; \
 			cd $$(dirname $${mod}); \
 			$(GOLANGCI_LINT) run --fix --config $(CURDIR)/.golangci.yaml; \
@@ -150,7 +150,7 @@ format-ui:
 test-unit: install-helm
 	{ \
 		set -e; \
-		for mod in $$(find . -maxdepth 4 -type f -name 'go.mod' | grep -v tools); do \
+		for mod in $$(find . -maxdepth 5 -type f -name 'go.mod' | grep -v tools); do \
 			echo "Testing $$(dirname $${mod}) ..."; \
 			cd $$(dirname $${mod}); \
 			PATH=$(EXTENDED_PATH) go test \
