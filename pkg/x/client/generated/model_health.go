@@ -20,11 +20,11 @@ var _ MappedNullable = &Health{}
 // Health struct for Health
 type Health struct {
 	// Config is the opaque configuration of all health checks performed on this Stage.
-	Config any `json:"config,omitempty"`
+	Config []any `json:"config,omitempty"`
 	// Issues clarifies why a Stage in any state other than Healthy is in that state. This field will always be the empty when a Stage is Healthy.
 	Issues []string `json:"issues,omitempty"`
 	// Output is the opaque output of all health checks performed on this Stage.
-	Output any `json:"output,omitempty"`
+	Output []any `json:"output,omitempty"`
 	// Status describes the health of the Stage.
 	Status *string `json:"status,omitempty"`
 }
@@ -47,9 +47,9 @@ func NewHealthWithDefaults() *Health {
 }
 
 // GetConfig returns the Config field value if set, zero value otherwise.
-func (o *Health) GetConfig() any {
+func (o *Health) GetConfig() []any {
 	if o == nil || IsNil(o.Config) {
-		var ret any
+		var ret []any
 		return ret
 	}
 	return o.Config
@@ -57,7 +57,7 @@ func (o *Health) GetConfig() any {
 
 // GetConfigOk returns a tuple with the Config field value if set, nil otherwise
 // and a boolean to check if the value has been set.
-func (o *Health) GetConfigOk() (any, bool) {
+func (o *Health) GetConfigOk() ([]any, bool) {
 	if o == nil || IsNil(o.Config) {
 		return nil, false
 	}
@@ -73,8 +73,8 @@ func (o *Health) HasConfig() bool {
 	return false
 }
 
-// SetConfig gets a reference to the given any and assigns it to the Config field.
-func (o *Health) SetConfig(v any) {
+// SetConfig gets a reference to the given []any and assigns it to the Config field.
+func (o *Health) SetConfig(v []any) {
 	o.Config = v
 }
 
@@ -111,9 +111,9 @@ func (o *Health) SetIssues(v []string) {
 }
 
 // GetOutput returns the Output field value if set, zero value otherwise.
-func (o *Health) GetOutput() any {
+func (o *Health) GetOutput() []any {
 	if o == nil || IsNil(o.Output) {
-		var ret any
+		var ret []any
 		return ret
 	}
 	return o.Output
@@ -121,7 +121,7 @@ func (o *Health) GetOutput() any {
 
 // GetOutputOk returns a tuple with the Output field value if set, nil otherwise
 // and a boolean to check if the value has been set.
-func (o *Health) GetOutputOk() (any, bool) {
+func (o *Health) GetOutputOk() ([]any, bool) {
 	if o == nil || IsNil(o.Output) {
 		return nil, false
 	}
@@ -137,8 +137,8 @@ func (o *Health) HasOutput() bool {
 	return false
 }
 
-// SetOutput gets a reference to the given any and assigns it to the Output field.
-func (o *Health) SetOutput(v any) {
+// SetOutput gets a reference to the given []any and assigns it to the Output field.
+func (o *Health) SetOutput(v []any) {
 	o.Output = v
 }
 

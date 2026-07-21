@@ -741,9 +741,9 @@ type Health struct {
 	Issues []string `json:"issues,omitempty" protobuf:"bytes,2,rep,name=issues"`
 	// Config is the opaque configuration of all health checks performed on this
 	// Stage.
-	Config *apiextensionsv1.JSON `json:"config,omitempty" protobuf:"bytes,4,opt,name=config"`
+	Config []apiextensionsv1.JSON `json:"config,omitempty" protobuf:"bytes,4,rep,name=config"`
 	// Output is the opaque output of all health checks performed on this Stage.
-	Output *apiextensionsv1.JSON `json:"output,omitempty" protobuf:"bytes,5,opt,name=output"`
+	Output []apiextensionsv1.JSON `json:"output,omitempty" protobuf:"bytes,5,rep,name=output"`
 }
 
 // ArgoCDAppStatus describes the current state of a single ArgoCD Application.

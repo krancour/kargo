@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 )
@@ -23,8 +24,8 @@ func TestAggregatingChecker_Check(t *testing.T) {
 			assertions: func(t *testing.T, health kargoapi.Health) {
 				assert.Equal(t, kargoapi.HealthStateHealthy, health.Status)
 				assert.Empty(t, health.Issues)
-				assert.NotNil(t, health.Output)
-				assert.JSONEq(t, `[{"test":"success"}]`, string(health.Output.Raw))
+				require.Len(t, health.Output, 1)
+				assert.JSONEq(t, `{"test":"success"}`, string(health.Output[0].Raw))
 			},
 		},
 		{
@@ -36,8 +37,9 @@ func TestAggregatingChecker_Check(t *testing.T) {
 			assertions: func(t *testing.T, health kargoapi.Health) {
 				assert.Equal(t, kargoapi.HealthStateHealthy, health.Status)
 				assert.Empty(t, health.Issues)
-				assert.NotNil(t, health.Output)
-				assert.JSONEq(t, `[{"test":"success"},{"test":"success"}]`, string(health.Output.Raw))
+				require.Len(t, health.Output, 2)
+				assert.JSONEq(t, `{"test":"success"}`, string(health.Output[0].Raw))
+				assert.JSONEq(t, `{"test":"success"}`, string(health.Output[1].Raw))
 			},
 		},
 		{

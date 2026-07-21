@@ -9,12 +9,12 @@
 export interface Health {
   /** Config is the opaque configuration of all health checks performed on this
 Stage. */
-  config?: unknown;
+  config?: unknown[];
   /** Issues clarifies why a Stage in any state other than Healthy is in that
 state. This field will always be the empty when a Stage is Healthy. */
   issues?: string[];
   /** Output is the opaque output of all health checks performed on this Stage. */
-  output?: unknown;
+  output?: unknown[];
   /** Status describes the health of the Stage. */
   status?: string;
 }

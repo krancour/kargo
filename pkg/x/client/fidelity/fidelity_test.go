@@ -129,9 +129,9 @@ func TestStageRoundTrip(t *testing.T) {
 			Health: &kargoapi.Health{
 				Status: kargoapi.HealthStateHealthy,
 				Issues: []string{},
-				Output: &apiextensionsv1.JSON{Raw: []byte(
-					`[{"applicationStatus":{"health":{"status":"Healthy"}}}]`,
-				)},
+				Output: []apiextensionsv1.JSON{{Raw: []byte(
+					`{"applicationStatus":{"health":{"status":"Healthy"}}}`,
+				)}},
 			},
 			FreightHistory: kargoapi.FreightHistory{{
 				ID: "8a3b5c1d9e7f",

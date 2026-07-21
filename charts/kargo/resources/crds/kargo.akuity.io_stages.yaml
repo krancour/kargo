@@ -1630,7 +1630,9 @@ spec:
                     description: |-
                       Config is the opaque configuration of all health checks performed on this
                       Stage.
-                    x-kubernetes-preserve-unknown-fields: true
+                    items:
+                      x-kubernetes-preserve-unknown-fields: true
+                    type: array
                   issues:
                     description: |-
                       Issues clarifies why a Stage in any state other than Healthy is in that
@@ -1641,7 +1643,9 @@ spec:
                   output:
                     description: Output is the opaque output of all health checks
                       performed on this Stage.
-                    x-kubernetes-preserve-unknown-fields: true
+                    items:
+                      x-kubernetes-preserve-unknown-fields: true
+                    type: array
                   status:
                     description: Status describes the health of the Stage.
                     type: string

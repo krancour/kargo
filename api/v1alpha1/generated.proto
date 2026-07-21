@@ -1219,10 +1219,10 @@ message Health {
 
   // Config is the opaque configuration of all health checks performed on this
   // Stage.
-  optional .k8s.io.apiextensions_apiserver.pkg.apis.apiextensions.v1.JSON config = 4;
+  repeated .k8s.io.apiextensions_apiserver.pkg.apis.apiextensions.v1.JSON config = 4;
 
   // Output is the opaque output of all health checks performed on this Stage.
-  optional .k8s.io.apiextensions_apiserver.pkg.apis.apiextensions.v1.JSON output = 5;
+  repeated .k8s.io.apiextensions_apiserver.pkg.apis.apiextensions.v1.JSON output = 5;
 }
 
 // HealthCheckStep describes a health check directive which can be executed by

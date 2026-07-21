@@ -1286,13 +1286,17 @@ func (in *Health) DeepCopyInto(out *Health) {
 	}
 	if in.Config != nil {
 		in, out := &in.Config, &out.Config
-		*out = new(apiextensionsv1.JSON)
-		(*in).DeepCopyInto(*out)
+		*out = make([]apiextensionsv1.JSON, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
 	}
 	if in.Output != nil {
 		in, out := &in.Output, &out.Output
-		*out = new(apiextensionsv1.JSON)
-		(*in).DeepCopyInto(*out)
+		*out = make([]apiextensionsv1.JSON, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
 	}
 }
 

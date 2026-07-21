@@ -46,15 +46,20 @@ func (a *aggregatingChecker) Check(
 		}
 	}
 
-	b, err := json.Marshal(output)
-	if err != nil {
-		issues = append(issues, fmt.Sprintf("failed to marshal health output: %s", err.Error()))
+	aggregatedOutput := make([]apiextensionsv1.JSON, 0, len(output))
+	for _, o := range output {
+		b, err := json.Marshal(o)
+		if err != nil {
+			issues = append(issues, fmt.Sprintf("failed to marshal health output: %s", err.Error()))
+			continue
+		}
+		aggregatedOutput = append(aggregatedOutput, apiextensionsv1.JSON{Raw: b})
 	}
 
 	return kargoapi.Health{
 		Status: status,
 		Issues: issues,
-		Output: &apiextensionsv1.JSON{Raw: b},
+		Output: aggregatedOutput,
 	}
 }
 

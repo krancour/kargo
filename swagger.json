@@ -7345,7 +7345,9 @@
       "type": "object",
       "properties": {
         "config": {
-          "description": "Config is the opaque configuration of all health checks performed on this\nStage."
+          "description": "Config is the opaque configuration of all health checks performed on this\nStage.",
+          "type": "array",
+          "items": {}
         },
         "issues": {
           "description": "Issues clarifies why a Stage in any state other than Healthy is in that\nstate. This field will always be the empty when a Stage is Healthy.",
@@ -7355,7 +7357,9 @@
           }
         },
         "output": {
-          "description": "Output is the opaque output of all health checks performed on this Stage."
+          "description": "Output is the opaque output of all health checks performed on this Stage.",
+          "type": "array",
+          "items": {}
         },
         "status": {
           "description": "Status describes the health of the Stage.",
