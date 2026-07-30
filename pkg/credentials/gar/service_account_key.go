@@ -9,6 +9,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/akuity/kargo/pkg/credentials"
 	"github.com/akuity/kargo/pkg/logging"
@@ -32,6 +33,10 @@ func init() {
 
 type ServiceAccountKeyProvider struct {
 	tokenCache *cache.Cache
+
+	// tokenGroup coalesces concurrent acquisitions of the token for any given
+	// cache key into a single acquisition whose result is shared by all callers.
+	tokenGroup singleflight.Group
 
 	getAccessTokenFn func(
 		ctx context.Context,
@@ -80,6 +85,7 @@ func (p *ServiceAccountKeyProvider) GetCredentials(
 		"provider", "garServiceAccountKey",
 		"repoURL", req.RepoURL,
 	)
+	ctx = logging.ContextWithLogger(ctx, logger)
 
 	// Check the cache for the token
 	if entry, exists := p.tokenCache.Get(cacheKey); exists {
@@ -91,15 +97,71 @@ func (p *ServiceAccountKeyProvider) GetCredentials(
 	}
 	logger.Debug("access token cache miss")
 
-	// Cache miss, get a new token
-	token, err := p.getAccessTokenFn(ctx, encodedServiceAccountKey)
+	// Cache miss, get a new token. All consumers of any given cache entry share
+	// that entry, so they miss the cache in unison when it expires and, without
+	// coordination, would each acquire their own token. Coalescing concurrent
+	// acquisitions for the same cache key avoids that thundering herd.
+	var accessToken string
+	ch := p.tokenGroup.DoChan(cacheKey, func() (any, error) {
+		return p.getAndCacheAccessToken(ctx, encodedServiceAccountKey, cacheKey)
+	})
+	select {
+	case <-ctx.Done():
+		// See the comment in getAndCacheAccessToken for why we don't cancel the
+		// acquisition here.
+		return nil, fmt.Errorf(
+			"access token acquisition interrupted, cache refresh will continue in the background: %w",
+			ctx.Err(),
+		)
+	case res := <-ch:
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		accessToken = res.Val.(string) // nolint: forcetypeassert
+	}
+
+	// If we didn't get a token, we'll treat this as no credentials found
+	if accessToken == "" {
+		return nil, nil
+	}
+
+	return &credentials.Credentials{
+		Username: accessTokenUsername,
+		Password: accessToken,
+	}, nil
+}
+
+// getAndCacheAccessToken obtains a new GCP access token, caches it, and returns
+// it. It is intended to be executed within the provider's singleflight group.
+func (p *ServiceAccountKeyProvider) getAndCacheAccessToken(
+	orphanedCtx context.Context,
+	encodedServiceAccountKey string,
+	cacheKey string,
+) (string, error) {
+	logger := logging.LoggerFromContext(orphanedCtx)
+
+	// This runs under a context detached from any caller's. Its result is shared
+	// by every caller waiting on it, so it must not be owned by whichever caller
+	// happened to win the singleflight race -- that caller giving up would
+	// otherwise fail all the others, whose own contexts are still live. Even if
+	// every caller has abandoned it, finishing remains worthwhile, because the
+	// token lands in the cache for future callers. Since no caller's cancellation
+	// bounds this work, it carries its own timeout. The logger is carried over so
+	// that the calling context is not lost.
+	orphanedCtx, cancel := context.WithTimeout(
+		logging.ContextWithLogger(context.Background(), logger),
+		tokenAcquisitionTimeout,
+	)
+	defer cancel()
+
+	token, err := p.getAccessTokenFn(orphanedCtx, encodedServiceAccountKey)
 	if err != nil {
-		return nil, fmt.Errorf("error getting GCP access token: %w", err)
+		return "", fmt.Errorf("error getting GCP access token: %w", err)
 	}
 
 	// If we didn't get a token, we'll treat this as no credentials found
 	if token == nil || token.AccessToken == "" {
-		return nil, nil
+		return "", nil
 	}
 	logger.Debug("obtained new access token")
 
@@ -111,10 +173,7 @@ func (p *ServiceAccountKeyProvider) GetCredentials(
 	)
 	p.tokenCache.Set(cacheKey, token.AccessToken, ttl)
 
-	return &credentials.Credentials{
-		Username: accessTokenUsername,
-		Password: token.AccessToken,
-	}, nil
+	return token.AccessToken, nil
 }
 
 // getAccessToken returns a GCP access token retrieved using the provided base64

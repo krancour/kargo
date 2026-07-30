@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -301,4 +303,142 @@ func (m *mockCredential) GetToken(_ context.Context, _ policy.TokenRequestOption
 		Token:     "mock-access-token",
 		ExpiresOn: time.Now().Add(time.Hour),
 	}, nil
+}
+
+func TestWorkloadIdentityProvider_GetCredentials_coalescing(t *testing.T) {
+	const (
+		testRepoURL = "myregistry.azurecr.io/repo"
+		testToken   = "fake-access-token"
+
+		concurrency = 10
+	)
+
+	var acquisitions atomic.Int32
+
+	provider := &WorkloadIdentityProvider{
+		tokenCache: cache.New(10*time.Hour, time.Hour),
+		credential: &mockCredential{},
+		getAccessTokenFn: func(context.Context, string) (string, error) {
+			acquisitions.Add(1)
+			// Hold the acquisition open long enough for the other goroutines to
+			// pile up behind it.
+			time.Sleep(50 * time.Millisecond)
+			return testToken, nil
+		},
+	}
+
+	creds := make([]*credentials.Credentials, concurrency)
+	errs := make([]error, concurrency)
+	var wg sync.WaitGroup
+	for i := range concurrency {
+		wg.Go(func() {
+			creds[i], errs[i] = provider.GetCredentials(
+				t.Context(),
+				credentials.Request{
+					Type:    credentials.TypeImage,
+					RepoURL: testRepoURL,
+				},
+			)
+		})
+	}
+	wg.Wait()
+
+	// However the goroutines were scheduled, exactly one token should have been
+	// obtained. Callers that missed the in-flight acquisition entirely find the
+	// token already cached when their own flight begins.
+	require.Equal(t, int32(1), acquisitions.Load())
+	for i := range concurrency {
+		require.NoError(t, errs[i])
+		require.NotNil(t, creds[i])
+		require.Equal(t, acrTokenUsername, creds[i].Username)
+		require.Equal(t, testToken, creds[i].Password)
+	}
+}
+
+// This exercises the case where the context of the call that wins the
+// singleflight race is canceled mid-acquisition. Because the acquisition runs
+// under a detached context, the winner's cancellation must NOT cancel the shared
+// acquisition. The winner stops waiting and returns an "interrupted" error, but
+// the single acquisition runs to completion and the coalesced callers whose
+// contexts are still live receive the token from that SAME acquisition.
+func TestWorkloadIdentityProvider_GetCredentials_winnerCanceled(t *testing.T) {
+	const (
+		testRepoURL      = "myregistry.azurecr.io/repo"
+		testRegistryName = "myregistry"
+		testToken        = "fake-access-token"
+	)
+
+	var acquisitions atomic.Int32
+	acquisitionStarted := make(chan struct{})
+	release := make(chan struct{})
+
+	provider := &WorkloadIdentityProvider{
+		tokenCache: cache.New(10*time.Hour, time.Hour),
+		credential: &mockCredential{},
+		getAccessTokenFn: func(ctx context.Context, _ string) (string, error) {
+			if acquisitions.Add(1) == 1 {
+				close(acquisitionStarted)
+			}
+			// Hold the acquisition open until the test releases it. Were the
+			// acquisition's context derived from the winner's, this would instead
+			// return early with the winner's cancellation.
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-release:
+				return testToken, nil
+			}
+		},
+	}
+
+	req := credentials.Request{
+		Type:    credentials.TypeImage,
+		RepoURL: testRepoURL,
+	}
+
+	winnerCtx, cancel := context.WithCancel(t.Context())
+	winnerErr := make(chan error, 1)
+	go func() {
+		_, err := provider.GetCredentials(winnerCtx, req)
+		winnerErr <- err
+	}()
+	// The winner is now mid-acquisition with its flight held open
+	<-acquisitionStarted
+
+	// Several coalesced waiters, all with live contexts, all of which should
+	// recover from the winner's cancellation.
+	const numWaiters = 3
+	type result struct {
+		creds *credentials.Credentials
+		err   error
+	}
+	waiterRes := make(chan result, numWaiters)
+	for range numWaiters {
+		go func() {
+			creds, err := provider.GetCredentials(t.Context(), req)
+			waiterRes <- result{creds: creds, err: err}
+		}()
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	winErr := <-winnerErr
+	require.ErrorIs(t, winErr, context.Canceled)
+	require.ErrorContains(t, winErr, "cache refresh will continue in the background")
+
+	close(release)
+
+	for range numWaiters {
+		res := <-waiterRes
+		require.NoError(t, res.err)
+		require.NotNil(t, res.creds)
+		require.Equal(t, testToken, res.creds.Password)
+	}
+
+	require.Equal(t, int32(1), acquisitions.Load())
+
+	cached, found := provider.tokenCache.Get(testRegistryName)
+	require.True(t, found)
+	require.Equal(t, testToken, cached)
 }

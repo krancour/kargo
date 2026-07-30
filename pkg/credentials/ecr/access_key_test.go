@@ -3,6 +3,8 @@ package ecr
 import (
 	"context"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -359,4 +361,158 @@ func Test_decodeAuthToken(t *testing.T) {
 			testCase.assertions(t, creds, err)
 		})
 	}
+}
+
+func TestAccessKeyProvider_GetCredentials_coalescing(t *testing.T) {
+	const (
+		fakeRepoURL = "123456789012.dkr.ecr.us-west-2.amazonaws.com/my-repo"
+		fakeRegion  = "us-west-2"
+		fakeID      = "AKIAIOSFODNN7EXAMPLE"                     // nolint:gosec
+		fakeSecret  = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" // nolint:gosec
+		// base64 of "AWS:password"
+		fakeToken = "QVdTOnBhc3N3b3Jk" // nolint:gosec
+
+		concurrency = 10
+	)
+
+	var acquisitions atomic.Int32
+
+	provider := &AccessKeyProvider{
+		tokenCache: cache.New(10*time.Hour, time.Hour),
+		getAuthTokenFn: func(
+			context.Context,
+			string,
+			string,
+			string,
+		) (string, time.Time, error) {
+			acquisitions.Add(1)
+			// Hold the acquisition open long enough for the other goroutines to
+			// pile up behind it.
+			time.Sleep(50 * time.Millisecond)
+			return fakeToken, time.Now().Add(12 * time.Hour), nil
+		},
+	}
+
+	creds := make([]*credentials.Credentials, concurrency)
+	errs := make([]error, concurrency)
+	var wg sync.WaitGroup
+	for i := range concurrency {
+		wg.Go(func() {
+			creds[i], errs[i] = provider.GetCredentials(
+				t.Context(),
+				credentials.Request{
+					Type:    credentials.TypeImage,
+					RepoURL: fakeRepoURL,
+					Data: map[string][]byte{
+						regionKey: []byte(fakeRegion),
+						idKey:     []byte(fakeID),
+						secretKey: []byte(fakeSecret),
+					},
+				},
+			)
+		})
+	}
+	wg.Wait()
+
+	// However the goroutines were scheduled, exactly one token should have been
+	// obtained. Callers that missed the in-flight acquisition entirely find the
+	// token already cached when their own flight begins.
+	require.Equal(t, int32(1), acquisitions.Load())
+	for i := range concurrency {
+		require.NoError(t, errs[i])
+		require.NotNil(t, creds[i])
+		require.Equal(t, "AWS", creds[i].Username)
+		require.Equal(t, "password", creds[i].Password)
+	}
+}
+
+// See the comment on TestManagedIdentityProvider_GetCredentials_winnerCanceled.
+func TestAccessKeyProvider_GetCredentials_winnerCanceled(t *testing.T) {
+	const (
+		fakeRepoURL = "123456789012.dkr.ecr.us-west-2.amazonaws.com/my-repo"
+		fakeRegion  = "us-west-2"
+		fakeID      = "AKIAIOSFODNN7EXAMPLE"                     // nolint:gosec
+		fakeSecret  = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" // nolint:gosec
+		// base64 of "AWS:password"
+		fakeToken = "QVdTOnBhc3N3b3Jk" // nolint:gosec
+	)
+
+	var acquisitions atomic.Int32
+	acquisitionStarted := make(chan struct{})
+	release := make(chan struct{})
+
+	provider := &AccessKeyProvider{
+		tokenCache: cache.New(10*time.Hour, time.Hour),
+		getAuthTokenFn: func(
+			ctx context.Context,
+			_ string,
+			_ string,
+			_ string,
+		) (string, time.Time, error) {
+			if acquisitions.Add(1) == 1 {
+				close(acquisitionStarted)
+			}
+			select {
+			case <-ctx.Done():
+				return "", time.Time{}, ctx.Err()
+			case <-release:
+				return fakeToken, time.Now().Add(12 * time.Hour), nil
+			}
+		},
+	}
+
+	req := credentials.Request{
+		Type:    credentials.TypeImage,
+		RepoURL: fakeRepoURL,
+		Data: map[string][]byte{
+			regionKey: []byte(fakeRegion),
+			idKey:     []byte(fakeID),
+			secretKey: []byte(fakeSecret),
+		},
+	}
+
+	winnerCtx, cancel := context.WithCancel(t.Context())
+	winnerErr := make(chan error, 1)
+	go func() {
+		_, err := provider.GetCredentials(winnerCtx, req)
+		winnerErr <- err
+	}()
+	<-acquisitionStarted
+
+	const numWaiters = 3
+	type result struct {
+		creds *credentials.Credentials
+		err   error
+	}
+	waiterRes := make(chan result, numWaiters)
+	for range numWaiters {
+		go func() {
+			creds, err := provider.GetCredentials(t.Context(), req)
+			waiterRes <- result{creds: creds, err: err}
+		}()
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	winErr := <-winnerErr
+	require.ErrorIs(t, winErr, context.Canceled)
+	require.ErrorContains(t, winErr, "cache refresh will continue in the background")
+
+	close(release)
+
+	for range numWaiters {
+		res := <-waiterRes
+		require.NoError(t, res.err)
+		require.NotNil(t, res.creds)
+		require.Equal(t, "password", res.creds.Password)
+	}
+
+	require.Equal(t, int32(1), acquisitions.Load())
+
+	cached, found := provider.tokenCache.Get(
+		tokenCacheKey(fakeRegion, fakeID, fakeSecret),
+	)
+	require.True(t, found)
+	require.Equal(t, fakeToken, cached)
 }

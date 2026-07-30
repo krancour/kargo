@@ -3,6 +3,8 @@ package gar
 import (
 	"context"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -297,4 +299,148 @@ func newFakeTokenSource(token string) oauth2.TokenSource {
 
 func (f *fakeTokenSource) Token() (*oauth2.Token, error) {
 	return &oauth2.Token{AccessToken: f.token}, nil
+}
+
+func TestWorkloadIdentityFederationProvider_GetCredentials_coalescing(
+	t *testing.T,
+) {
+	const (
+		fakeProjectID   = "test-project"
+		fakeProject     = "fake-project"
+		fakeRepoURL     = "us-central1-docker.pkg.dev/my-project/my-repo"
+		fakeAccessToken = "fake-access-token"
+
+		concurrency = 10
+	)
+
+	var acquisitions atomic.Int32
+
+	provider := &WorkloadIdentityFederationProvider{
+		projectID:        fakeProjectID,
+		tokenCache:       cache.New(40*time.Minute, time.Hour),
+		tokenSourceCache: cache.New(12*time.Hour, time.Hour),
+		getAccessTokenFn: func(
+			context.Context,
+			string,
+		) (string, time.Time, error) {
+			acquisitions.Add(1)
+			// Hold the acquisition open long enough for the other goroutines to
+			// pile up behind it.
+			time.Sleep(50 * time.Millisecond)
+			return fakeAccessToken, time.Now().Add(time.Hour), nil
+		},
+	}
+
+	creds := make([]*credentials.Credentials, concurrency)
+	errs := make([]error, concurrency)
+	var wg sync.WaitGroup
+	for i := range concurrency {
+		wg.Go(func() {
+			creds[i], errs[i] = provider.GetCredentials(
+				t.Context(),
+				credentials.Request{
+					Type:    credentials.TypeImage,
+					Project: fakeProject,
+					RepoURL: fakeRepoURL,
+				},
+			)
+		})
+	}
+	wg.Wait()
+
+	// However the goroutines were scheduled, exactly one token should have been
+	// obtained. Callers that missed the in-flight acquisition entirely find the
+	// token already cached when their own flight begins.
+	require.Equal(t, int32(1), acquisitions.Load())
+	for i := range concurrency {
+		require.NoError(t, errs[i])
+		require.NotNil(t, creds[i])
+		require.Equal(t, accessTokenUsername, creds[i].Username)
+		require.Equal(t, fakeAccessToken, creds[i].Password)
+	}
+}
+
+// See the comment on TestServiceAccountKeyProvider_GetCredentials_winnerCanceled.
+func TestWorkloadIdentityFederationProvider_GetCredentials_winnerCanceled(
+	t *testing.T,
+) {
+	const (
+		fakeProjectID   = "test-project"
+		fakeProject     = "fake-project"
+		fakeRepoURL     = "us-central1-docker.pkg.dev/my-project/my-repo"
+		fakeAccessToken = "fake-access-token"
+	)
+
+	var acquisitions atomic.Int32
+	acquisitionStarted := make(chan struct{})
+	release := make(chan struct{})
+
+	provider := &WorkloadIdentityFederationProvider{
+		projectID:        fakeProjectID,
+		tokenCache:       cache.New(40*time.Minute, time.Hour),
+		tokenSourceCache: cache.New(12*time.Hour, time.Hour),
+		getAccessTokenFn: func(
+			ctx context.Context,
+			_ string,
+		) (string, time.Time, error) {
+			if acquisitions.Add(1) == 1 {
+				close(acquisitionStarted)
+			}
+			select {
+			case <-ctx.Done():
+				return "", time.Time{}, ctx.Err()
+			case <-release:
+				return fakeAccessToken, time.Now().Add(time.Hour), nil
+			}
+		},
+	}
+
+	req := credentials.Request{
+		Type:    credentials.TypeImage,
+		Project: fakeProject,
+		RepoURL: fakeRepoURL,
+	}
+
+	winnerCtx, cancel := context.WithCancel(t.Context())
+	winnerErr := make(chan error, 1)
+	go func() {
+		_, err := provider.GetCredentials(winnerCtx, req)
+		winnerErr <- err
+	}()
+	<-acquisitionStarted
+
+	const numWaiters = 3
+	type result struct {
+		creds *credentials.Credentials
+		err   error
+	}
+	waiterRes := make(chan result, numWaiters)
+	for range numWaiters {
+		go func() {
+			creds, err := provider.GetCredentials(t.Context(), req)
+			waiterRes <- result{creds: creds, err: err}
+		}()
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	winErr := <-winnerErr
+	require.ErrorIs(t, winErr, context.Canceled)
+	require.ErrorContains(t, winErr, "cache refresh will continue in the background")
+
+	close(release)
+
+	for range numWaiters {
+		res := <-waiterRes
+		require.NoError(t, res.err)
+		require.NotNil(t, res.creds)
+		require.Equal(t, fakeAccessToken, res.creds.Password)
+	}
+
+	require.Equal(t, int32(1), acquisitions.Load())
+
+	cached, found := provider.tokenCache.Get(tokenCacheKey(fakeProject))
+	require.True(t, found)
+	require.Equal(t, fakeAccessToken, cached)
 }

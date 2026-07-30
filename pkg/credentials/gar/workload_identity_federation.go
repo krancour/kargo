@@ -11,6 +11,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iamcredentials/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -101,6 +102,10 @@ type WorkloadIdentityFederationProvider struct {
 	tokenCache       *cache.Cache // For short-lived Project-specific tokens
 	tokenSourceCache *cache.Cache // For long-lived token sources
 
+	// tokenGroup coalesces concurrent acquisitions of the token for any given
+	// cache key into a single acquisition whose result is shared by all callers.
+	tokenGroup singleflight.Group
+
 	projectID   string
 	tokenSource oauth2.TokenSource
 
@@ -130,6 +135,7 @@ func (p *WorkloadIdentityFederationProvider) GetCredentials(
 		"provider", "garWorkloadIdentityFederation",
 		"repoURL", req.RepoURL,
 	)
+	ctx = logging.ContextWithLogger(ctx, logger)
 
 	// Check the token cache for a Project-specific token
 	if entry, exists := p.tokenCache.Get(cacheKey); exists {
@@ -156,10 +162,64 @@ func (p *WorkloadIdentityFederationProvider) GetCredentials(
 	logger.Debug("access token cache miss")
 
 	// We had a miss in both caches, so we'll try to get a new Project-specific
-	// token.
-	accessToken, expiry, err := p.getAccessTokenFn(ctx, req.Project)
+	// token. All consumers of any given cache entry share that entry, so they
+	// miss the cache in unison when it expires and, without coordination, would
+	// each acquire their own token. Coalescing concurrent acquisitions for the
+	// same cache key avoids that thundering herd.
+	var accessToken string
+	ch := p.tokenGroup.DoChan(cacheKey, func() (any, error) {
+		return p.getAndCacheAccessToken(ctx, req.Project, cacheKey)
+	})
+	select {
+	case <-ctx.Done():
+		// See the comment in getAndCacheAccessToken for why we don't cancel the
+		// acquisition here.
+		return nil, fmt.Errorf(
+			"access token acquisition interrupted, cache refresh will continue in the background: %w",
+			ctx.Err(),
+		)
+	case res := <-ch:
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		accessToken = res.Val.(string) // nolint: forcetypeassert
+	}
+
+	return &credentials.Credentials{
+		Username: accessTokenUsername,
+		Password: accessToken,
+	}, nil
+}
+
+// getAndCacheAccessToken obtains a new GCP access token scoped to the given
+// Kargo project, caches it, and returns it. If no Project-specific token is
+// available, it caches the controller's own token source and returns a token
+// from that instead. It is intended to be executed within the provider's
+// singleflight group.
+func (p *WorkloadIdentityFederationProvider) getAndCacheAccessToken(
+	orphanedCtx context.Context,
+	project string,
+	cacheKey string,
+) (string, error) {
+	logger := logging.LoggerFromContext(orphanedCtx)
+
+	// This runs under a context detached from any caller's. Its result is shared
+	// by every caller waiting on it, so it must not be owned by whichever caller
+	// happened to win the singleflight race -- that caller giving up would
+	// otherwise fail all the others, whose own contexts are still live. Even if
+	// every caller has abandoned it, finishing remains worthwhile, because the
+	// token lands in the cache for future callers. Since no caller's cancellation
+	// bounds this work, it carries its own timeout. The logger is carried over so
+	// that the calling context is not lost.
+	orphanedCtx, cancel := context.WithTimeout(
+		logging.ContextWithLogger(context.Background(), logger),
+		tokenAcquisitionTimeout,
+	)
+	defer cancel()
+
+	accessToken, expiry, err := p.getAccessTokenFn(orphanedCtx, project)
 	if err != nil {
-		return nil, fmt.Errorf("error getting GCP access token: %w", err)
+		return "", fmt.Errorf("error getting GCP access token: %w", err)
 	}
 	if accessToken != "" {
 		logger.Debug("obtained new access token")
@@ -170,10 +230,7 @@ func (p *WorkloadIdentityFederationProvider) GetCredentials(
 			"ttl", ttl,
 		)
 		p.tokenCache.Set(cacheKey, accessToken, ttl)
-		return &credentials.Credentials{
-			Username: accessTokenUsername,
-			Password: accessToken,
-		}, nil
+		return accessToken, nil
 	}
 
 	// If we get to here, we found no Project-specific token and we'll cache the
@@ -182,12 +239,9 @@ func (p *WorkloadIdentityFederationProvider) GetCredentials(
 	p.tokenSourceCache.Set(cacheKey, p.tokenSource, cache.DefaultExpiration)
 	token, err := p.tokenSource.Token()
 	if err != nil {
-		return nil, fmt.Errorf("error getting GCP access token: %w", err)
+		return "", fmt.Errorf("error getting GCP access token: %w", err)
 	}
-	return &credentials.Credentials{
-		Username: accessTokenUsername,
-		Password: token.AccessToken,
-	}, nil
+	return token.AccessToken, nil
 }
 
 // getAccessToken attempts to get a GCP access token scoped to the given Kargo

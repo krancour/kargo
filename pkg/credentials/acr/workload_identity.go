@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/containers/azcontainerregistry"
 	"github.com/patrickmn/go-cache"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/akuity/kargo/pkg/credentials"
 	"github.com/akuity/kargo/pkg/logging"
@@ -26,6 +27,13 @@ const (
 	acrTokenUsername = "00000000-0000-0000-0000-000000000000"
 	// acrScope is the Azure AD scope required for ACR authentication
 	acrScope = "https://containerregistry.azure.net/.default"
+	// tokenAcquisitionTimeout bounds a single token acquisition. Because an
+	// acquisition executes under a context detached from any caller's, this is
+	// the only thing bounding its duration. It is generous because it serves only
+	// as a fail-safe: exceeding it fails every caller waiting on that
+	// acquisition, and no fresh acquisition for the same registry can begin until
+	// it returns.
+	tokenAcquisitionTimeout = 30 * time.Second
 )
 
 // acrURLRegex matches Azure Container Registry URLs.
@@ -49,6 +57,11 @@ type WorkloadIdentityProvider struct {
 	// tokenCache is an in-memory cache of ACR registry access tokens keyed by
 	// registry name.
 	tokenCache *cache.Cache
+
+	// tokenGroup coalesces concurrent acquisitions of the token for any given
+	// registry into a single acquisition whose result is shared by all callers.
+	tokenGroup singleflight.Group
+
 	credential azcore.TokenCredential
 
 	getAccessTokenFn func(ctx context.Context, registryName string) (string, error)
@@ -108,6 +121,7 @@ func (p *WorkloadIdentityProvider) GetCredentials(
 		"provider", "acrWorkloadIdentity",
 		"repoURL", req.RepoURL,
 	)
+	ctx = logging.ContextWithLogger(ctx, logger)
 
 	// Check the cache for the token
 	if entry, exists := p.tokenCache.Get(registryName); exists {
@@ -119,15 +133,70 @@ func (p *WorkloadIdentityProvider) GetCredentials(
 	}
 	logger.Debug("access token cache miss")
 
-	// Cache miss, get a new token
-	accessToken, err := p.getAccessTokenFn(ctx, registryName)
-	if err != nil {
-		return nil, fmt.Errorf("error getting ACR access token: %w", err)
+	// Cache miss, get a new token. All consumers of any given registry share one
+	// cache entry, so they miss the cache in unison when it expires and, without
+	// coordination, would each acquire their own token. Coalescing concurrent
+	// acquisitions for the same registry avoids that thundering herd.
+	var accessToken string
+	ch := p.tokenGroup.DoChan(registryName, func() (any, error) {
+		return p.getAndCacheAccessToken(ctx, registryName)
+	})
+	select {
+	case <-ctx.Done():
+		// See the comment in getAndCacheAccessToken for why we don't cancel the
+		// acquisition here.
+		return nil, fmt.Errorf(
+			"access token acquisition interrupted, cache refresh will continue in the background: %w",
+			ctx.Err(),
+		)
+	case res := <-ch:
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		accessToken = res.Val.(string) // nolint: forcetypeassert
 	}
 
 	// If we didn't get a token, we'll treat this as no credentials found
 	if accessToken == "" {
 		return nil, nil
+	}
+
+	return &credentials.Credentials{
+		Username: acrTokenUsername,
+		Password: accessToken,
+	}, nil
+}
+
+// getAndCacheAccessToken obtains a new ACR access token, caches it, and returns
+// it. It is intended to be executed within the provider's singleflight group.
+func (p *WorkloadIdentityProvider) getAndCacheAccessToken(
+	orphanedCtx context.Context,
+	registryName string,
+) (string, error) {
+	logger := logging.LoggerFromContext(orphanedCtx)
+
+	// This runs under a context detached from any caller's. Its result is shared
+	// by every caller waiting on it, so it must not be owned by whichever caller
+	// happened to win the singleflight race -- that caller giving up would
+	// otherwise fail all the others, whose own contexts are still live. Even if
+	// every caller has abandoned it, finishing remains worthwhile, because the
+	// token lands in the cache for future callers. Since no caller's cancellation
+	// bounds this work, it carries its own timeout. The logger is carried over so
+	// that the calling context is not lost.
+	orphanedCtx, cancel := context.WithTimeout(
+		logging.ContextWithLogger(context.Background(), logger),
+		tokenAcquisitionTimeout,
+	)
+	defer cancel()
+
+	accessToken, err := p.getAccessTokenFn(orphanedCtx, registryName)
+	if err != nil {
+		return "", fmt.Errorf("error getting ACR access token: %w", err)
+	}
+
+	// If we didn't get a token, we'll treat this as no credentials found
+	if accessToken == "" {
+		return "", nil
 	}
 	logger.Debug("obtained new access token")
 
@@ -139,10 +208,7 @@ func (p *WorkloadIdentityProvider) GetCredentials(
 	)
 	p.tokenCache.Set(registryName, accessToken, cache.DefaultExpiration)
 
-	return &credentials.Credentials{
-		Username: acrTokenUsername,
-		Password: accessToken,
-	}, nil
+	return accessToken, nil
 }
 
 // getAccessToken returns an ACR refresh token using Azure workload identity.
