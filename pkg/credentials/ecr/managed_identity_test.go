@@ -267,8 +267,7 @@ func TestManagedIdentityProvider_GetCredentials(t *testing.T) {
 
 func TestManagedIdentityProvider_GetCredentials_coalescing(t *testing.T) {
 	const (
-		fakeAccountID = "123456789012"
-		fakeRepoURL   = "123456789012.dkr.ecr.us-west-2.amazonaws.com/repo"
+		fakeRepoURL = "123456789012.dkr.ecr.us-west-2.amazonaws.com/repo"
 
 		concurrency = 10
 	)
@@ -297,7 +296,6 @@ func TestManagedIdentityProvider_GetCredentials_coalescing(t *testing.T) {
 		release := make(chan struct{})
 
 		provider := &ManagedIdentityProvider{
-			accountID: fakeAccountID,
 			// A cache that retains nothing leaves the acquisition as the only way
 			// any caller can obtain a token.
 			tokenCache: expiring.NewAlwaysMissing(),
@@ -370,9 +368,8 @@ func TestManagedIdentityProvider_GetCredentials_winnerCanceled(t *testing.T) {
 	// remaining callers waiting on it.
 
 	const (
-		fakeAccountID = "123456789012"
-		fakeProject   = "fake-project"
-		fakeRepoURL   = "123456789012.dkr.ecr.us-west-2.amazonaws.com/repo"
+		fakeProject = "fake-project"
+		fakeRepoURL = "123456789012.dkr.ecr.us-west-2.amazonaws.com/repo"
 		// base64 of "AWS:password"
 		fakeToken = "QVdTOnBhc3N3b3Jk" // nolint:gosec
 
@@ -396,7 +393,6 @@ func TestManagedIdentityProvider_GetCredentials_winnerCanceled(t *testing.T) {
 		release := make(chan struct{})
 
 		provider := &ManagedIdentityProvider{
-			accountID: fakeAccountID,
 			// A cache that retains nothing leaves the acquisition as the only way
 			// any caller can obtain a token.
 			tokenCache: expiring.NewAlwaysMissing(),

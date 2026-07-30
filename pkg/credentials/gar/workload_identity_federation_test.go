@@ -309,8 +309,7 @@ func TestWorkloadIdentityFederationProvider_GetCredentials_coalescing(
 	t *testing.T,
 ) {
 	const (
-		fakeProjectID = "test-project"
-		fakeRepoURL   = "us-central1-docker.pkg.dev/my-project/my-repo"
+		fakeRepoURL = "us-central1-docker.pkg.dev/my-project/my-repo"
 
 		concurrency = 10
 	)
@@ -339,7 +338,6 @@ func TestWorkloadIdentityFederationProvider_GetCredentials_coalescing(
 		release := make(chan struct{})
 
 		provider := &WorkloadIdentityFederationProvider{
-			projectID: fakeProjectID,
 			// Caches that retain nothing leave the acquisition as the only way any
 			// caller can obtain a token.
 			tokenCache:       expiring.NewAlwaysMissing(),
@@ -414,7 +412,6 @@ func TestWorkloadIdentityFederationProvider_GetCredentials_winnerCanceled(
 	// remaining callers waiting on it.
 
 	const (
-		fakeProjectID   = "test-project"
 		fakeProject     = "fake-project"
 		fakeRepoURL     = "us-central1-docker.pkg.dev/my-project/my-repo"
 		fakeAccessToken = "fake-access-token"
@@ -439,7 +436,6 @@ func TestWorkloadIdentityFederationProvider_GetCredentials_winnerCanceled(
 		release := make(chan struct{})
 
 		provider := &WorkloadIdentityFederationProvider{
-			projectID: fakeProjectID,
 			// Caches that retain nothing leave the acquisition as the only way any
 			// caller can obtain a token.
 			tokenCache:       expiring.NewAlwaysMissing(),
