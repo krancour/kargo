@@ -187,10 +187,10 @@ func (p *ManagedIdentityProvider) getAndCacheAuthToken(
 	// by every caller waiting on it, so it must not be owned by whichever caller
 	// happened to win the singleflight race -- that caller giving up would
 	// otherwise fail all the others, whose own contexts are still live. Even if
-	// every caller has abandoned it, finishing remains worthwhile, because the
-	// token lands in the cache for future callers. Since no caller's cancellation
-	// bounds this work, it carries its own timeout. The logger is carried over so
-	// that the calling context is not lost.
+	// every caller has abandoned it, finishing remains worthwhile, since any token
+	// it obtains is cached for future callers. Since no caller's cancellation
+	// bounds this work, it carries its own timeout. The logger belongs to the
+	// winning caller and is carried over so that the calling context is not lost.
 	orphanedCtx, cancel := context.WithTimeout(
 		logging.ContextWithLogger(context.Background(), logger),
 		tokenAcquisitionTimeout,

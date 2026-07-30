@@ -588,9 +588,9 @@ func TestAppCredentialProvider_getUsernameAndPassword_coalescing(
 
 		// Returns only once every caller is durably blocked. The cache cannot have
 		// served any of them, so the only place they can be is waiting on an
-		// acquisition. Specifically, one goroutine per repository should be parked
-		// inside the acquisition function with the rest waiting on a singleflight
-		// to complete.
+		// acquisition. Specifically, singleflight has started one goroutine per
+		// repository and each is parked inside the acquisition function, with every
+		// caller waiting on the flight it joined.
 		synctest.Wait()
 
 		// Allows acquisitions to complete.
@@ -727,9 +727,9 @@ func TestAppCredentialProvider_getUsernameAndPassword_winnerCanceled(
 			}()
 		}
 
-		// Returns once the waiters have joined the winner's flight, leaving one
-		// goroutine parked inside the acquisition function and everyone else
-		// waiting on the singleflight to complete.
+		// Returns once the waiters have joined the winner's flight, leaving the
+		// goroutine singleflight started parked inside the acquisition function and
+		// every caller waiting on that flight.
 		synctest.Wait()
 
 		// The winner abandons the flight. The waiters' contexts stay live, so they
