@@ -167,8 +167,10 @@ func TestWorkloadIdentityFederationProvider_GetCredentials(t *testing.T) {
 				projectID:        fakeProjectID,
 				tokenCache:       cache.New(10*time.Hour, time.Hour),
 				tokenSourceCache: cache.New(10*time.Hour, time.Hour),
+				// A token distinct from the cached token source's, so that skipping
+				// the token source cache and acquiring one instead is detectable.
 				getAccessTokenFn: func(context.Context, string) (string, time.Time, error) {
-					return fakeToken, time.Now().Add(time.Hour), nil
+					return "token-from-an-acquisition", time.Now().Add(time.Hour), nil
 				},
 			},
 			setupTokenSourceCache: func(c expiring.Cache) {
