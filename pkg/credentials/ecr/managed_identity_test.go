@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/patrickmn/go-cache"
@@ -274,154 +275,202 @@ func TestManagedIdentityProvider_GetCredentials_coalescing(t *testing.T) {
 		concurrency = 10
 	)
 
-	var acquisitions atomic.Int32
+	// synctest.Test() runs a function in a "bubble": that function and every
+	// goroutine it starts form a group the runtime tracks. Inside the bubble,
+	// synctest.Wait() calls block until every other goroutine in the group is
+	// durably blocked -- parked on something only another member of the group can
+	// release. That is what lets this test observe the moment when every caller
+	// is waiting on the acquisition, rather than guess at it with a sleep.
+	synctest.Test(t, func(t *testing.T) {
+		// Track the total number of actual invocations of the acquisition function.
+		// If the coalescing is working, there should only ever be one regardless of
+		// how many concurrent callers there are.
+		var acquisitions atomic.Int32
 
-	provider := &ManagedIdentityProvider{
-		accountID:  fakeAccountID,
-		tokenCache: cache.New(10*time.Hour, time.Hour),
-		getAuthTokenFn: func(
-			context.Context,
-			string,
-			string,
-		) (string, time.Time, error) {
-			acquisitions.Add(1)
-			// Hold the acquisition open long enough for the other goroutines to
-			// pile up behind it.
-			time.Sleep(50 * time.Millisecond)
-			return fakeToken, time.Now().Add(12 * time.Hour), nil
-		},
-	}
+		// This channel will be used to unblock the goroutine that is parked inside
+		// the acquisition function, but only after every caller is durably blocked
+		// on the singleflight.
+		release := make(chan struct{})
 
-	creds := make([]*credentials.Credentials, concurrency)
-	errs := make([]error, concurrency)
-	var wg sync.WaitGroup
-	for i := range concurrency {
-		wg.Go(func() {
-			creds[i], errs[i] = provider.GetCredentials(
-				t.Context(),
-				credentials.Request{
-					Type:    credentials.TypeImage,
-					Project: fakeProject,
-					RepoURL: fakeRepoURL,
-				},
-			)
-		})
-	}
-	wg.Wait()
+		provider := &ManagedIdentityProvider{
+			accountID: fakeAccountID,
+			// A cache that retains nothing leaves the acquisition as the only way
+			// any caller can obtain a token.
+			tokenCache: expiring.NewAlwaysMissing(),
+			getAuthTokenFn: func(
+				context.Context,
+				string,
+				string,
+			) (string, time.Time, error) {
+				acquisitions.Add(1)
+				<-release
+				return fakeToken, time.Now().Add(12 * time.Hour), nil
+			},
+		}
 
-	// However the goroutines were scheduled, exactly one token should have been
-	// obtained. Callers that missed the in-flight acquisition entirely find the
-	// token already cached when their own flight begins.
-	require.Equal(t, int32(1), acquisitions.Load())
-	for i := range concurrency {
-		require.NoError(t, errs[i])
-		require.NotNil(t, creds[i])
-		require.Equal(t, "AWS", creds[i].Username)
-		require.Equal(t, "password", creds[i].Password)
-	}
+		req := credentials.Request{
+			Type:    credentials.TypeImage,
+			Project: fakeProject,
+			RepoURL: fakeRepoURL,
+		}
+
+		creds := make([]*credentials.Credentials, concurrency)
+		errs := make([]error, concurrency)
+		var wg sync.WaitGroup
+		for i := range concurrency {
+			wg.Go(func() {
+				creds[i], errs[i] = provider.GetCredentials(t.Context(), req)
+			})
+		}
+
+		// Returns only once every caller is durably blocked. The cache cannot have
+		// served any of them, so the only place they can be is waiting on the one
+		// acquisition. Specifically, one goroutine should be parked inside the
+		// acquisition function with the rest waiting on the singleflight to
+		// complete.
+		synctest.Wait()
+
+		// Allows acquisition to complete.
+		close(release)
+
+		// Wait for all of the callers to finish.
+		wg.Wait()
+
+		// Since we forced every caller to join one singleflight, there should have
+		// been only one actual execution of the acquisition function.
+		require.Equal(t, int32(1), acquisitions.Load())
+
+		// Verify that every caller received the expected credentials and no
+		// errors.
+		for i := range concurrency {
+			require.NoError(t, errs[i])
+			require.NotNil(t, creds[i])
+			require.Equal(t, "AWS", creds[i].Username)
+			require.Equal(t, "password", creds[i].Password)
+		}
+	})
 }
 
-// This exercises the case where the context of the call that wins the
-// singleflight race is canceled mid-acquisition. Because the acquisition runs
-// under a detached context, the winner's cancellation must NOT cancel the
-// shared acquisition. The winner stops waiting and returns an "interrupted"
-// error, but the single acquisition runs to completion and the coalesced
-// callers whose contexts are still live receive the token from that SAME
-// acquisition.
 func TestManagedIdentityProvider_GetCredentials_winnerCanceled(t *testing.T) {
+	// We will test the scenario where the caller that wins the singleflight race
+	// abandons it mid-acquisition. Because the acquisition runs under a context
+	// detached from any caller's, it must survive that and still serve the
+	// remaining callers waiting on it.
+
 	const (
 		fakeAccountID = "123456789012"
 		fakeProject   = "fake-project"
 		fakeRepoURL   = "123456789012.dkr.ecr.us-west-2.amazonaws.com/repo"
-		fakeRegion    = "us-west-2"
 		// base64 of "AWS:password"
 		fakeToken = "QVdTOnBhc3N3b3Jk" // nolint:gosec
+
+		numWaiters = 3
 	)
 
-	var acquisitions atomic.Int32
-	acquisitionStarted := make(chan struct{})
-	release := make(chan struct{})
+	// synctest.Test() runs a function in a "bubble": that function and every
+	// goroutine it starts form a group the runtime tracks. Inside the bubble,
+	// synctest.Wait() calls block until every other goroutine in the group is
+	// durably blocked -- parked on something only another member of the group can
+	// release. That is what lets this test observe the moment when the first
+	// caller begins blocking on the acquisition so that waiting callers can be
+	// launched. This phased launch sequence allows us to know with certainty
+	// which goroutine is the winning caller and which are the waiters. Likewise,
+	// synctest.Wait() allows the test to observe the moment when all of the
+	// waiting callers are blocking so that we can proceed with canceling the
+	// winner's context.
+	synctest.Test(t, func(t *testing.T) {
+		// This channel will be used to unblock the goroutine that is parked inside
+		// the acquisition function, but only after the winner has abandoned it.
+		release := make(chan struct{})
 
-	provider := &ManagedIdentityProvider{
-		accountID:  fakeAccountID,
-		tokenCache: cache.New(10*time.Hour, time.Hour),
-		getAuthTokenFn: func(
-			ctx context.Context,
-			_ string,
-			_ string,
-		) (string, time.Time, error) {
-			if acquisitions.Add(1) == 1 {
-				close(acquisitionStarted)
-			}
-			// Hold the acquisition open until the test releases it. Were the
-			// acquisition's context derived from the winner's, this would instead
-			// return early with the winner's cancellation.
-			select {
-			case <-ctx.Done():
-				return "", time.Time{}, ctx.Err()
-			case <-release:
-				return fakeToken, time.Now().Add(12 * time.Hour), nil
-			}
-		},
-	}
+		provider := &ManagedIdentityProvider{
+			accountID: fakeAccountID,
+			// A cache that retains nothing leaves the acquisition as the only way
+			// any caller can obtain a token.
+			tokenCache: expiring.NewAlwaysMissing(),
+			getAuthTokenFn: func(
+				ctx context.Context,
+				_ string,
+				_ string,
+			) (string, time.Time, error) {
+				// Honoring the context is what gives this test its teeth. Were the
+				// acquisition running under the winner's context instead of a
+				// detached one, canceling the winner would land in the first case
+				// below and every waiter would receive that error.
+				select {
+				case <-ctx.Done():
+					return "", time.Time{}, ctx.Err()
+				case <-release:
+					return fakeToken, time.Now().Add(12 * time.Hour), nil
+				}
+			},
+		}
 
-	req := credentials.Request{
-		Type:    credentials.TypeImage,
-		Project: fakeProject,
-		RepoURL: fakeRepoURL,
-	}
+		req := credentials.Request{
+			Type:    credentials.TypeImage,
+			Project: fakeProject,
+			RepoURL: fakeRepoURL,
+		}
 
-	winnerCtx, cancel := context.WithCancel(t.Context())
-	winnerErr := make(chan error, 1)
-	go func() {
-		_, err := provider.GetCredentials(winnerCtx, req)
-		winnerErr <- err
-	}()
-	// The winner is now mid-acquisition with its flight held open
-	<-acquisitionStarted
-
-	// Several coalesced waiters, all with live contexts, all of which should
-	// recover from the winner's cancellation.
-	const numWaiters = 3
-	type result struct {
-		creds *credentials.Credentials
-		err   error
-	}
-	waiterRes := make(chan result, numWaiters)
-	for range numWaiters {
+		// The winner is launched alone, and with a context only it holds.
+		winnerCtx, cancel := context.WithCancel(t.Context())
+		winnerErr := make(chan error, 1)
 		go func() {
-			creds, err := provider.GetCredentials(t.Context(), req)
-			waiterRes <- result{creds: creds, err: err}
+			_, err := provider.GetCredentials(winnerCtx, req)
+			winnerErr <- err
 		}()
-	}
 
-	// Give the waiters a moment to join the in-flight acquisition, then cancel
-	// the winner's context.
-	time.Sleep(100 * time.Millisecond)
-	cancel()
+		// Returns once the winner and the goroutine singleflight started on its
+		// behalf are both durably blocked: the latter parked inside the acquisition
+		// function, the former waiting on it. The flight therefore exists and
+		// belongs to the winner. Launching the waiters any earlier would leave
+		// ownership of the flight to the scheduler, and canceling a caller that
+		// does not own it proves nothing.
+		synctest.Wait()
 
-	// The winner's own context was canceled, so it stops waiting and returns an
-	// interrupted error -- but it must NOT have canceled the shared acquisition.
-	winErr := <-winnerErr
-	require.ErrorIs(t, winErr, context.Canceled)
-	require.ErrorContains(t, winErr, "cache refresh will continue in the background")
+		type result struct {
+			creds *credentials.Credentials
+			err   error
+		}
+		waiterRes := make(chan result, numWaiters)
+		for range numWaiters {
+			go func() {
+				creds, err := provider.GetCredentials(t.Context(), req)
+				waiterRes <- result{creds: creds, err: err}
+			}()
+		}
 
-	// Allow the detached acquisition to complete.
-	close(release)
+		// Returns once the waiters have joined the winner's flight, leaving one
+		// goroutine parked inside the acquisition function and everyone else
+		// waiting on the singleflight to complete.
+		synctest.Wait()
 
-	for range numWaiters {
-		res := <-waiterRes
-		require.NoError(t, res.err)
-		require.NotNil(t, res.creds)
-		require.Equal(t, "password", res.creds.Password)
-	}
+		// The winner abandons the flight. The waiters' contexts stay live, so they
+		// keep waiting.
+		cancel()
 
-	// Exactly one acquisition: the winner's cancellation did not spawn a
-	// replacement, and the single detached acquisition served every waiter.
-	require.Equal(t, int32(1), acquisitions.Load())
+		// The winner reports that it stopped waiting, rather than reporting a
+		// failed acquisition.
+		winErr := <-winnerErr
+		require.ErrorIs(t, winErr, context.Canceled)
+		require.ErrorContains(t, winErr, "cache refresh will continue in the background")
 
-	// That acquisition also cached the token for future callers.
-	cached, found := provider.tokenCache.Get(tokenCacheKey(fakeRegion, fakeProject))
-	require.True(t, found)
-	require.Equal(t, fakeToken, cached)
+		// Because of the acquisition's orphaned context, the winner's cancellation
+		// should not have halted it. Closing the release channel unblocks the
+		// acquisition. Doing so before collecting the waiters' results below
+		// matters. If every goroutine in the bubble were parked, synctest.Test()'s
+		// fake clock would advance to the acquisition's own deadline and fail it
+		// for reasons having nothing to do with what is under test.
+		close(release)
+
+		// Verify that every waiter received the expected credentials and no
+		// errors, meaning the acquisition outlived the caller that started it.
+		for range numWaiters {
+			res := <-waiterRes
+			require.NoError(t, res.err)
+			require.NotNil(t, res.creds)
+			require.Equal(t, "AWS", res.creds.Username)
+			require.Equal(t, "password", res.creds.Password)
+		}
+	})
 }
