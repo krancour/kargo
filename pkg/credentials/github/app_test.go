@@ -513,11 +513,19 @@ func TestAppCredentialProvider_getUsernameAndPassword_coalescing(
 		fakeAppOrClientID  = "fake-id"
 		fakeInstallationID = int64(456)
 		fakePrivateKey     = "private-key"
-		fakeRepoURL        = "https://github.com/example/repo"
-		fakeAccessToken    = "test-token"
 
 		concurrency = 10
 	)
+
+	// Callers are split evenly between two repositories. Since the cache key
+	// includes the repository URL -- an access token is scoped to a single
+	// repository -- the two groups must not share an acquisition, which is what
+	// makes this test sensitive to an acquisition keyed on anything coarser than
+	// the cache key.
+	repoURLs := []string{
+		"https://github.com/example/repo-a",
+		"https://github.com/example/repo-b",
+	}
 
 	// synctest.Test() runs a function in a "bubble": that function and every
 	// goroutine it starts form a group the runtime tracks. Inside the bubble,
@@ -526,31 +534,33 @@ func TestAppCredentialProvider_getUsernameAndPassword_coalescing(
 	// release. That is what lets this test observe the moment when every caller
 	// is waiting on the acquisition, rather than guess at it with a sleep.
 	synctest.Test(t, func(t *testing.T) {
-		// Track the total number of actual invocations of the acquisition function. If the
-		// coalescing is working, there should only ever be one regardless of how
-		// many concurrent callers there are.
+		// Track the total number of actual invocations of the acquisition function.
+		// If the coalescing is working, there should only ever be one per repository
+		// regardless of how many concurrent callers there are.
 		var acquisitions atomic.Int32
 
-		// This channel will be used to unblock the goroutine that is parked inside
-		// the acquisition function, but only after every caller is durably blocked on the
-		// singleflight.
+		// This channel will be used to unblock the goroutines that are parked
+		// inside the acquisition function, but only after every caller is durably
+		// blocked on a singleflight.
 		release := make(chan struct{})
 
 		provider := &AppCredentialProvider{
-			// A cache that retains nothing leaves the acquisition as the only way any
-			// caller can obtain a token.
+			// A cache that retains nothing leaves the acquisition as the only way
+			// any caller can obtain a token.
 			tokenCache: expiring.NewAlwaysMissing(),
 			// The acquisition's own deadline is this plus the sum of
 			// validationBackoff, so it must be non-zero or the acquisition's context
 			// expires before it begins.
 			mintTimeoutBuffer: time.Minute,
 			getAccessTokenFn: func(
-				string, int64, string, string,
+				_ string, _ int64, _ string, repoURL string,
 			) (*oauth2.Token, error) {
 				acquisitions.Add(1)
 				<-release
+				// The token identifies the repository it was obtained for, so a
+				// caller served by another repository's acquisition is detectable.
 				return &oauth2.Token{
-					AccessToken: fakeAccessToken,
+					AccessToken: "token-for-" + repoURL,
 					Expiry:      time.Now().Add(time.Hour),
 				}, nil
 			},
@@ -571,35 +581,40 @@ func TestAppCredentialProvider_getUsernameAndPassword_coalescing(
 					fakeAppOrClientID,
 					fakeInstallationID,
 					fakePrivateKey,
-					fakeRepoURL,
+					repoURLs[i%len(repoURLs)],
 				)
 			})
 		}
 
 		// Returns only once every caller is durably blocked. The cache cannot have
-		// served any of them, so the only place they can be is waiting on the one
-		// acquisition. Specifically, one goroutine should be parked inside the
-		// acquisition function with the rest waiting on the singleflight to
-		// complete.
+		// served any of them, so the only place they can be is waiting on an
+		// acquisition. Specifically, one goroutine per repository should be parked
+		// inside the acquisition function with the rest waiting on a singleflight
+		// to complete.
 		synctest.Wait()
 
-		// Allows acquisition to complete.
+		// Allows acquisitions to complete.
 		close(release)
 
 		// Wait for all of the callers to finish.
 		wg.Wait()
 
-		// Since we forced every caller to join one singleflight, there should have
-		// been only one actual execution of the acquisition function.
-		require.Equal(t, int32(1), acquisitions.Load())
+		// Since we forced the callers for each repository to join one singleflight,
+		// there should have been exactly one actual execution of the acquisition
+		// function per repository -- no more, which would mean callers failed to
+		// coalesce, and no fewer, which would mean callers for different
+		// repositories shared an acquisition.
+		require.Equal(t, int32(len(repoURLs)), acquisitions.Load())
 
-		// Verify that every caller received the expected credentials and no
-		// errors.
+		// Verify that every caller received the credentials for its own repository
+		// and no errors.
 		for i := range concurrency {
 			require.NoError(t, errs[i])
 			require.NotNil(t, creds[i])
 			require.Equal(t, accessTokenUsername, creds[i].Username)
-			require.Equal(t, fakeAccessToken, creds[i].Password)
+			require.Equal(
+				t, "token-for-"+repoURLs[i%len(repoURLs)], creds[i].Password,
+			)
 		}
 	})
 }

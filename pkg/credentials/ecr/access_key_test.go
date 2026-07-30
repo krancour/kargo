@@ -2,6 +2,7 @@ package ecr
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -371,13 +372,19 @@ func TestAccessKeyProvider_GetCredentials_coalescing(t *testing.T) {
 	const (
 		fakeRepoURL = "123456789012.dkr.ecr.us-west-2.amazonaws.com/my-repo"
 		fakeRegion  = "us-west-2"
-		fakeID      = "AKIAIOSFODNN7EXAMPLE"                     // nolint:gosec
 		fakeSecret  = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" // nolint:gosec
-		// base64 of "AWS:password"
-		fakeToken = "QVdTOnBhc3N3b3Jk" // nolint:gosec
 
 		concurrency = 10
 	)
+
+	// Callers are split evenly between two sets of credentials. Since the cache
+	// key includes the access key ID, the two groups must not share an
+	// acquisition, which is what makes this test sensitive to an acquisition
+	// keyed on anything coarser than the cache key.
+	accessKeyIDs := []string{
+		"AKIAIOSFODNN7EXAMPLE", // nolint:gosec
+		"AKIAI44QH8DHBEXAMPLE", // nolint:gosec
+	}
 
 	// synctest.Test() runs a function in a "bubble": that function and every
 	// goroutine it starts form a group the runtime tracks. Inside the bubble,
@@ -387,13 +394,13 @@ func TestAccessKeyProvider_GetCredentials_coalescing(t *testing.T) {
 	// is waiting on the acquisition, rather than guess at it with a sleep.
 	synctest.Test(t, func(t *testing.T) {
 		// Track the total number of actual invocations of the acquisition function.
-		// If the coalescing is working, there should only ever be one regardless of
-		// how many concurrent callers there are.
+		// If the coalescing is working, there should only ever be one per access key
+		// ID regardless of how many concurrent callers there are.
 		var acquisitions atomic.Int32
 
-		// This channel will be used to unblock the goroutine that is parked inside
-		// the acquisition function, but only after every caller is durably blocked
-		// on the singleflight.
+		// This channel will be used to unblock the goroutines that are parked
+		// inside the acquisition function, but only after every caller is durably
+		// blocked on a singleflight.
 		release := make(chan struct{})
 
 		provider := &AccessKeyProvider{
@@ -401,24 +408,18 @@ func TestAccessKeyProvider_GetCredentials_coalescing(t *testing.T) {
 			// any caller can obtain a token.
 			tokenCache: expiring.NewAlwaysMissing(),
 			getAuthTokenFn: func(
-				context.Context,
-				string,
-				string,
-				string,
+				_ context.Context,
+				_ string,
+				accessKeyID string,
+				_ string,
 			) (string, time.Time, error) {
 				acquisitions.Add(1)
 				<-release
-				return fakeToken, time.Now().Add(12 * time.Hour), nil
-			},
-		}
-
-		req := credentials.Request{
-			Type:    credentials.TypeImage,
-			RepoURL: fakeRepoURL,
-			Data: map[string][]byte{
-				regionKey: []byte(fakeRegion),
-				idKey:     []byte(fakeID),
-				secretKey: []byte(fakeSecret),
+				// The token identifies the credentials it was obtained with, so a
+				// caller served by another set's acquisition is detectable.
+				return base64.StdEncoding.EncodeToString(
+					[]byte("AWS:" + accessKeyID),
+				), time.Now().Add(12 * time.Hour), nil
 			},
 		}
 
@@ -427,34 +428,48 @@ func TestAccessKeyProvider_GetCredentials_coalescing(t *testing.T) {
 		var wg sync.WaitGroup
 		for i := range concurrency {
 			wg.Go(func() {
-				creds[i], errs[i] = provider.GetCredentials(t.Context(), req)
+				creds[i], errs[i] = provider.GetCredentials(
+					t.Context(),
+					credentials.Request{
+						Type:    credentials.TypeImage,
+						RepoURL: fakeRepoURL,
+						Data: map[string][]byte{
+							regionKey: []byte(fakeRegion),
+							idKey:     []byte(accessKeyIDs[i%len(accessKeyIDs)]),
+							secretKey: []byte(fakeSecret),
+						},
+					},
+				)
 			})
 		}
 
 		// Returns only once every caller is durably blocked. The cache cannot have
-		// served any of them, so the only place they can be is waiting on the one
-		// acquisition. Specifically, one goroutine should be parked inside the
-		// acquisition function with the rest waiting on the singleflight to
-		// complete.
+		// served any of them, so the only place they can be is waiting on an
+		// acquisition. Specifically, one goroutine per access key ID should be parked
+		// inside the acquisition function with the rest waiting on a singleflight
+		// to complete.
 		synctest.Wait()
 
-		// Allows acquisition to complete.
+		// Allows acquisitions to complete.
 		close(release)
 
 		// Wait for all of the callers to finish.
 		wg.Wait()
 
-		// Since we forced every caller to join one singleflight, there should have
-		// been only one actual execution of the acquisition function.
-		require.Equal(t, int32(1), acquisitions.Load())
+		// Since we forced the callers for each access key ID to join one singleflight,
+		// there should have been exactly one actual execution of the acquisition
+		// function per access key ID -- no more, which would mean callers failed to
+		// coalesce, and no fewer, which would mean callers for different access key IDs
+		// shared an acquisition.
+		require.Equal(t, int32(len(accessKeyIDs)), acquisitions.Load())
 
-		// Verify that every caller received the expected credentials and no
-		// errors.
+		// Verify that every caller received the credentials for its own access key
+		// ID and no errors.
 		for i := range concurrency {
 			require.NoError(t, errs[i])
 			require.NotNil(t, creds[i])
 			require.Equal(t, "AWS", creds[i].Username)
-			require.Equal(t, "password", creds[i].Password)
+			require.Equal(t, accessKeyIDs[i%len(accessKeyIDs)], creds[i].Password)
 		}
 	})
 }

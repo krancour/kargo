@@ -269,12 +269,19 @@ func TestServiceAccountKeyProvider_GetCredentials(t *testing.T) {
 
 func TestServiceAccountKeyProvider_GetCredentials_coalescing(t *testing.T) {
 	const (
-		fakeRepoURL           = "us-central1-docker.pkg.dev/my-project/my-repo"
-		fakeServiceAccountKey = "fake-service-account-key"
-		fakeAccessToken       = "fake-access-token"
+		fakeRepoURL = "us-central1-docker.pkg.dev/my-project/my-repo"
 
 		concurrency = 10
 	)
+
+	// Callers are split evenly between two service account keys. Since the cache
+	// key is derived from the key, the two groups must not share an acquisition,
+	// which is what makes this test sensitive to an acquisition keyed on anything
+	// coarser than the cache key.
+	serviceAccountKeys := []string{
+		"fake-service-account-key-a",
+		"fake-service-account-key-b",
+	}
 
 	// synctest.Test() runs a function in a "bubble": that function and every
 	// goroutine it starts form a group the runtime tracks. Inside the bubble,
@@ -284,34 +291,31 @@ func TestServiceAccountKeyProvider_GetCredentials_coalescing(t *testing.T) {
 	// is waiting on the acquisition, rather than guess at it with a sleep.
 	synctest.Test(t, func(t *testing.T) {
 		// Track the total number of actual invocations of the acquisition function.
-		// If the coalescing is working, there should only ever be one regardless of
-		// how many concurrent callers there are.
+		// If the coalescing is working, there should only ever be one per service
+		// account key regardless of how many concurrent callers there are.
 		var acquisitions atomic.Int32
 
-		// This channel will be used to unblock the goroutine that is parked inside
-		// the acquisition function, but only after every caller is durably blocked
-		// on the singleflight.
+		// This channel will be used to unblock the goroutines that are parked
+		// inside the acquisition function, but only after every caller is durably
+		// blocked on a singleflight.
 		release := make(chan struct{})
 
 		provider := &ServiceAccountKeyProvider{
 			// A cache that retains nothing leaves the acquisition as the only way
 			// any caller can obtain a token.
 			tokenCache: expiring.NewAlwaysMissing(),
-			getAccessTokenFn: func(context.Context, string) (*oauth2.Token, error) {
+			getAccessTokenFn: func(
+				_ context.Context,
+				encodedServiceAccountKey string,
+			) (*oauth2.Token, error) {
 				acquisitions.Add(1)
 				<-release
+				// The token identifies the key it was obtained with, so a caller
+				// served by another key's acquisition is detectable.
 				return &oauth2.Token{
-					AccessToken: fakeAccessToken,
+					AccessToken: "token-for-" + encodedServiceAccountKey,
 					Expiry:      time.Now().Add(time.Hour),
 				}, nil
-			},
-		}
-
-		req := credentials.Request{
-			Type:    credentials.TypeImage,
-			RepoURL: fakeRepoURL,
-			Data: map[string][]byte{
-				serviceAccountKeyKey: []byte(fakeServiceAccountKey),
 			},
 		}
 
@@ -320,34 +324,52 @@ func TestServiceAccountKeyProvider_GetCredentials_coalescing(t *testing.T) {
 		var wg sync.WaitGroup
 		for i := range concurrency {
 			wg.Go(func() {
-				creds[i], errs[i] = provider.GetCredentials(t.Context(), req)
+				creds[i], errs[i] = provider.GetCredentials(
+					t.Context(),
+					credentials.Request{
+						Type:    credentials.TypeImage,
+						RepoURL: fakeRepoURL,
+						Data: map[string][]byte{
+							serviceAccountKeyKey: []byte(
+								serviceAccountKeys[i%len(serviceAccountKeys)],
+							),
+						},
+					},
+				)
 			})
 		}
 
 		// Returns only once every caller is durably blocked. The cache cannot have
-		// served any of them, so the only place they can be is waiting on the one
-		// acquisition. Specifically, one goroutine should be parked inside the
-		// acquisition function with the rest waiting on the singleflight to
-		// complete.
+		// served any of them, so the only place they can be is waiting on an
+		// acquisition. Specifically, one goroutine per service account key should be parked
+		// inside the acquisition function with the rest waiting on a singleflight
+		// to complete.
 		synctest.Wait()
 
-		// Allows acquisition to complete.
+		// Allows acquisitions to complete.
 		close(release)
 
 		// Wait for all of the callers to finish.
 		wg.Wait()
 
-		// Since we forced every caller to join one singleflight, there should have
-		// been only one actual execution of the acquisition function.
-		require.Equal(t, int32(1), acquisitions.Load())
+		// Since we forced the callers for each service account key to join one singleflight,
+		// there should have been exactly one actual execution of the acquisition
+		// function per service account key -- no more, which would mean callers failed to
+		// coalesce, and no fewer, which would mean callers for different service account keys
+		// shared an acquisition.
+		require.Equal(t, int32(len(serviceAccountKeys)), acquisitions.Load())
 
-		// Verify that every caller received the expected credentials and no
-		// errors.
+		// Verify that every caller received the credentials for its own service
+		// account key and no errors.
 		for i := range concurrency {
 			require.NoError(t, errs[i])
 			require.NotNil(t, creds[i])
 			require.Equal(t, accessTokenUsername, creds[i].Username)
-			require.Equal(t, fakeAccessToken, creds[i].Password)
+			require.Equal(
+				t,
+				"token-for-"+serviceAccountKeys[i%len(serviceAccountKeys)],
+				creds[i].Password,
+			)
 		}
 	})
 }

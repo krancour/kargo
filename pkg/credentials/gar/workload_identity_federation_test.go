@@ -309,13 +309,17 @@ func TestWorkloadIdentityFederationProvider_GetCredentials_coalescing(
 	t *testing.T,
 ) {
 	const (
-		fakeProjectID   = "test-project"
-		fakeProject     = "fake-project"
-		fakeRepoURL     = "us-central1-docker.pkg.dev/my-project/my-repo"
-		fakeAccessToken = "fake-access-token"
+		fakeProjectID = "test-project"
+		fakeRepoURL   = "us-central1-docker.pkg.dev/my-project/my-repo"
 
 		concurrency = 10
 	)
+
+	// Callers are split evenly between two Kargo Projects. Since the cache key is
+	// derived from the Project, the two groups must not share an acquisition,
+	// which is what makes this test sensitive to an acquisition keyed on anything
+	// coarser than the cache key.
+	projects := []string{"fake-project-a", "fake-project-b"}
 
 	// synctest.Test() runs a function in a "bubble": that function and every
 	// goroutine it starts form a group the runtime tracks. Inside the bubble,
@@ -325,13 +329,13 @@ func TestWorkloadIdentityFederationProvider_GetCredentials_coalescing(
 	// is waiting on the acquisition, rather than guess at it with a sleep.
 	synctest.Test(t, func(t *testing.T) {
 		// Track the total number of actual invocations of the acquisition function.
-		// If the coalescing is working, there should only ever be one regardless of
-		// how many concurrent callers there are.
+		// If the coalescing is working, there should only ever be one per Project
+		// regardless of how many concurrent callers there are.
 		var acquisitions atomic.Int32
 
-		// This channel will be used to unblock the goroutine that is parked inside
-		// the acquisition function, but only after every caller is durably blocked
-		// on the singleflight.
+		// This channel will be used to unblock the goroutines that are parked
+		// inside the acquisition function, but only after every caller is durably
+		// blocked on a singleflight.
 		release := make(chan struct{})
 
 		provider := &WorkloadIdentityFederationProvider{
@@ -341,19 +345,15 @@ func TestWorkloadIdentityFederationProvider_GetCredentials_coalescing(
 			tokenCache:       expiring.NewAlwaysMissing(),
 			tokenSourceCache: expiring.NewAlwaysMissing(),
 			getAccessTokenFn: func(
-				context.Context,
-				string,
+				_ context.Context,
+				project string,
 			) (string, time.Time, error) {
 				acquisitions.Add(1)
 				<-release
-				return fakeAccessToken, time.Now().Add(time.Hour), nil
+				// The token identifies the Project it was obtained for, so a caller
+				// served by another Project's acquisition is detectable.
+				return "token-for-" + project, time.Now().Add(time.Hour), nil
 			},
-		}
-
-		req := credentials.Request{
-			Type:    credentials.TypeImage,
-			Project: fakeProject,
-			RepoURL: fakeRepoURL,
 		}
 
 		creds := make([]*credentials.Credentials, concurrency)
@@ -361,34 +361,46 @@ func TestWorkloadIdentityFederationProvider_GetCredentials_coalescing(
 		var wg sync.WaitGroup
 		for i := range concurrency {
 			wg.Go(func() {
-				creds[i], errs[i] = provider.GetCredentials(t.Context(), req)
+				creds[i], errs[i] = provider.GetCredentials(
+					t.Context(),
+					credentials.Request{
+						Type:    credentials.TypeImage,
+						Project: projects[i%len(projects)],
+						RepoURL: fakeRepoURL,
+					},
+				)
 			})
 		}
 
-		// Returns only once every caller is durably blocked. Neither cache can have
-		// served any of them, so the only place they can be is waiting on the one
-		// acquisition. Specifically, one goroutine should be parked inside the
-		// acquisition function with the rest waiting on the singleflight to
-		// complete.
+		// Returns only once every caller is durably blocked. Neither cache cannot have
+		// served any of them, so the only place they can be is waiting on an
+		// acquisition. Specifically, one goroutine per Project should be parked
+		// inside the acquisition function with the rest waiting on a singleflight
+		// to complete.
 		synctest.Wait()
 
-		// Allows acquisition to complete.
+		// Allows acquisitions to complete.
 		close(release)
 
 		// Wait for all of the callers to finish.
 		wg.Wait()
 
-		// Since we forced every caller to join one singleflight, there should have
-		// been only one actual execution of the acquisition function.
-		require.Equal(t, int32(1), acquisitions.Load())
+		// Since we forced the callers for each Project to join one singleflight,
+		// there should have been exactly one actual execution of the acquisition
+		// function per Project -- no more, which would mean callers failed to
+		// coalesce, and no fewer, which would mean callers for different Projects
+		// shared an acquisition.
+		require.Equal(t, int32(len(projects)), acquisitions.Load())
 
-		// Verify that every caller received the expected credentials and no
-		// errors.
+		// Verify that every caller received the credentials for its own Project and
+		// no errors.
 		for i := range concurrency {
 			require.NoError(t, errs[i])
 			require.NotNil(t, creds[i])
 			require.Equal(t, accessTokenUsername, creds[i].Username)
-			require.Equal(t, fakeAccessToken, creds[i].Password)
+			require.Equal(
+				t, "token-for-"+projects[i%len(projects)], creds[i].Password,
+			)
 		}
 	})
 }
