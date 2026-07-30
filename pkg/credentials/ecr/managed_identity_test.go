@@ -482,3 +482,51 @@ func TestManagedIdentityProvider_GetCredentials_winnerCanceled(t *testing.T) {
 		}
 	})
 }
+
+func TestManagedIdentityProvider_GetCredentials_acquisitionTimeout(t *testing.T) {
+	// An acquisition runs under a context detached from every caller's, so a
+	// caller giving up cannot end it. Its own deadline is the only thing that
+	// can, and until it does, the singleflight key stays occupied and no fresh
+	// acquisition for that key can begin.
+
+	const (
+		fakeProject = "fake-project"
+		fakeRepoURL = "123456789012.dkr.ecr.us-west-2.amazonaws.com/repo"
+	)
+
+	// synctest.Test() runs a function in a "bubble": that function and every
+	// goroutine it starts form a group the runtime tracks. A bubble has a fake
+	// clock that advances only when every goroutine in the group is durably
+	// blocked, and then only as far as the next pending timer. Here that timer is
+	// the acquisition's own deadline, so this test reaches it instantly and
+	// measures it exactly, instead of waiting 30 seconds for it.
+	synctest.Test(t, func(t *testing.T) {
+		provider := &ManagedIdentityProvider{
+			tokenCache: expiring.NewAlwaysMissing(),
+			getAuthTokenFn: func(
+				ctx context.Context,
+				_ string,
+				_ string,
+			) (string, time.Time, error) {
+				// Never resolves on its own, so only the acquisition's deadline can
+				// end it.
+				<-ctx.Done()
+				return "", time.Time{}, ctx.Err()
+			},
+		}
+
+		start := time.Now()
+		creds, err := provider.GetCredentials(
+			t.Context(),
+			credentials.Request{
+				Type:    credentials.TypeImage,
+				Project: fakeProject,
+				RepoURL: fakeRepoURL,
+			},
+		)
+
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.Nil(t, creds)
+		require.Equal(t, tokenAcquisitionTimeout, time.Since(start))
+	})
+}
