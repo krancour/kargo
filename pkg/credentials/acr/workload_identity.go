@@ -201,11 +201,12 @@ func (p *WorkloadIdentityProvider) getAndCacheAccessToken(
 	}
 	logger.Debug("obtained new access token")
 
-	// Cache the token using the default TTL. The ACR refresh token exchange API
-	// does not expose token expiry, so a dynamic TTL is not possible here.
+	// Cache the token using the cache's default TTL. The ACR refresh token
+	// exchange API does not expose token expiry, so a dynamic TTL is not possible
+	// here.
 	logger.Debug(
 		"caching access token",
-		"ttl", expiring.DefaultTTL,
+		"ttl", cacheTTLMinutes*time.Minute,
 	)
 	p.tokenCache.Set(registryName, accessToken, expiring.DefaultTTL)
 
