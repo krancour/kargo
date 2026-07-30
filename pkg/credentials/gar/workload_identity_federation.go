@@ -300,6 +300,19 @@ func (p *WorkloadIdentityFederationProvider) getAccessToken(
 		return "", time.Time{}, nil
 	}
 
+	// A nil response alongside a nil error would be a surprise, but it is
+	// reachable: the generated client decodes into a pointer to the response
+	// pointer, so a success carrying a JSON null body nils the response and
+	// reports no error. Dereferencing it regardless is not worth the
+	// consequence. This runs inside a singleflight group, and a panic there is
+	// deliberately re-raised on a fresh goroutine so that waiters cannot block
+	// forever, which puts it beyond the reach of the controller's recovery and
+	// takes the process down with it.
+	if resp == nil {
+		logger.Error(nil, "no response generating access token")
+		return "", time.Time{}, nil
+	}
+
 	var expiry time.Time
 	if resp.ExpireTime != "" {
 		if expiry, err = time.Parse(time.RFC3339, resp.ExpireTime); err != nil {
