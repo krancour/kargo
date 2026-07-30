@@ -176,12 +176,12 @@ func (p *ManagedIdentityProvider) GetCredentials(
 // returns it. It is intended to be executed within the provider's singleflight
 // group.
 func (p *ManagedIdentityProvider) getAndCacheAuthToken(
-	orphanedCtx context.Context,
+	ctx context.Context,
 	region string,
 	project string,
 	cacheKey string,
 ) (string, error) {
-	logger := logging.LoggerFromContext(orphanedCtx)
+	logger := logging.LoggerFromContext(ctx)
 
 	// This runs under a context detached from any caller's. Its result is shared
 	// by every caller waiting on it, so it must not be owned by whichever caller

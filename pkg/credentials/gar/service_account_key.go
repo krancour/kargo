@@ -135,11 +135,11 @@ func (p *ServiceAccountKeyProvider) GetCredentials(
 // getAndCacheAccessToken obtains a new GCP access token, caches it, and returns
 // it. It is intended to be executed within the provider's singleflight group.
 func (p *ServiceAccountKeyProvider) getAndCacheAccessToken(
-	orphanedCtx context.Context,
+	ctx context.Context,
 	encodedServiceAccountKey string,
 	cacheKey string,
 ) (string, error) {
-	logger := logging.LoggerFromContext(orphanedCtx)
+	logger := logging.LoggerFromContext(ctx)
 
 	// This runs under a context detached from any caller's. Its result is shared
 	// by every caller waiting on it, so it must not be owned by whichever caller
