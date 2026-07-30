@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
+	"github.com/hashicorp/go-cleanhttp"
 	"github.com/patrickmn/go-cache"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -48,6 +49,20 @@ func NewWorkloadIdentityFederationProvider(ctx context.Context) *WorkloadIdentit
 		logger.Info("not running on GCP; skipping initialization of GCP Workload Identity Federation provider")
 		return nil
 	}
+
+	// The token source built below refreshes itself by issuing an HTTP request,
+	// and depending on which credentials Application Default Credentials
+	// resolves to, nothing may bound that request: a service account key routes
+	// through oauth2's JWT source, which takes its client from this context but
+	// issues the request without it. Since a refresh can occur inside a
+	// singleflight group, an unanswered request would occupy that group's key for
+	// the life of the process. Worse, a token source serializes refreshes behind
+	// a mutex, so every caller sharing this one would block, not merely those
+	// waiting on the key. A client timeout is the only bound available here.
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, &http.Client{
+		Transport: cleanhttp.DefaultTransport(),
+		Timeout:   tokenRequestTimeout,
+	})
 
 	var projectID string
 	var tokenSource oauth2.TokenSource
