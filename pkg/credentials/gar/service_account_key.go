@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"time"
 
+	"github.com/hashicorp/go-cleanhttp"
 	"github.com/patrickmn/go-cache"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -192,6 +194,13 @@ func (p *ServiceAccountKeyProvider) getAccessToken(
 	if err != nil {
 		return nil, fmt.Errorf("error parsing service account key: %w", err)
 	}
+
+	// oauth2 takes its HTTP client from the context but issues the token request
+	// without the context, so a client timeout is the only available bound.
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, &http.Client{
+		Transport: cleanhttp.DefaultTransport(),
+		Timeout:   tokenRequestTimeout,
+	})
 
 	tokenSource := config.TokenSource(ctx)
 	token, err := tokenSource.Token()

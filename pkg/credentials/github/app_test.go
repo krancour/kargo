@@ -224,6 +224,7 @@ func TestAppCredentialProvider_GetCredentials(t *testing.T) {
 		data             map[string][]byte
 		metadata         map[string]string
 		getAccessTokenFn func(
+			ctx context.Context,
 			appOrClientID string,
 			installationID int64,
 			encodedPrivateKey string,
@@ -321,7 +322,9 @@ func TestAppCredentialProvider_GetCredentials(t *testing.T) {
 			credType: credentials.TypeGit,
 			repoURL:  testRepoURL,
 			data:     testData,
-			getAccessTokenFn: func(string, int64, string, string) (*oauth2.Token, error) {
+			getAccessTokenFn: func(
+				context.Context, string, int64, string, string,
+			) (*oauth2.Token, error) {
 				return nil, errors.New("token error")
 			},
 			assertions: func(t *testing.T, creds *credentials.Credentials, err error) {
@@ -335,7 +338,9 @@ func TestAppCredentialProvider_GetCredentials(t *testing.T) {
 			credType: credentials.TypeGit,
 			repoURL:  testRepoURL,
 			data:     testData,
-			getAccessTokenFn: func(string, int64, string, string) (*oauth2.Token, error) {
+			getAccessTokenFn: func(
+				context.Context, string, int64, string, string,
+			) (*oauth2.Token, error) {
 				return &oauth2.Token{
 					AccessToken: "test-token",
 					Expiry:      time.Now().Add(time.Hour),
@@ -401,6 +406,7 @@ func TestAppCredentialProvider_getUsernameAndPassword(t *testing.T) {
 		name             string
 		setupCache       func(c expiring.Cache)
 		getAccessTokenFn func(
+			ctx context.Context,
 			appOrClientID string,
 			installationID int64,
 			encodedPrivateKey string,
@@ -427,7 +433,9 @@ func TestAppCredentialProvider_getUsernameAndPassword(t *testing.T) {
 		},
 		{
 			name: "cache miss, successful token fetch",
-			getAccessTokenFn: func(string, int64, string, string) (*oauth2.Token, error) {
+			getAccessTokenFn: func(
+				context.Context, string, int64, string, string,
+			) (*oauth2.Token, error) {
 				return &oauth2.Token{
 					AccessToken: fakeAccessToken,
 					Expiry:      time.Now().Add(time.Hour),
@@ -458,7 +466,9 @@ func TestAppCredentialProvider_getUsernameAndPassword(t *testing.T) {
 		},
 		{
 			name: "error in getAccessToken",
-			getAccessTokenFn: func(string, int64, string, string) (*oauth2.Token, error) {
+			getAccessTokenFn: func(
+				context.Context, string, int64, string, string,
+			) (*oauth2.Token, error) {
 				return nil, errors.New("token error")
 			},
 			assertions: func(
@@ -553,7 +563,7 @@ func TestAppCredentialProvider_getUsernameAndPassword_coalescing(
 			// expires before it begins.
 			mintTimeoutBuffer: time.Minute,
 			getAccessTokenFn: func(
-				_ string, _ int64, _ string, repoURL string,
+				_ context.Context, _ string, _ int64, _ string, repoURL string,
 			) (*oauth2.Token, error) {
 				acquisitions.Add(1)
 				<-release
@@ -661,7 +671,7 @@ func TestAppCredentialProvider_getUsernameAndPassword_winnerCanceled(
 			// expires before it begins.
 			mintTimeoutBuffer: time.Minute,
 			getAccessTokenFn: func(
-				string, int64, string, string,
+				context.Context, string, int64, string, string,
 			) (*oauth2.Token, error) {
 				return &oauth2.Token{
 					AccessToken: fakeAccessToken,
@@ -776,7 +786,7 @@ func TestAppCredentialProvider_getUsernameAndPassword_timeout(t *testing.T) {
 	provider.validationBackoff = nil
 	provider.mintTimeoutBuffer = 50 * time.Millisecond
 	provider.getAccessTokenFn = func(
-		string, int64, string, string,
+		context.Context, string, int64, string, string,
 	) (*oauth2.Token, error) {
 		return &oauth2.Token{
 			AccessToken: fakeAccessToken,
@@ -818,7 +828,7 @@ func TestAppCredentialProvider_getUsernameAndPassword_realError(t *testing.T) {
 
 	provider := NewAppCredentialProvider().(*AppCredentialProvider) // nolint:forcetypeassert
 	provider.getAccessTokenFn = func(
-		string, int64, string, string,
+		context.Context, string, int64, string, string,
 	) (*oauth2.Token, error) {
 		mints.Add(1)
 		return nil, errors.New("token error")

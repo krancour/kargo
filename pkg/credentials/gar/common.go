@@ -18,6 +18,14 @@ const (
 	// acquisition, and no fresh acquisition for the same key can begin until it
 	// returns.
 	tokenAcquisitionTimeout = 30 * time.Second
+
+	// tokenRequestTimeout bounds an individual HTTP request made while acquiring
+	// a token. It exists because oauth2 resolves its HTTP client from a context
+	// but then issues the request without one, leaving the acquisition's own
+	// deadline with nothing to act on. A request that is never answered would
+	// otherwise keep the acquisition running, and with it the singleflight key it
+	// occupies, failing every later caller for that key.
+	tokenRequestTimeout = 30 * time.Second
 )
 
 var (

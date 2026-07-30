@@ -75,6 +75,7 @@ type AppCredentialProvider struct {
 	mintTimeoutBuffer time.Duration
 
 	getAccessTokenFn func(
+		ctx context.Context,
 		appOrClientID string,
 		installationID int64,
 		encodedPrivateKey string,
@@ -293,6 +294,7 @@ func (p *AppCredentialProvider) mintAndCacheToken(
 	defer cancel()
 
 	token, err := p.getAccessTokenFn(
+		orphanedCtx,
 		appOrClientID,
 		installationID,
 		encodedPrivateKey,
@@ -419,6 +421,7 @@ func (p *AppCredentialProvider) validateAccessToken(
 // getAccessToken gets an installation access token for the given app/client ID,
 // installation ID, PEM-encoded GitHub App private key, and repo URL.
 func (p *AppCredentialProvider) getAccessToken(
+	ctx context.Context,
 	appOrClientID string,
 	installationID int64,
 	encodedPrivateKey string,
@@ -436,6 +439,11 @@ func (p *AppCredentialProvider) getAccessToken(
 
 	installationOpts := []githubauth.InstallationTokenSourceOpt{
 		githubauth.WithHTTPClient(cleanhttp.DefaultClient()),
+		// Without this the token source falls back to context.Background(), which
+		// would leave the request unbounded. Minting is coalesced, so a request
+		// GitHub never answers would keep the singleflight key occupied and fail
+		// every later caller for this repository.
+		githubauth.WithContext(ctx),
 		// In all cases, the access token is scoped only to the repo specified by
 		// repoURL.
 		githubauth.WithInstallationTokenOptions(
