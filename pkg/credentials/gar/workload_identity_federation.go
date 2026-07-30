@@ -237,7 +237,7 @@ func (p *WorkloadIdentityFederationProvider) getAndCacheAccessToken(
 	// If we get to here, we found no Project-specific token and we'll cache the
 	// token source instead.
 	logger.Debug("no project-specific token found; caching default token source")
-	p.tokenSourceCache.Set(cacheKey, p.tokenSource, cache.DefaultExpiration)
+	p.tokenSourceCache.Set(cacheKey, p.tokenSource, expiring.DefaultTTL)
 	token, err := p.tokenSource.Token()
 	if err != nil {
 		return "", fmt.Errorf("error getting GCP access token: %w", err)

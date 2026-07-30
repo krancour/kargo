@@ -205,9 +205,9 @@ func (p *WorkloadIdentityProvider) getAndCacheAccessToken(
 	// does not expose token expiry, so a dynamic TTL is not possible here.
 	logger.Debug(
 		"caching access token",
-		"ttl", cache.DefaultExpiration,
+		"ttl", expiring.DefaultTTL,
 	)
-	p.tokenCache.Set(registryName, accessToken, cache.DefaultExpiration)
+	p.tokenCache.Set(registryName, accessToken, expiring.DefaultTTL)
 
 	return accessToken, nil
 }
