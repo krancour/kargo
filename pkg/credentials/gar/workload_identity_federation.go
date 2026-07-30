@@ -274,7 +274,7 @@ func (p *WorkloadIdentityFederationProvider) getAccessToken(
 				iamcredentials.CloudPlatformScope,
 			},
 		},
-	).Do()
+	).Context(ctx).Do()
 	if err != nil {
 		var googleErr *googleapi.Error
 		if errors.As(err, &googleErr) && googleErr.Code == http.StatusNotFound {
