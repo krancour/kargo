@@ -286,9 +286,22 @@ func (p *ManagedIdentityProvider) getAuthToken(
 		}
 	}
 
+	// A response carrying no authorization data would be a surprise, but indexing
+	// into it regardless is not worth the consequence. This runs inside a
+	// singleflight group, and a panic there is deliberately re-raised on a fresh
+	// goroutine so that waiters cannot block forever, which puts it beyond the
+	// reach of the controller's recovery and takes the process down with it.
+	if output == nil || len(output.AuthorizationData) == 0 {
+		return "", time.Time{}, errors.New("no authorization data returned")
+	}
+
 	var expiry time.Time
 	if output.AuthorizationData[0].ExpiresAt != nil {
 		expiry = *output.AuthorizationData[0].ExpiresAt
+	}
+
+	if output.AuthorizationData[0].AuthorizationToken == nil {
+		return "", time.Time{}, errors.New("no authorization token returned")
 	}
 
 	logger.Debug("got ECR authorization token")
