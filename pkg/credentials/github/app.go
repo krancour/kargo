@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/cache/expiring"
 	"github.com/akuity/kargo/pkg/credentials"
 	ghutil "github.com/akuity/kargo/pkg/github"
 	"github.com/akuity/kargo/pkg/logging"
@@ -56,7 +57,7 @@ func init() {
 }
 
 type AppCredentialProvider struct {
-	tokenCache *cache.Cache
+	tokenCache expiring.Cache
 
 	// mintGroup coalesces concurrent mints of the token for any given cache
 	// key into a single mint whose result is shared by all callers.

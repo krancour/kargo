@@ -19,6 +19,7 @@ import (
 	"golang.org/x/oauth2"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/cache/expiring"
 	"github.com/akuity/kargo/pkg/credentials"
 )
 
@@ -397,23 +398,23 @@ func TestAppCredentialProvider_getUsernameAndPassword(t *testing.T) {
 
 	testCases := []struct {
 		name             string
-		setupCache       func(c *cache.Cache)
+		setupCache       func(c expiring.Cache)
 		getAccessTokenFn func(
 			appOrClientID string,
 			installationID int64,
 			encodedPrivateKey string,
 			repoURL string,
 		) (*oauth2.Token, error)
-		assertions func(*testing.T, *cache.Cache, *credentials.Credentials, error)
+		assertions func(*testing.T, expiring.Cache, *credentials.Credentials, error)
 	}{
 		{
 			name: "cache hit",
-			setupCache: func(c *cache.Cache) {
+			setupCache: func(c expiring.Cache) {
 				c.Set(testTokenCacheKey, fakeAccessToken, cache.DefaultExpiration)
 			},
 			assertions: func(
 				t *testing.T,
-				_ *cache.Cache,
+				_ expiring.Cache,
 				creds *credentials.Credentials,
 				err error,
 			) {
@@ -433,7 +434,7 @@ func TestAppCredentialProvider_getUsernameAndPassword(t *testing.T) {
 			},
 			assertions: func(
 				t *testing.T,
-				c *cache.Cache,
+				c expiring.Cache,
 				creds *credentials.Credentials,
 				err error,
 			) {
@@ -444,7 +445,9 @@ func TestAppCredentialProvider_getUsernameAndPassword(t *testing.T) {
 
 				// Verify the token was cached with a TTL based on the
 				// token's actual expiry
-				items := c.Items()
+				realCache, ok := c.(*cache.Cache)
+				require.True(t, ok)
+				items := realCache.Items()
 				item, found := items[testTokenCacheKey]
 				assert.True(t, found)
 				expectedTTL := 55 * time.Minute // 1h expiry - 5m margin
@@ -459,7 +462,7 @@ func TestAppCredentialProvider_getUsernameAndPassword(t *testing.T) {
 			},
 			assertions: func(
 				t *testing.T,
-				c *cache.Cache,
+				c expiring.Cache,
 				creds *credentials.Credentials,
 				err error,
 			) {

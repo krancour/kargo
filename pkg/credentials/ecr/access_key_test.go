@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/akuity/kargo/pkg/cache/expiring"
 	"github.com/akuity/kargo/pkg/credentials"
 )
 
@@ -172,8 +173,8 @@ func TestAccessKeyProvider_GetCredentials(t *testing.T) {
 			accessKeyID string,
 			secretAccessKey string,
 		) (string, time.Time, error)
-		setupCache func(cache *cache.Cache)
-		assertions func(t *testing.T, c *cache.Cache, creds *credentials.Credentials, err error)
+		setupCache func(cache expiring.Cache)
+		assertions func(t *testing.T, c expiring.Cache, creds *credentials.Credentials, err error)
 	}{
 		{
 			name:     "unsupported credentials",
@@ -188,7 +189,7 @@ func TestAccessKeyProvider_GetCredentials(t *testing.T) {
 			) (string, time.Time, error) {
 				return "", time.Time{}, nil
 			},
-			assertions: func(t *testing.T, _ *cache.Cache, creds *credentials.Credentials, err error) {
+			assertions: func(t *testing.T, _ expiring.Cache, creds *credentials.Credentials, err error) {
 				assert.Nil(t, creds)
 				assert.NoError(t, err)
 			},
@@ -202,14 +203,14 @@ func TestAccessKeyProvider_GetCredentials(t *testing.T) {
 				idKey:     []byte(fakeID),
 				secretKey: []byte(fakeSecret),
 			},
-			setupCache: func(c *cache.Cache) {
+			setupCache: func(c expiring.Cache) {
 				c.Set(
 					tokenCacheKey(fakeRegion, fakeID, fakeSecret),
 					fakeToken, // base64 of "AWS:password"
 					cache.DefaultExpiration,
 				)
 			},
-			assertions: func(t *testing.T, _ *cache.Cache, creds *credentials.Credentials, err error) {
+			assertions: func(t *testing.T, _ expiring.Cache, creds *credentials.Credentials, err error) {
 				assert.NoError(t, err)
 				assert.NotNil(t, creds)
 				assert.Equal(t, "AWS", creds.Username)
@@ -233,7 +234,7 @@ func TestAccessKeyProvider_GetCredentials(t *testing.T) {
 			) (string, time.Time, error) {
 				return fakeToken, time.Now().Add(12 * time.Hour), nil
 			},
-			assertions: func(t *testing.T, c *cache.Cache, creds *credentials.Credentials, err error) {
+			assertions: func(t *testing.T, c expiring.Cache, creds *credentials.Credentials, err error) {
 				assert.NoError(t, err)
 				assert.NotNil(t, creds)
 				assert.Equal(t, "AWS", creds.Username)
@@ -241,7 +242,9 @@ func TestAccessKeyProvider_GetCredentials(t *testing.T) {
 
 				// Verify the token was cached with a TTL based on the
 				// token's actual expiry
-				items := c.Items()
+				realCache, ok := c.(*cache.Cache)
+				require.True(t, ok)
+				items := realCache.Items()
 				item, found := items[tokenCacheKey(fakeRegion, fakeID, fakeSecret)]
 				assert.True(t, found)
 				expectedTTL := 12*time.Hour - 5*time.Minute // 12h expiry - 5m margin
@@ -266,7 +269,7 @@ func TestAccessKeyProvider_GetCredentials(t *testing.T) {
 			) (string, time.Time, error) {
 				return "", time.Time{}, errors.New("auth token error")
 			},
-			assertions: func(t *testing.T, _ *cache.Cache, creds *credentials.Credentials, err error) {
+			assertions: func(t *testing.T, _ expiring.Cache, creds *credentials.Credentials, err error) {
 				assert.ErrorContains(t, err, "error getting ECR auth token")
 				assert.Nil(t, creds)
 			},
@@ -288,7 +291,7 @@ func TestAccessKeyProvider_GetCredentials(t *testing.T) {
 			) (string, time.Time, error) {
 				return "", time.Time{}, nil
 			},
-			assertions: func(t *testing.T, c *cache.Cache, creds *credentials.Credentials, err error) {
+			assertions: func(t *testing.T, c expiring.Cache, creds *credentials.Credentials, err error) {
 				assert.Nil(t, creds)
 				assert.NoError(t, err)
 

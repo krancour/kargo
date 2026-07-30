@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 
+	"github.com/akuity/kargo/pkg/cache/expiring"
 	"github.com/akuity/kargo/pkg/credentials"
 	"github.com/akuity/kargo/pkg/logging"
 )
@@ -99,8 +100,8 @@ func NewWorkloadIdentityFederationProvider(ctx context.Context) *WorkloadIdentit
 }
 
 type WorkloadIdentityFederationProvider struct {
-	tokenCache       *cache.Cache // For short-lived Project-specific tokens
-	tokenSourceCache *cache.Cache // For long-lived token sources
+	tokenCache       expiring.Cache // For short-lived Project-specific tokens
+	tokenSourceCache expiring.Cache // For long-lived token sources
 
 	// tokenGroup coalesces concurrent acquisitions of the token for any given
 	// cache key into a single acquisition whose result is shared by all callers.

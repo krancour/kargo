@@ -18,6 +18,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/akuity/kargo/pkg/cache/expiring"
 	"github.com/akuity/kargo/pkg/credentials"
 	"github.com/akuity/kargo/pkg/logging"
 )
@@ -36,7 +37,7 @@ func init() {
 }
 
 type ManagedIdentityProvider struct {
-	tokenCache *cache.Cache
+	tokenCache expiring.Cache
 
 	// tokenGroup coalesces concurrent acquisitions of the token for any given
 	// cache key into a single acquisition whose result is shared by all callers.

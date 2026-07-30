@@ -13,6 +13,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/akuity/kargo/pkg/cache/expiring"
 	"github.com/akuity/kargo/pkg/credentials"
 	"github.com/akuity/kargo/pkg/logging"
 )
@@ -56,7 +57,7 @@ func init() {
 type WorkloadIdentityProvider struct {
 	// tokenCache is an in-memory cache of ACR registry access tokens keyed by
 	// registry name.
-	tokenCache *cache.Cache
+	tokenCache expiring.Cache
 
 	// tokenGroup coalesces concurrent acquisitions of the token for any given
 	// registry into a single acquisition whose result is shared by all callers.

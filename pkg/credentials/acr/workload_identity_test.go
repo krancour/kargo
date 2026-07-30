@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/akuity/kargo/pkg/cache/expiring"
 	"github.com/akuity/kargo/pkg/credentials"
 )
 
@@ -113,8 +114,8 @@ func TestWorkloadIdentityProvider_GetCredentials(t *testing.T) {
 		provider   *WorkloadIdentityProvider
 		credType   credentials.Type
 		repoURL    string
-		setupCache func(cache *cache.Cache)
-		assertions func(*testing.T, *cache.Cache, *credentials.Credentials, error)
+		setupCache func(cache expiring.Cache)
+		assertions func(*testing.T, expiring.Cache, *credentials.Credentials, error)
 	}{
 		{
 			name:     "not supported",
@@ -123,7 +124,7 @@ func TestWorkloadIdentityProvider_GetCredentials(t *testing.T) {
 			repoURL:  "git://repo",
 			assertions: func(
 				t *testing.T,
-				_ *cache.Cache,
+				_ expiring.Cache,
 				creds *credentials.Credentials,
 				err error,
 			) {
@@ -138,7 +139,7 @@ func TestWorkloadIdentityProvider_GetCredentials(t *testing.T) {
 			repoURL:  "not-an-acr-url",
 			assertions: func(
 				t *testing.T,
-				_ *cache.Cache,
+				_ expiring.Cache,
 				creds *credentials.Credentials,
 				err error,
 			) {
@@ -151,12 +152,12 @@ func TestWorkloadIdentityProvider_GetCredentials(t *testing.T) {
 			provider: &WorkloadIdentityProvider{},
 			credType: credentials.TypeImage,
 			repoURL:  testRepoURL,
-			setupCache: func(c *cache.Cache) {
+			setupCache: func(c expiring.Cache) {
 				c.Set(testRegistryName, testToken, cache.DefaultExpiration)
 			},
 			assertions: func(
 				t *testing.T,
-				_ *cache.Cache,
+				_ expiring.Cache,
 				creds *credentials.Credentials,
 				err error,
 			) {
@@ -177,7 +178,7 @@ func TestWorkloadIdentityProvider_GetCredentials(t *testing.T) {
 			repoURL:  testRepoURL,
 			assertions: func(
 				t *testing.T,
-				c *cache.Cache,
+				c expiring.Cache,
 				creds *credentials.Credentials,
 				err error,
 			) {
@@ -203,7 +204,7 @@ func TestWorkloadIdentityProvider_GetCredentials(t *testing.T) {
 			repoURL:  testRepoURL,
 			assertions: func(
 				t *testing.T,
-				_ *cache.Cache,
+				_ expiring.Cache,
 				creds *credentials.Credentials,
 				err error,
 			) {
@@ -220,7 +221,7 @@ func TestWorkloadIdentityProvider_GetCredentials(t *testing.T) {
 			},
 			credType: credentials.TypeImage,
 			repoURL:  testRepoURL,
-			assertions: func(t *testing.T, _ *cache.Cache, creds *credentials.Credentials, err error) {
+			assertions: func(t *testing.T, _ expiring.Cache, creds *credentials.Credentials, err error) {
 				assert.NoError(t, err)
 				assert.Nil(t, creds)
 			},

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 
+	"github.com/akuity/kargo/pkg/cache/expiring"
 	"github.com/akuity/kargo/pkg/credentials"
 )
 
@@ -127,15 +128,15 @@ func TestWorkloadIdentityFederationProvider_GetCredentials(t *testing.T) {
 	testCases := []struct {
 		name                  string
 		provider              *WorkloadIdentityFederationProvider
-		setupTokenCache       func(c *cache.Cache)
-		setupTokenSourceCache func(c *cache.Cache)
+		setupTokenCache       func(c expiring.Cache)
+		setupTokenSourceCache func(c expiring.Cache)
 		project               string
 		credType              credentials.Type
 		repoURL               string
 		assert                func(
 			t *testing.T,
-			tokenCache *cache.Cache,
-			tokenSourceCache *cache.Cache,
+			tokenCache expiring.Cache,
+			tokenSourceCache expiring.Cache,
 			creds *credentials.Credentials,
 			err error,
 		)
@@ -146,13 +147,13 @@ func TestWorkloadIdentityFederationProvider_GetCredentials(t *testing.T) {
 				projectID:  fakeProjectID,
 				tokenCache: cache.New(10*time.Hour, time.Hour),
 			},
-			setupTokenCache: func(c *cache.Cache) {
+			setupTokenCache: func(c expiring.Cache) {
 				c.Set(tokenCacheKey(fakeProject), fakeToken, cache.DefaultExpiration)
 			},
 			project:  fakeProject,
 			credType: credentials.TypeImage,
 			repoURL:  fakeGCRRepoURL,
-			assert: func(t *testing.T, _, _ *cache.Cache, creds *credentials.Credentials, err error) {
+			assert: func(t *testing.T, _, _ expiring.Cache, creds *credentials.Credentials, err error) {
 				assert.NoError(t, err)
 				assert.NotNil(t, creds)
 				assert.Equal(t, accessTokenUsername, creds.Username)
@@ -169,13 +170,13 @@ func TestWorkloadIdentityFederationProvider_GetCredentials(t *testing.T) {
 					return fakeToken, time.Now().Add(time.Hour), nil
 				},
 			},
-			setupTokenSourceCache: func(c *cache.Cache) {
+			setupTokenSourceCache: func(c expiring.Cache) {
 				c.Set(tokenCacheKey(fakeProject), newFakeTokenSource(fakeToken), cache.DefaultExpiration)
 			},
 			project:  fakeProject,
 			credType: credentials.TypeImage,
 			repoURL:  fakeGCRRepoURL,
-			assert: func(t *testing.T, _, _ *cache.Cache, creds *credentials.Credentials, err error) {
+			assert: func(t *testing.T, _, _ expiring.Cache, creds *credentials.Credentials, err error) {
 				assert.NoError(t, err)
 				assert.NotNil(t, creds)
 				assert.Equal(t, accessTokenUsername, creds.Username)
@@ -195,14 +196,16 @@ func TestWorkloadIdentityFederationProvider_GetCredentials(t *testing.T) {
 			project:  fakeProject,
 			credType: credentials.TypeImage,
 			repoURL:  fakeGCRRepoURL,
-			assert: func(t *testing.T, tokenCache, _ *cache.Cache, creds *credentials.Credentials, err error) {
+			assert: func(t *testing.T, tokenCache, _ expiring.Cache, creds *credentials.Credentials, err error) {
 				assert.NoError(t, err)
 				assert.NotNil(t, creds)
 				assert.Equal(t, accessTokenUsername, creds.Username)
 				assert.Equal(t, fakeToken, creds.Password)
 
 				// Verify the token was cached with a TTL based on the token's actual expiry
-				items := tokenCache.Items()
+				realCache, ok := tokenCache.(*cache.Cache)
+				require.True(t, ok)
+				items := realCache.Items()
 				item, found := items[tokenCacheKey(fakeProject)]
 				assert.True(t, found)
 				expectedTTL := 55 * time.Minute // 1h expiry - 5m margin
@@ -223,7 +226,7 @@ func TestWorkloadIdentityFederationProvider_GetCredentials(t *testing.T) {
 			project:  fakeProject,
 			credType: credentials.TypeImage,
 			repoURL:  fakeGCRRepoURL,
-			assert: func(t *testing.T, _, _ *cache.Cache, creds *credentials.Credentials, err error) {
+			assert: func(t *testing.T, _, _ expiring.Cache, creds *credentials.Credentials, err error) {
 				assert.ErrorContains(t, err, "token fetch error")
 				assert.Nil(t, creds)
 			},
@@ -242,7 +245,7 @@ func TestWorkloadIdentityFederationProvider_GetCredentials(t *testing.T) {
 			project:  fakeProject,
 			credType: credentials.TypeImage,
 			repoURL:  fakeGCRRepoURL,
-			assert: func(t *testing.T, _, tokenSourceCache *cache.Cache, creds *credentials.Credentials, err error) {
+			assert: func(t *testing.T, _, tokenSourceCache expiring.Cache, creds *credentials.Credentials, err error) {
 				assert.NoError(t, err)
 				assert.NotNil(t, creds)
 				assert.Equal(t, accessTokenUsername, creds.Username)
