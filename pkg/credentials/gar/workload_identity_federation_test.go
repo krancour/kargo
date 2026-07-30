@@ -372,7 +372,7 @@ func TestWorkloadIdentityFederationProvider_GetCredentials_coalescing(
 			})
 		}
 
-		// Returns only once every caller is durably blocked. Neither cache cannot have
+		// Returns only once every caller is durably blocked. Neither cache can have
 		// served any of them, so the only place they can be is waiting on an
 		// acquisition. Specifically, singleflight has started one goroutine per
 		// Project and each is parked inside the acquisition function, with every

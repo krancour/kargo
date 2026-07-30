@@ -1,6 +1,6 @@
 // Package expiring abstracts the in-memory caching behavior that go-cache
 // provides, so that a component depending on it can be given a different
-// implementation. Unlike the sibling cache package, entries here carry a
+// implementation. Unlike the parent cache package, entries here carry a
 // per-entry TTL and expire on their own.
 package expiring
 

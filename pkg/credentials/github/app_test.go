@@ -679,9 +679,8 @@ func TestAppCredentialProvider_getUsernameAndPassword_winnerCanceled(
 				}, nil
 			},
 			// A newly acquired token is validated before being released to callers,
-			// and unlike the token request itself, that step receives a context.
-			// Holding it open is therefore how this test parks a goroutine inside
-			// the acquisition. Honoring the context is what gives this test its teeth:
+			// so holding that step open is what parks a goroutine inside the
+			// acquisition. Honoring the context is what gives this test its teeth:
 			// were the acquisition running under the winner's context instead of a
 			// detached one, canceling the winner would land in the first case below
 			// and every waiter would receive that error.
