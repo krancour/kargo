@@ -12,6 +12,23 @@
 #
 # Each branch runs on its own day of the week so that update PRs arrive a
 # branch at a time rather than all at once.
+
+################################################################################
+################################################################################
+#
+# IMPORTANT: There is an exception to the schedule. Every time changes
+# to this file are merged to main, dependabot will re-evaluate dependencies on
+# all affected branches and a flurry of PRs will ensue. It is therefore suggested
+# that changes to this file be batched. Fewer, larger updates will produce less
+# noise than many small, frequent updates would.
+#
+# IMPORTANT: It may seem like we are blocking many dependencies from being
+# updated, but crucially, blocking the ones that cannot succeed improves the
+# changes of clean dependency bumps for those that can.
+#
+################################################################################
+################################################################################
+
 #
 # Go itself is excluded from the docker ecosystem. Its version pins serve two
 # distinct roles -- the toolchain that builds shipped artifacts, and the older,
@@ -31,6 +48,39 @@
 # go.mod pins google.golang.org/grpc and google.golang.org/protobuf. Raising it
 # drags both past the versions frozen here, so ignoring those two by name does
 # not hold on its own.
+#
+# golang.org/x/*, code.gitea.io/sdk/gitea and github.com/go-openapi/* are
+# excluded on release-1.8 and release-1.9. Every current release of the x/
+# family declares go 1.26, as do gitea from v0.25.0 on and most of go-openapi.
+# Requiring one raises the root go directive past the go 1.25.14 toolchain
+# those two branches test with, which fails every Go job at module load rather
+# than at compile. The cost is that x/crypto and x/net security patches no
+# longer reach them; lifting this means raising Go on the branch, which is the
+# coordinated change described above.
+#
+# go-openapi is ignored by wildcard although strfmt has not yet moved to go
+# 1.26, because swag has split into a dozen submodules and naming the affected
+# ones individually goes stale as that continues. The wildcard also holds back
+# the go-openapi modules that jumped straight from 0.x to v1.0.0, which
+# Dependabot classifies as a patch and the branches' semver-major ignore
+# therefore does not catch.
+#
+# github.com/go-swagger/go-swagger is excluded on release-1.8 and release-1.9
+# for the same reason as the x/ family: v0.36.6 declares go 1.26, so
+# check-codegen cannot even install it under go 1.25.14. It is worth naming
+# separately because raising Go on those branches would not be enough to make
+# it safe -- go-swagger generates pkg/client/generated, and three minor
+# versions of it rewrite every model there.
+#
+# github.com/ktrysmt/go-bitbucket is excluded on release-1.8 through
+# release-1.10. v0.10.0 changes NewOAuthbearerToken to return two values, which
+# does not compile against the call site in pkg/gitprovider/bitbucket. main and
+# release-1.11 replaced this library with a generated client, so there is no
+# upstream fix to backport.
+#
+# github.com/jferrl/go-githubauth is excluded on release-1.8 alone. v1.7.0 drops
+# WithEnterpriseURLs and stops aliasing go-github's InstallationTokenOptions.
+# release-1.9 and later already carry v1.7.0 and the code that suits it.
 version: 2
 updates:
   # ----------------------------- main -----------------------------
@@ -370,6 +420,7 @@ updates:
     - dependency-name: "helm.sh/helm/v3"
     - dependency-name: "connectrpc.com/*"
     - dependency-name: "github.com/bufbuild/buf"
+    - dependency-name: "github.com/ktrysmt/go-bitbucket"
     commit-message:
       prefix: "chore(deps):"
     groups:
@@ -400,6 +451,7 @@ updates:
     - dependency-name: "helm.sh/helm/v3"
     - dependency-name: "connectrpc.com/*"
     - dependency-name: "github.com/bufbuild/buf"
+    - dependency-name: "github.com/ktrysmt/go-bitbucket"
     commit-message:
       prefix: "chore(deps/api):"
     groups:
@@ -431,6 +483,7 @@ updates:
     - dependency-name: "connectrpc.com/*"
     - dependency-name: "github.com/bufbuild/buf"
     - dependency-name: "github.com/golangci/golangci-lint*"
+    - dependency-name: "github.com/ktrysmt/go-bitbucket"
     commit-message:
       prefix: "chore(deps/hack):"
     groups:
@@ -461,6 +514,7 @@ updates:
     - dependency-name: "helm.sh/helm/v3"
     - dependency-name: "connectrpc.com/*"
     - dependency-name: "github.com/bufbuild/buf"
+    - dependency-name: "github.com/ktrysmt/go-bitbucket"
     commit-message:
       prefix: "chore(deps/client):"
     groups:
@@ -544,6 +598,11 @@ updates:
     - dependency-name: "helm.sh/helm/v3"
     - dependency-name: "connectrpc.com/*"
     - dependency-name: "github.com/bufbuild/buf"
+    - dependency-name: "golang.org/x/*"
+    - dependency-name: "github.com/go-swagger/go-swagger"
+    - dependency-name: "code.gitea.io/sdk/gitea"
+    - dependency-name: "github.com/go-openapi/*"
+    - dependency-name: "github.com/ktrysmt/go-bitbucket"
     commit-message:
       prefix: "chore(deps):"
     groups:
@@ -574,6 +633,11 @@ updates:
     - dependency-name: "helm.sh/helm/v3"
     - dependency-name: "connectrpc.com/*"
     - dependency-name: "github.com/bufbuild/buf"
+    - dependency-name: "golang.org/x/*"
+    - dependency-name: "github.com/go-swagger/go-swagger"
+    - dependency-name: "code.gitea.io/sdk/gitea"
+    - dependency-name: "github.com/go-openapi/*"
+    - dependency-name: "github.com/ktrysmt/go-bitbucket"
     commit-message:
       prefix: "chore(deps/api):"
     groups:
@@ -605,6 +669,11 @@ updates:
     - dependency-name: "connectrpc.com/*"
     - dependency-name: "github.com/bufbuild/buf"
     - dependency-name: "github.com/golangci/golangci-lint*"
+    - dependency-name: "golang.org/x/*"
+    - dependency-name: "github.com/go-swagger/go-swagger"
+    - dependency-name: "code.gitea.io/sdk/gitea"
+    - dependency-name: "github.com/go-openapi/*"
+    - dependency-name: "github.com/ktrysmt/go-bitbucket"
     commit-message:
       prefix: "chore(deps/hack):"
     groups:
@@ -688,6 +757,12 @@ updates:
     - dependency-name: "helm.sh/helm/v3"
     - dependency-name: "connectrpc.com/*"
     - dependency-name: "github.com/bufbuild/buf"
+    - dependency-name: "golang.org/x/*"
+    - dependency-name: "github.com/go-swagger/go-swagger"
+    - dependency-name: "code.gitea.io/sdk/gitea"
+    - dependency-name: "github.com/go-openapi/*"
+    - dependency-name: "github.com/ktrysmt/go-bitbucket"
+    - dependency-name: "github.com/jferrl/go-githubauth"
     commit-message:
       prefix: "chore(deps):"
     groups:
@@ -718,6 +793,12 @@ updates:
     - dependency-name: "helm.sh/helm/v3"
     - dependency-name: "connectrpc.com/*"
     - dependency-name: "github.com/bufbuild/buf"
+    - dependency-name: "golang.org/x/*"
+    - dependency-name: "github.com/go-swagger/go-swagger"
+    - dependency-name: "code.gitea.io/sdk/gitea"
+    - dependency-name: "github.com/go-openapi/*"
+    - dependency-name: "github.com/ktrysmt/go-bitbucket"
+    - dependency-name: "github.com/jferrl/go-githubauth"
     commit-message:
       prefix: "chore(deps/api):"
     groups:
@@ -749,6 +830,12 @@ updates:
     - dependency-name: "connectrpc.com/*"
     - dependency-name: "github.com/bufbuild/buf"
     - dependency-name: "github.com/golangci/golangci-lint*"
+    - dependency-name: "golang.org/x/*"
+    - dependency-name: "github.com/go-swagger/go-swagger"
+    - dependency-name: "code.gitea.io/sdk/gitea"
+    - dependency-name: "github.com/go-openapi/*"
+    - dependency-name: "github.com/ktrysmt/go-bitbucket"
+    - dependency-name: "github.com/jferrl/go-githubauth"
     commit-message:
       prefix: "chore(deps/hack):"
     groups:
