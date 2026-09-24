@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -22,37 +23,31 @@ import (
 	rollouts "github.com/akuity/kargo/api/stubs/rollouts/v1alpha1"
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	argocd "github.com/akuity/kargo/pkg/controller/argocd/api/v1alpha1"
+	libFreight "github.com/akuity/kargo/pkg/freight"
 	"github.com/akuity/kargo/pkg/indexer"
 )
 
-func Test_downstreamStageEnqueuer_Update(t *testing.T) {
+func Test_downstreamStageEnqueuer_Generic(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, kargoapi.AddToScheme(scheme))
 
 	tests := []struct {
 		name             string
-		oldFreight       *kargoapi.Freight
-		newFreight       *kargoapi.Freight
+		evtType          watch.EventType
+		freight          *kargoapi.Freight
+		changes          libFreight.Changes
 		objects          []client.Object
 		interceptor      interceptor.Funcs
+		forbidList       bool
 		forControlFlow   bool
 		expectedRequests []reconcile.Request
 	}{
 		{
 			// No Stages to which Freight has recently been promoted nor any in which
 			// Freight was recently verified.
-			name: "no affected stages stages",
-			oldFreight: &kargoapi.Freight{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
-					Name:      "freight-1",
-				},
-				Status: kargoapi.FreightStatus{
-					VerifiedIn:  map[string]kargoapi.VerifiedStage{"stage-1": {}},
-					CurrentlyIn: map[string]kargoapi.CurrentStage{"stage-1": {}},
-				},
-			},
-			newFreight: &kargoapi.Freight{
+			name:    "no affected stages stages",
+			evtType: watch.Modified,
+			freight: &kargoapi.Freight{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "freight-1",
@@ -65,17 +60,9 @@ func Test_downstreamStageEnqueuer_Update(t *testing.T) {
 			expectedRequests: nil,
 		},
 		{
-			name: "enqueues downstream regular stages",
-			oldFreight: &kargoapi.Freight{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
-					Name:      "freight-1",
-				},
-				Status: kargoapi.FreightStatus{
-					VerifiedIn: map[string]kargoapi.VerifiedStage{"stage-1": {}},
-				},
-			},
-			newFreight: &kargoapi.Freight{
+			name:    "enqueues downstream regular stages",
+			evtType: watch.Modified,
+			freight: &kargoapi.Freight{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "freight-1",
@@ -89,6 +76,10 @@ func Test_downstreamStageEnqueuer_Update(t *testing.T) {
 					// Newly promoted to:
 					CurrentlyIn: map[string]kargoapi.CurrentStage{"stage-1": {}},
 				},
+			},
+			changes: libFreight.Changes{
+				NewlyVerifiedIn:  []string{"stage-2"},
+				NewlyCurrentlyIn: []string{"stage-1"},
 			},
 			objects: []client.Object{
 				&kargoapi.Stage{
@@ -176,13 +167,8 @@ func Test_downstreamStageEnqueuer_Update(t *testing.T) {
 		{
 			name:           "enqueues downstream control flow stages when configured",
 			forControlFlow: true,
-			oldFreight: &kargoapi.Freight{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
-					Name:      "freight-1",
-				},
-			},
-			newFreight: &kargoapi.Freight{
+			evtType:        watch.Modified,
+			freight: &kargoapi.Freight{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "freight-1",
@@ -193,6 +179,7 @@ func Test_downstreamStageEnqueuer_Update(t *testing.T) {
 					},
 				},
 			},
+			changes: libFreight.Changes{NewlyVerifiedIn: []string{"stage-1"}},
 			objects: []client.Object{
 				&kargoapi.Stage{
 					ObjectMeta: metav1.ObjectMeta{
@@ -220,14 +207,9 @@ func Test_downstreamStageEnqueuer_Update(t *testing.T) {
 			},
 		},
 		{
-			name: "ignores control flow stages when not configured",
-			oldFreight: &kargoapi.Freight{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
-					Name:      "freight-1",
-				},
-			},
-			newFreight: &kargoapi.Freight{
+			name:    "ignores control flow stages when not configured",
+			evtType: watch.Modified,
+			freight: &kargoapi.Freight{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "freight-1",
@@ -238,6 +220,7 @@ func Test_downstreamStageEnqueuer_Update(t *testing.T) {
 					},
 				},
 			},
+			changes: libFreight.Changes{NewlyVerifiedIn: []string{"stage-1"}},
 			objects: []client.Object{
 				&kargoapi.Stage{
 					ObjectMeta: metav1.ObjectMeta{
@@ -259,14 +242,9 @@ func Test_downstreamStageEnqueuer_Update(t *testing.T) {
 			expectedRequests: nil,
 		},
 		{
-			name: "list error",
-			oldFreight: &kargoapi.Freight{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
-					Name:      "freight-1",
-				},
-			},
-			newFreight: &kargoapi.Freight{
+			name:    "list error",
+			evtType: watch.Modified,
+			freight: &kargoapi.Freight{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "freight-1",
@@ -277,6 +255,7 @@ func Test_downstreamStageEnqueuer_Update(t *testing.T) {
 					},
 				},
 			},
+			changes: libFreight.Changes{NewlyVerifiedIn: []string{"stage-1"}},
 			interceptor: interceptor.Funcs{
 				List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
 					return fmt.Errorf("list error")
@@ -284,10 +263,122 @@ func Test_downstreamStageEnqueuer_Update(t *testing.T) {
 			},
 			expectedRequests: nil,
 		},
+		{
+			name:    "empty delta does not list Stages",
+			evtType: watch.Modified,
+			freight: &kargoapi.Freight{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "freight-1",
+				},
+				Status: kargoapi.FreightStatus{
+					VerifiedIn: map[string]kargoapi.VerifiedStage{"stage-1": {}},
+				},
+			},
+			objects: []client.Object{
+				&kargoapi.Stage{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "downstream-1",
+					},
+					Spec: kargoapi.StageSpec{
+						PromotionTemplate: &kargoapi.PromotionTemplate{
+							Spec: kargoapi.PromotionTemplateSpec{
+								Steps: []kargoapi.PromotionStep{{}},
+							},
+						},
+						RequestedFreight: []kargoapi.FreightRequest{{
+							Sources: kargoapi.FreightSources{
+								Stages: []string{"stage-1"},
+							},
+						}},
+					},
+				},
+			},
+			forbidList:       true,
+			expectedRequests: nil,
+		},
+		{
+			name:    "ignores deleted Freight",
+			evtType: watch.Deleted,
+			freight: &kargoapi.Freight{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "freight-1",
+				},
+				Status: kargoapi.FreightStatus{
+					VerifiedIn: map[string]kargoapi.VerifiedStage{"stage-1": {}},
+				},
+			},
+			changes: libFreight.Changes{NewlyVerifiedIn: []string{"stage-1"}},
+			objects: []client.Object{
+				&kargoapi.Stage{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "downstream-1",
+					},
+					Spec: kargoapi.StageSpec{
+						PromotionTemplate: &kargoapi.PromotionTemplate{
+							Spec: kargoapi.PromotionTemplateSpec{
+								Steps: []kargoapi.PromotionStep{{}},
+							},
+						},
+						RequestedFreight: []kargoapi.FreightRequest{{
+							Sources: kargoapi.FreightSources{
+								Stages: []string{"stage-1"},
+							},
+						}},
+					},
+				},
+			},
+			forbidList:       true,
+			expectedRequests: nil,
+		},
+		{
+			name:    "ignores Stage newly promoted to but not verified in",
+			evtType: watch.Modified,
+			freight: &kargoapi.Freight{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "freight-1",
+				},
+				Status: kargoapi.FreightStatus{
+					CurrentlyIn: map[string]kargoapi.CurrentStage{"stage-1": {}},
+				},
+			},
+			changes: libFreight.Changes{NewlyCurrentlyIn: []string{"stage-1"}},
+			objects: []client.Object{
+				&kargoapi.Stage{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "downstream-1",
+					},
+					Spec: kargoapi.StageSpec{
+						PromotionTemplate: &kargoapi.PromotionTemplate{
+							Spec: kargoapi.PromotionTemplateSpec{
+								Steps: []kargoapi.PromotionStep{{}},
+							},
+						},
+						RequestedFreight: []kargoapi.FreightRequest{{
+							Sources: kargoapi.FreightSources{
+								Stages: []string{"stage-1"},
+							},
+						}},
+					},
+				},
+			},
+			forbidList:       true,
+			expectedRequests: nil,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var listCalled bool
+			funcs := tt.interceptor
+			if tt.forbidList {
+				funcs = forbidListInterceptor(&listCalled)
+			}
 			c := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithObjects(tt.objects...).
@@ -296,21 +387,24 @@ func Test_downstreamStageEnqueuer_Update(t *testing.T) {
 					indexer.StagesByUpstreamStagesField,
 					indexer.StagesByUpstreamStages,
 				).
-				WithInterceptorFuncs(tt.interceptor).
+				WithInterceptorFuncs(funcs).
 				Build()
 
-			enqueuer := &downstreamStageEnqueuer[*kargoapi.Freight]{
+			enqueuer := &downstreamStageEnqueuer{
 				kargoClient:          c,
 				forControlFlowStages: tt.forControlFlow,
 			}
 
 			queue := &controllertest.Queue{TypedInterface: workqueue.NewTyped[reconcile.Request]()}
 
-			enqueuer.Update(
+			enqueuer.Generic(
 				t.Context(),
-				event.TypedUpdateEvent[*kargoapi.Freight]{
-					ObjectOld: tt.oldFreight,
-					ObjectNew: tt.newFreight,
+				event.TypedGenericEvent[libFreight.Event]{
+					Object: libFreight.Event{
+						Type:    tt.evtType,
+						Object:  tt.freight,
+						Changes: tt.changes,
+					},
 				},
 				queue,
 			)
@@ -323,34 +417,26 @@ func Test_downstreamStageEnqueuer_Update(t *testing.T) {
 			}
 
 			assert.ElementsMatch(t, tt.expectedRequests, reqs)
+			require.False(t, listCalled, "List should not have been called")
 		})
 	}
 }
 
-func Test_stageEnqueuerForApprovedFreight_Update(t *testing.T) {
+func Test_stageEnqueuerForApprovedFreight_Generic(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, kargoapi.AddToScheme(scheme))
 
 	tests := []struct {
 		name             string
-		oldFreight       *kargoapi.Freight
-		newFreight       *kargoapi.Freight
+		evtType          watch.EventType
+		freight          *kargoapi.Freight
+		changes          libFreight.Changes
 		expectedRequests []reconcile.Request
 	}{
 		{
-			name: "no newly approved stages",
-			oldFreight: &kargoapi.Freight{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
-					Name:      "freight-1",
-				},
-				Status: kargoapi.FreightStatus{
-					ApprovedFor: map[string]kargoapi.ApprovedStage{
-						"stage-1": {},
-					},
-				},
-			},
-			newFreight: &kargoapi.Freight{
+			name:    "no newly approved stages",
+			evtType: watch.Modified,
+			freight: &kargoapi.Freight{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "freight-1",
@@ -364,14 +450,9 @@ func Test_stageEnqueuerForApprovedFreight_Update(t *testing.T) {
 			expectedRequests: nil,
 		},
 		{
-			name: "enqueues newly approved stages",
-			oldFreight: &kargoapi.Freight{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
-					Name:      "freight-1",
-				},
-			},
-			newFreight: &kargoapi.Freight{
+			name:    "enqueues newly approved stages",
+			evtType: watch.Modified,
+			freight: &kargoapi.Freight{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "freight-1",
@@ -382,6 +463,9 @@ func Test_stageEnqueuerForApprovedFreight_Update(t *testing.T) {
 						"stage-2": {},
 					},
 				},
+			},
+			changes: libFreight.Changes{
+				NewlyApprovedFor: []string{"stage-1", "stage-2"},
 			},
 			expectedRequests: []reconcile.Request{
 				{
@@ -398,6 +482,36 @@ func Test_stageEnqueuerForApprovedFreight_Update(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:    "ignores deleted Freight",
+			evtType: watch.Deleted,
+			freight: &kargoapi.Freight{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "freight-1",
+				},
+				Status: kargoapi.FreightStatus{
+					ApprovedFor: map[string]kargoapi.ApprovedStage{"stage-1": {}},
+				},
+			},
+			changes:          libFreight.Changes{NewlyApprovedFor: []string{"stage-1"}},
+			expectedRequests: nil,
+		},
+		{
+			name:    "ignores added Freight",
+			evtType: watch.Added,
+			freight: &kargoapi.Freight{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "freight-1",
+				},
+				Status: kargoapi.FreightStatus{
+					ApprovedFor: map[string]kargoapi.ApprovedStage{"stage-1": {}},
+				},
+			},
+			changes:          libFreight.Changes{NewlyApprovedFor: []string{"stage-1"}},
+			expectedRequests: nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -406,17 +520,20 @@ func Test_stageEnqueuerForApprovedFreight_Update(t *testing.T) {
 				WithScheme(scheme).
 				Build()
 
-			enqueuer := &stageEnqueuerForApprovedFreight[*kargoapi.Freight]{
+			enqueuer := &stageEnqueuerForApprovedFreight{
 				kargoClient: c,
 			}
 
 			queue := &controllertest.Queue{TypedInterface: workqueue.NewTyped[reconcile.Request]()}
 
-			enqueuer.Update(
+			enqueuer.Generic(
 				t.Context(),
-				event.TypedUpdateEvent[*kargoapi.Freight]{
-					ObjectOld: tt.oldFreight,
-					ObjectNew: tt.newFreight,
+				event.TypedGenericEvent[libFreight.Event]{
+					Object: libFreight.Event{
+						Type:    tt.evtType,
+						Object:  tt.freight,
+						Changes: tt.changes,
+					},
 				},
 				queue,
 			)
@@ -433,20 +550,23 @@ func Test_stageEnqueuerForApprovedFreight_Update(t *testing.T) {
 	}
 }
 
-func Test_warehouseStageEnqueuer_Create(t *testing.T) {
+func Test_warehouseStageEnqueuer_Generic(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, kargoapi.AddToScheme(scheme))
 
 	tests := []struct {
 		name             string
+		evtType          watch.EventType
 		freight          *kargoapi.Freight
 		objects          []client.Object
 		interceptor      interceptor.Funcs
+		forbidList       bool
 		forControlFlow   bool
 		expectedRequests []reconcile.Request
 	}{
 		{
-			name: "enqueues regular stages subscribed to warehouse",
+			name:    "enqueues regular stages subscribed to warehouse",
+			evtType: watch.Added,
 			freight: &kargoapi.Freight{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
@@ -525,6 +645,7 @@ func Test_warehouseStageEnqueuer_Create(t *testing.T) {
 		{
 			name:           "ignores regular stages when configured for control flow",
 			forControlFlow: true,
+			evtType:        watch.Added,
 			freight: &kargoapi.Freight{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
@@ -566,6 +687,7 @@ func Test_warehouseStageEnqueuer_Create(t *testing.T) {
 		{
 			name:           "enqueues control flow stages when configured",
 			forControlFlow: true,
+			evtType:        watch.Added,
 			freight: &kargoapi.Freight{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
@@ -607,7 +729,8 @@ func Test_warehouseStageEnqueuer_Create(t *testing.T) {
 			},
 		},
 		{
-			name: "handles list error",
+			name:    "handles list error",
+			evtType: watch.Added,
 			freight: &kargoapi.Freight{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
@@ -626,7 +749,8 @@ func Test_warehouseStageEnqueuer_Create(t *testing.T) {
 			expectedRequests: nil,
 		},
 		{
-			name: "ignores non-matching warehouse",
+			name:    "ignores non-matching warehouse",
+			evtType: watch.Added,
 			freight: &kargoapi.Freight{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
@@ -660,28 +784,112 @@ func Test_warehouseStageEnqueuer_Create(t *testing.T) {
 			},
 			expectedRequests: nil,
 		},
+		{
+			name:    "ignores modified Freight",
+			evtType: watch.Modified,
+			freight: &kargoapi.Freight{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "freight-1",
+				},
+				Origin: kargoapi.FreightOrigin{
+					Kind: kargoapi.FreightOriginKindWarehouse,
+					Name: "warehouse-1",
+				},
+			},
+			objects: []client.Object{
+				&kargoapi.Stage{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "stage-1",
+					},
+					Spec: kargoapi.StageSpec{
+						PromotionTemplate: &kargoapi.PromotionTemplate{
+							Spec: kargoapi.PromotionTemplateSpec{
+								Steps: []kargoapi.PromotionStep{{}},
+							},
+						},
+						RequestedFreight: []kargoapi.FreightRequest{{
+							Sources: kargoapi.FreightSources{Direct: true},
+							Origin: kargoapi.FreightOrigin{
+								Kind: kargoapi.FreightOriginKindWarehouse,
+								Name: "warehouse-1",
+							},
+						}},
+					},
+				},
+			},
+			forbidList:       true,
+			expectedRequests: nil,
+		},
+		{
+			name:    "ignores deleted Freight",
+			evtType: watch.Deleted,
+			freight: &kargoapi.Freight{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "freight-1",
+				},
+				Origin: kargoapi.FreightOrigin{
+					Kind: kargoapi.FreightOriginKindWarehouse,
+					Name: "warehouse-1",
+				},
+			},
+			objects: []client.Object{
+				&kargoapi.Stage{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "stage-1",
+					},
+					Spec: kargoapi.StageSpec{
+						PromotionTemplate: &kargoapi.PromotionTemplate{
+							Spec: kargoapi.PromotionTemplateSpec{
+								Steps: []kargoapi.PromotionStep{{}},
+							},
+						},
+						RequestedFreight: []kargoapi.FreightRequest{{
+							Sources: kargoapi.FreightSources{Direct: true},
+							Origin: kargoapi.FreightOrigin{
+								Kind: kargoapi.FreightOriginKindWarehouse,
+								Name: "warehouse-1",
+							},
+						}},
+					},
+				},
+			},
+			forbidList:       true,
+			expectedRequests: nil,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var listCalled bool
+			funcs := tt.interceptor
+			if tt.forbidList {
+				funcs = forbidListInterceptor(&listCalled)
+			}
 			c := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithObjects(tt.objects...).
 				WithIndex(&kargoapi.Stage{}, indexer.StagesByWarehouseField, indexer.StagesByWarehouse).
-				WithInterceptorFuncs(tt.interceptor).
+				WithInterceptorFuncs(funcs).
 				Build()
 
-			enqueuer := &warehouseStageEnqueuer[*kargoapi.Freight]{
+			enqueuer := &warehouseStageEnqueuer{
 				kargoClient:          c,
 				forControlFlowStages: tt.forControlFlow,
 			}
 
 			queue := &controllertest.Queue{TypedInterface: workqueue.NewTyped[reconcile.Request]()}
 
-			enqueuer.Create(
+			enqueuer.Generic(
 				t.Context(),
-				event.TypedCreateEvent[*kargoapi.Freight]{
-					Object: tt.freight,
+				event.TypedGenericEvent[libFreight.Event]{
+					Object: libFreight.Event{
+						Type:   tt.evtType,
+						Object: tt.freight,
+					},
 				},
 				queue,
 			)
@@ -694,7 +902,24 @@ func Test_warehouseStageEnqueuer_Create(t *testing.T) {
 			}
 
 			assert.ElementsMatch(t, tt.expectedRequests, reqs)
+			require.False(t, listCalled, "List should not have been called")
 		})
+	}
+}
+
+// forbidListInterceptor returns interceptor functions that record any call to
+// List in called and fail it.
+func forbidListInterceptor(called *bool) interceptor.Funcs {
+	return interceptor.Funcs{
+		List: func(
+			context.Context,
+			client.WithWatch,
+			client.ObjectList,
+			...client.ListOption,
+		) error {
+			*called = true
+			return fmt.Errorf("List must not be called")
+		},
 	}
 }
 

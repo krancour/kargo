@@ -369,6 +369,47 @@ func TestStore_Watch(t *testing.T) {
 		t.Fatal("timed out waiting for Added event")
 	}
 
+	_, err = s.UpdateStatus(
+		t.Context(),
+		"watch-project",
+		f.Name,
+		func(st *kargoapi.FreightStatus) error {
+			st.AddVerifiedStage("s1", time.Now())
+			return nil
+		},
+	)
+	require.NoError(t, err)
+
+	select {
+	case ev := <-ch:
+		require.Equal(t, watch.Modified, ev.Type)
+		require.Equal(t, f.Name, ev.Object.Name)
+		require.Equal(t, []string{"s1"}, ev.Changes.NewlyVerifiedIn)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for Modified event from UpdateStatus")
+	}
+
+	// A second verification adds to the now non-nil verifiedIn map, so only a
+	// deep copy of the prior status reports s2 alone.
+	_, err = s.UpdateStatus(
+		t.Context(),
+		"watch-project",
+		f.Name,
+		func(st *kargoapi.FreightStatus) error {
+			st.AddVerifiedStage("s2", time.Now())
+			return nil
+		},
+	)
+	require.NoError(t, err)
+
+	select {
+	case ev := <-ch:
+		require.Equal(t, watch.Modified, ev.Type)
+		require.Equal(t, []string{"s2"}, ev.Changes.NewlyVerifiedIn)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for second Modified event from UpdateStatus")
+	}
+
 	_, err = s.UpdateAlias(t.Context(), "watch-project", f.Name, "renamed")
 	require.NoError(t, err)
 
@@ -377,8 +418,9 @@ func TestStore_Watch(t *testing.T) {
 		require.Equal(t, watch.Modified, ev.Type)
 		require.Equal(t, f.Name, ev.Object.Name)
 		require.Equal(t, "renamed", ev.Object.Alias)
+		require.True(t, ev.Changes.IsEmpty())
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for Modified event")
+		t.Fatal("timed out waiting for Modified event from UpdateAlias")
 	}
 
 	require.NoError(t, s.Delete(t.Context(), "watch-project", f.Name))
@@ -396,6 +438,88 @@ func TestStore_Watch(t *testing.T) {
 		t.Fatalf("unexpected event on unrelated project watch: %+v", ev)
 	case <-time.After(500 * time.Millisecond):
 	}
+}
+
+// receiveEvent returns the next event from ch, failing the test if none
+// arrives in time.
+func receiveEvent(t *testing.T, ch <-chan freight.Event) freight.Event {
+	t.Helper()
+	select {
+	case ev := <-ch:
+		return ev
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for event")
+		return freight.Event{}
+	}
+}
+
+func TestStore_Watch_AllProjects(t *testing.T) {
+	s := newTestStore(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	ch, err := s.Watch(ctx, "")
+	require.NoError(t, err)
+
+	fa := newFreight("a", "", "w1")
+	require.NoError(t, s.Create(t.Context(), fa))
+	fb := newFreight("b", "", "w1")
+	require.NoError(t, s.Create(t.Context(), fb))
+
+	for _, want := range []*kargoapi.Freight{fa, fb} {
+		ev := receiveEvent(t, ch)
+		require.Equal(t, watch.Added, ev.Type)
+		require.Equal(t, want.Namespace, ev.Object.Namespace)
+		require.Equal(t, want.Name, ev.Object.Name)
+	}
+}
+
+func TestStore_DeleteProject_NotifiesEachRow(t *testing.T) {
+	s := newTestStore(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	var names []string
+	for _, wh := range []string{"w1", "w2"} {
+		f := newFreight("doomed-watch-project", "", wh)
+		require.NoError(t, s.Create(t.Context(), f))
+		names = append(names, f.Name)
+	}
+
+	ch, err := s.Watch(ctx, "doomed-watch-project")
+	require.NoError(t, err)
+
+	require.NoError(t, s.DeleteProject(t.Context(), "doomed-watch-project"))
+
+	var got []string
+	for range names {
+		ev := receiveEvent(t, ch)
+		require.Equal(t, watch.Deleted, ev.Type)
+		require.Equal(t, "doomed-watch-project", ev.Object.Namespace)
+		got = append(got, ev.Object.Name)
+	}
+	require.ElementsMatch(t, names, got)
+}
+
+func TestSchema_HasNoTrigger(t *testing.T) {
+	s := newTestStore(t)
+	st, ok := s.(*store)
+	require.True(t, ok)
+
+	var n int
+	require.NoError(t, st.pool.QueryRow(
+		t.Context(),
+		"SELECT count(*) FROM pg_trigger WHERE tgname = 'freight_notify'",
+	).Scan(&n))
+	require.Zero(t, n)
+
+	require.NoError(t, st.pool.QueryRow(
+		t.Context(),
+		"SELECT count(*) FROM pg_proc WHERE proname = 'freight_notify'",
+	).Scan(&n))
+	require.Zero(t, n)
 }
 
 // TestStore_Watch_DoesNotLeakListeningConnection verifies that a watch's

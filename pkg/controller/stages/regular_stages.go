@@ -123,6 +123,7 @@ func (r *RegularStageReconciler) SetupWithManager(
 	ctx context.Context,
 	kargoMgr, argocdMgr ctrl.Manager,
 	sharedIndexer client.FieldIndexer,
+	freightEvents *FreightEventSource,
 ) error {
 	// Configure client and event recorder using manager.
 	r.client = kargoMgr.GetClient()
@@ -258,15 +259,12 @@ func (r *RegularStageReconciler) SetupWithManager(
 		return fmt.Errorf("unable to watch PromotionRequests: %w", err)
 	}
 
-	// Watch for Freight that have been newly promoted to a Stage or newly marked
+	// Watch for Freight that has been newly promoted to a Stage or newly marked
 	// as verified in a Stage and enqueue downstream Stages for reconciliation.
 	if err = c.Watch(
-		source.Kind(
-			kargoMgr.GetCache(),
-			&kargoapi.Freight{},
-			&downstreamStageEnqueuer[*kargoapi.Freight]{
-				kargoClient: kargoMgr.GetClient(),
-			},
+		source.Channel(
+			freightEvents.Channel(),
+			&downstreamStageEnqueuer{kargoClient: kargoMgr.GetClient()},
 		),
 	); err != nil {
 		return fmt.Errorf("unable to watch Freight from upstream Stages: %w", err)
@@ -275,12 +273,9 @@ func (r *RegularStageReconciler) SetupWithManager(
 	// Watch for Freight that has been approved for a Stage and enqueue the Stage
 	// for reconciliation.
 	if err = c.Watch(
-		source.Kind(
-			kargoMgr.GetCache(),
-			&kargoapi.Freight{},
-			&stageEnqueuerForApprovedFreight[*kargoapi.Freight]{
-				kargoClient: kargoMgr.GetClient(),
-			},
+		source.Channel(
+			freightEvents.Channel(),
+			&stageEnqueuerForApprovedFreight{kargoClient: kargoMgr.GetClient()},
 		),
 	); err != nil {
 		return fmt.Errorf("unable to watch approved Freight: %w", err)
@@ -289,12 +284,9 @@ func (r *RegularStageReconciler) SetupWithManager(
 	// Watch for newly produced Freight from a Warehouse and enqueue the related
 	// Stages for reconciliation.
 	if err = c.Watch(
-		source.Kind(
-			kargoMgr.GetCache(),
-			&kargoapi.Freight{},
-			&warehouseStageEnqueuer[*kargoapi.Freight]{
-				kargoClient: kargoMgr.GetClient(),
-			},
+		source.Channel(
+			freightEvents.Channel(),
+			&warehouseStageEnqueuer{kargoClient: kargoMgr.GetClient()},
 		),
 	); err != nil {
 		return fmt.Errorf("unable to watch Freight produced by Warehouse: %w", err)

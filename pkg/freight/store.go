@@ -50,6 +50,8 @@ type Event struct {
 	Type watch.EventType
 	// Object is the piece of Freight the change pertains to.
 	Object *kargoapi.Freight
+	// Changes is populated for Modified events only.
+	Changes Changes
 }
 
 // Store is an interface for the storage and retrieval of Freight.
@@ -89,6 +91,6 @@ type Store interface {
 	// the project has no Freight.
 	DeleteProject(ctx context.Context, project string) error
 	// Watch returns a channel of Events reflecting changes to Freight in the
-	// given project.
+	// given project. An empty project watches Freight in every project.
 	Watch(ctx context.Context, project string) (<-chan Event, error)
 }

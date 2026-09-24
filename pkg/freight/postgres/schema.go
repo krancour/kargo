@@ -5,9 +5,9 @@ package postgres
 // component startups.
 const schemaLockID = 7201
 
-// schema creates the freight table, its indexes, and the trigger that
-// notifies watchers of changes. It is idempotent and safe to run every time
-// a Store is constructed.
+// schema creates the freight table and its indexes, and removes the
+// freight_notify trigger and function if a database still has them. It is
+// idempotent and safe to run every time a Store is constructed.
 const schema = `
 CREATE TABLE IF NOT EXISTS freight (
   project    text        NOT NULL,
@@ -24,16 +24,9 @@ CREATE TABLE IF NOT EXISTS freight (
 CREATE INDEX IF NOT EXISTS freight_warehouse_idx ON freight (project, warehouse);
 CREATE INDEX IF NOT EXISTS freight_status_idx ON freight USING gin (status);
 
-CREATE OR REPLACE FUNCTION freight_notify() RETURNS trigger AS $$
-BEGIN
-  IF TG_OP = 'DELETE' THEN
-    PERFORM pg_notify('freight', json_build_object('op', TG_OP, 'project', OLD.project, 'name', OLD.name)::text);
-    RETURN OLD;
-  END IF;
-  PERFORM pg_notify('freight', json_build_object('op', TG_OP, 'project', NEW.project, 'name', NEW.name)::text);
-  RETURN NEW;
-END $$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE TRIGGER freight_notify AFTER INSERT OR UPDATE OR DELETE ON freight
-  FOR EACH ROW EXECUTE FUNCTION freight_notify();
+-- Change notifications are published by the store itself, inside each write
+-- transaction. Remove the trigger that once published them from existing
+-- databases.
+DROP TRIGGER IF EXISTS freight_notify ON freight;
+DROP FUNCTION IF EXISTS freight_notify();
 `

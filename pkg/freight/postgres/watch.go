@@ -18,15 +18,9 @@ import (
 // consumer applies backpressure rather than dropping events.
 const watchBufferSize = 64
 
-// notifyPayload is the JSON payload sent via pg_notify by the freight_notify
-// trigger.
-type notifyPayload struct {
-	Op      string `json:"op"`
-	Project string `json:"project"`
-	Name    string `json:"name"`
-}
-
-// Watch implements freight.Store. It opens a dedicated connection, outside
+// Watch implements freight.Store. It receives the notifications the store's
+// write methods publish on the freight channel. An empty project receives
+// every project's events. It opens a dedicated connection, outside
 // the pool, for the lifetime of the watch -- one connection per watch is an
 // accepted cost of this implementation. Keeping it out of the pool means open
 // watches never starve other callers of pooled connections, and a LISTENing
@@ -58,13 +52,16 @@ func (s *store) Watch(ctx context.Context, project string) (<-chan freight.Event
 			}
 
 			var p notifyPayload
-			if json.Unmarshal([]byte(n.Payload), &p) != nil || p.Project != project {
+			if json.Unmarshal([]byte(n.Payload), &p) != nil {
+				continue
+			}
+			if project != "" && p.Project != project {
 				continue
 			}
 
 			var ev freight.Event
 			switch p.Op {
-			case "DELETE":
+			case opDelete:
 				ev = freight.Event{
 					Type: watch.Deleted,
 					Object: &kargoapi.Freight{
@@ -72,7 +69,7 @@ func (s *store) Watch(ctx context.Context, project string) (<-chan freight.Event
 						ObjectMeta: metav1.ObjectMeta{Namespace: p.Project, Name: p.Name},
 					},
 				}
-			default: // INSERT, UPDATE
+			default: // opInsert, opUpdate
 				f, err := s.Get(ctx, p.Project, p.Name)
 				if err != nil {
 					// Any error here (not found because it was deleted meanwhile,
@@ -81,11 +78,10 @@ func (s *store) Watch(ctx context.Context, project string) (<-chan freight.Event
 					// (or already has).
 					continue
 				}
-				t := watch.Modified
-				if p.Op == "INSERT" {
-					t = watch.Added
+				ev = freight.Event{Type: watch.Modified, Object: f, Changes: p.Changes}
+				if p.Op == opInsert {
+					ev = freight.Event{Type: watch.Added, Object: f}
 				}
-				ev = freight.Event{Type: t, Object: f}
 			}
 
 			select {

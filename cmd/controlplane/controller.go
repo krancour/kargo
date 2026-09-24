@@ -462,6 +462,8 @@ func (o *controllerOptions) setupReconcilers(
 
 	sharedIndexer := indexer.NewSharedFieldIndexer(kargoMgr.GetFieldIndexer())
 
+	freightEvents := stages.NewFreightEventSource(freightStore)
+
 	if err := promotions.SetupReconcilerWithManager(
 		ctx,
 		kargoMgr,
@@ -502,6 +504,7 @@ func (o *controllerOptions) setupReconcilers(
 		kargoMgr,
 		argocdMgr,
 		sharedIndexer,
+		freightEvents,
 	); err != nil {
 		return fmt.Errorf("error setting up regular Stages reconciler: %w", err)
 	}
@@ -513,8 +516,13 @@ func (o *controllerOptions) setupReconcilers(
 		ctx,
 		kargoMgr,
 		sharedIndexer,
+		freightEvents,
 	); err != nil {
 		return fmt.Errorf("error setting up control flow Stages reconciler: %w", err)
+	}
+
+	if err := kargoMgr.Add(freightEvents); err != nil {
+		return fmt.Errorf("error registering Freight event source: %w", err)
 	}
 
 	if err := warehouses.SetupReconcilerWithManager(

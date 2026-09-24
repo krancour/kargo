@@ -63,6 +63,7 @@ func (r *ControlFlowStageReconciler) SetupWithManager(
 	ctx context.Context,
 	mgr ctrl.Manager,
 	sharedIndexer client.FieldIndexer,
+	freightEvents *FreightEventSource,
 ) error {
 	// Configure client and event sender using manager.
 	r.client = mgr.GetClient()
@@ -120,12 +121,11 @@ func (r *ControlFlowStageReconciler) SetupWithManager(
 	// Changes to these objects that match the constraints from the predicates
 	// will enqueue a reconciliation for the related Stage(s).
 
-	// Watch for Freight that are directly available from a Warehouse.
+	// Watch for Freight that is directly available from a Warehouse.
 	if err := c.Watch(
-		source.Kind(
-			mgr.GetCache(),
-			&kargoapi.Freight{},
-			&warehouseStageEnqueuer[*kargoapi.Freight]{
+		source.Channel(
+			freightEvents.Channel(),
+			&warehouseStageEnqueuer{
 				kargoClient:          mgr.GetClient(),
 				forControlFlowStages: true,
 			},
@@ -134,12 +134,11 @@ func (r *ControlFlowStageReconciler) SetupWithManager(
 		return fmt.Errorf("unable to watch Freight produced by Warehouse: %w", err)
 	}
 
-	// Watch for Freight that have been verified in upstream Stages.
+	// Watch for Freight that has been verified in upstream Stages.
 	if err := c.Watch(
-		source.Kind(
-			mgr.GetCache(),
-			&kargoapi.Freight{},
-			&downstreamStageEnqueuer[*kargoapi.Freight]{
+		source.Channel(
+			freightEvents.Channel(),
+			&downstreamStageEnqueuer{
 				kargoClient:          mgr.GetClient(),
 				forControlFlowStages: true,
 			},

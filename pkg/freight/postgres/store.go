@@ -59,10 +59,46 @@ ORDER BY name`
 UPDATE freight SET object = $1, status = $2, alias = $3, version = version + 1
 WHERE project = $4 AND name = $5`
 
-	deleteSQL = `DELETE FROM freight WHERE project = $1 AND name = $2`
+	deleteSQL = `DELETE FROM freight WHERE project = $1 AND name = $2 RETURNING name`
 
-	deleteProjectSQL = `DELETE FROM freight WHERE project = $1`
+	deleteProjectSQL = `DELETE FROM freight WHERE project = $1 RETURNING name`
+
+	notifySQL = `SELECT pg_notify('freight', $1)`
 )
+
+// Operations named in a notifyPayload.
+const (
+	opInsert = "INSERT"
+	opUpdate = "UPDATE"
+	opDelete = "DELETE"
+)
+
+// notifyPayload is the JSON payload published on the freight channel by the
+// store's write methods and consumed by Watch.
+type notifyPayload struct {
+	Op      string          `json:"op"`
+	Project string          `json:"project"`
+	Name    string          `json:"name"`
+	Changes freight.Changes `json:"changes,omitzero"`
+}
+
+// execer is satisfied by pgx.Tx, among others.
+type execer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+// notify publishes p on the freight channel using q, which is the transaction
+// the write belongs to so that delivery happens only on commit.
+func notify(ctx context.Context, q execer, p notifyPayload) error {
+	payload, err := json.Marshal(p)
+	if err != nil {
+		return fmt.Errorf("error marshaling notification payload: %w", err)
+	}
+	if _, err = q.Exec(ctx, notifySQL, string(payload)); err != nil {
+		return fmt.Errorf("error publishing notification: %w", err)
+	}
+	return nil
+}
 
 // store is a Postgres-backed implementation of freight.Store.
 type store struct {
@@ -122,39 +158,63 @@ func (s *store) Create(ctx context.Context, f *kargoapi.Freight) error {
 	freight.Prepare(f, s.newAlias)
 
 	for attempt := 0; attempt < maxAliasRetries; attempt++ {
-		objectJSON, statusJSON, err := marshalRow(f)
-		if err != nil {
-			return err
-		}
-		_, err = s.pool.Exec(
-			ctx,
-			insertSQL,
-			f.Namespace,
-			f.Name,
-			f.Alias,
-			f.Origin.Name,
-			f.CreationTimestamp.Time,
-			objectJSON,
-			statusJSON,
-		)
+		err := s.insert(ctx, f)
 		if err == nil {
 			return nil
 		}
-
-		mapped := mapPgError(err)
-		if errors.Is(mapped, freight.ErrAliasConflict) && callerAlias == "" {
+		if errors.Is(err, freight.ErrAliasConflict) && callerAlias == "" {
 			// The alias was generated on our behalf, so a collision is ours to
 			// resolve transparently.
 			f.Alias = s.newAlias()
 			f.Labels[kargoapi.LabelKeyAlias] = f.Alias
 			continue
 		}
-		return mapped
+		return err
 	}
 	return fmt.Errorf(
 		"error creating Freight %q in project %q: too many alias conflicts",
 		f.Name, f.Namespace,
 	)
+}
+
+// insert writes f and publishes its INSERT notification in a single
+// transaction. A failed insert rolls the transaction back, so nothing is
+// published for it.
+func (s *store) insert(ctx context.Context, f *kargoapi.Freight) error {
+	objectJSON, statusJSON, err := marshalRow(f)
+	if err != nil {
+		return err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("error starting create transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) // nolint:errcheck // no-op if the transaction was committed
+
+	if _, err = tx.Exec(
+		ctx,
+		insertSQL,
+		f.Namespace,
+		f.Name,
+		f.Alias,
+		f.Origin.Name,
+		f.CreationTimestamp.Time,
+		objectJSON,
+		statusJSON,
+	); err != nil {
+		return mapPgError(err)
+	}
+	if err = notify(
+		ctx,
+		tx,
+		notifyPayload{Op: opInsert, Project: f.Namespace, Name: f.Name},
+	); err != nil {
+		return err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("error committing create transaction: %w", err)
+	}
+	return nil
 }
 
 // Get implements freight.Store.
@@ -271,6 +331,7 @@ func (s *store) update(
 	if err != nil {
 		return nil, err
 	}
+	before := f.Status.DeepCopy()
 	if err = mutate(f); err != nil {
 		return nil, err
 	}
@@ -280,6 +341,18 @@ func (s *store) update(
 	}
 	if _, err = tx.Exec(ctx, updateSQL, objectJSON, statusJSON, f.Alias, project, name); err != nil {
 		return nil, mapPgError(err)
+	}
+	if err = notify(
+		ctx,
+		tx,
+		notifyPayload{
+			Op:      opUpdate,
+			Project: project,
+			Name:    name,
+			Changes: freight.ComputeChanges(*before, f.Status),
+		},
+	); err != nil {
+		return nil, err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("error committing update transaction: %w", err)
@@ -291,11 +364,11 @@ func (s *store) update(
 
 // Delete implements freight.Store.
 func (s *store) Delete(ctx context.Context, project, name string) error {
-	tag, err := s.pool.Exec(ctx, deleteSQL, project, name)
+	n, err := s.delete(ctx, project, deleteSQL, project, name)
 	if err != nil {
 		return fmt.Errorf("error deleting Freight %q in project %q: %w", name, project, err)
 	}
-	if tag.RowsAffected() == 0 {
+	if n == 0 {
 		return freight.ErrNotFound
 	}
 	return nil
@@ -303,10 +376,48 @@ func (s *store) Delete(ctx context.Context, project, name string) error {
 
 // DeleteProject implements freight.Store.
 func (s *store) DeleteProject(ctx context.Context, project string) error {
-	if _, err := s.pool.Exec(ctx, deleteProjectSQL, project); err != nil {
+	if _, err := s.delete(ctx, project, deleteProjectSQL, project); err != nil {
 		return fmt.Errorf("error deleting Freight in project %q: %w", project, err)
 	}
 	return nil
+}
+
+// delete runs deleteQuery, which must return the name of each deleted row,
+// and publishes a DELETE notification for each of those rows, all in a single
+// transaction. It returns the number of rows deleted.
+func (s *store) delete(
+	ctx context.Context,
+	project string,
+	deleteQuery string,
+	args ...any,
+) (int, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("error starting delete transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) // nolint:errcheck // no-op if the transaction was committed
+
+	rows, err := tx.Query(ctx, deleteQuery, args...)
+	if err != nil {
+		return 0, fmt.Errorf("error executing query: %w", err)
+	}
+	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return 0, fmt.Errorf("error collecting deleted rows: %w", err)
+	}
+	for _, name := range names {
+		if err = notify(
+			ctx,
+			tx,
+			notifyPayload{Op: opDelete, Project: project, Name: name},
+		); err != nil {
+			return 0, err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("error committing delete transaction: %w", err)
+	}
+	return len(names), nil
 }
 
 // marshalRow marshals f into the JSON representations stored in the object

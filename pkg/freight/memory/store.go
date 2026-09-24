@@ -98,7 +98,7 @@ func (s *Store) Create(ctx context.Context, f *kargoapi.Freight) error {
 	}
 
 	s.items[k] = f.DeepCopy()
-	s.notifyLocked(f.Namespace, watch.Added, f)
+	s.notifyLocked(f.Namespace, freight.Event{Type: watch.Added, Object: f})
 	return nil
 }
 
@@ -237,8 +237,10 @@ func (s *Store) UpdateStatus(
 	}
 	bumpVersion(updated)
 
+	changes := freight.ComputeChanges(f.Status, updated.Status)
+
 	s.items[k] = updated
-	s.notifyLocked(project, watch.Modified, updated)
+	s.notifyLocked(project, freight.Event{Type: watch.Modified, Object: updated, Changes: changes})
 	return updated.DeepCopy(), nil
 }
 
@@ -272,7 +274,7 @@ func (s *Store) UpdateAlias(ctx context.Context, project, name, alias string) (*
 	bumpVersion(updated)
 
 	s.items[k] = updated
-	s.notifyLocked(project, watch.Modified, updated)
+	s.notifyLocked(project, freight.Event{Type: watch.Modified, Object: updated})
 	return updated.DeepCopy(), nil
 }
 
@@ -294,7 +296,7 @@ func (s *Store) Delete(ctx context.Context, project, name string) error {
 	}
 
 	delete(s.items, k)
-	s.notifyLocked(project, watch.Deleted, f)
+	s.notifyLocked(project, freight.Event{Type: watch.Deleted, Object: f})
 	return nil
 }
 
@@ -314,7 +316,7 @@ func (s *Store) DeleteProject(ctx context.Context, project string) error {
 			continue
 		}
 		delete(s.items, k)
-		s.notifyLocked(project, watch.Deleted, f)
+		s.notifyLocked(project, freight.Event{Type: watch.Deleted, Object: f})
 	}
 	return nil
 }
@@ -356,15 +358,25 @@ func (s *Store) aliasTakenLocked(project, alias, exceptName string) bool {
 	return false
 }
 
-// notifyLocked fans out an event to all watchers of project. The caller must
+// notifyLocked fans out ev to all watchers of project, as well as to all
+// watchers registered for every project (the empty project). The caller must
 // hold s.mu for writing. A watcher whose buffer is full does not receive the
-// event.
-func (s *Store) notifyLocked(project string, t watch.EventType, f *kargoapi.Freight) {
-	for _, ch := range s.watchers[project] {
-		select {
-		case ch <- freight.Event{Type: t, Object: f.DeepCopy()}:
-		default:
+// event. Each recipient gets its own deep copy of ev.Object so that one
+// watcher cannot observe another's mutations.
+func (s *Store) notifyLocked(project string, ev freight.Event) {
+	send := func(chs []chan freight.Event) {
+		for _, ch := range chs {
+			e := ev
+			e.Object = ev.Object.DeepCopy()
+			select {
+			case ch <- e:
+			default:
+			}
 		}
+	}
+	send(s.watchers[project])
+	if project != "" {
+		send(s.watchers[""])
 	}
 }
 

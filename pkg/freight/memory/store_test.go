@@ -436,8 +436,23 @@ func TestStore_Watch(t *testing.T) {
 	case ev := <-ch:
 		require.Equal(t, watch.Added, ev.Type)
 		require.Equal(t, f.Name, ev.Object.Name)
+		require.True(t, ev.Changes.IsEmpty())
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for Added event")
+	}
+
+	_, err = s.UpdateStatus(t.Context(), "p", f.Name, func(st *kargoapi.FreightStatus) error {
+		st.AddVerifiedStage("s1", time.Now())
+		return nil
+	})
+	require.NoError(t, err)
+
+	select {
+	case ev := <-ch:
+		require.Equal(t, watch.Modified, ev.Type)
+		require.Equal(t, []string{"s1"}, ev.Changes.NewlyVerifiedIn)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for Modified event")
 	}
 
 	_, err = s.UpdateAlias(t.Context(), "p", f.Name, "renamed")
@@ -486,4 +501,29 @@ func TestStore_Watch_scopedToProject(t *testing.T) {
 		t.Fatalf("unexpected event for unrelated project: %+v", ev)
 	case <-time.After(50 * time.Millisecond):
 	}
+}
+
+func TestStore_Watch_AllProjects(t *testing.T) {
+	t.Parallel()
+
+	s := NewStore()
+	ch, err := s.Watch(t.Context(), "")
+	require.NoError(t, err)
+
+	f1 := newFreight("p1", "", "w1")
+	require.NoError(t, s.Create(t.Context(), f1))
+	f2 := newFreight("p2", "", "w1")
+	require.NoError(t, s.Create(t.Context(), f2))
+
+	seen := map[string]struct{}{}
+	for range 2 {
+		select {
+		case ev := <-ch:
+			require.Equal(t, watch.Added, ev.Type)
+			seen[ev.Object.Namespace] = struct{}{}
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for Added event")
+		}
+	}
+	require.Equal(t, map[string]struct{}{"p1": {}, "p2": {}}, seen)
 }
