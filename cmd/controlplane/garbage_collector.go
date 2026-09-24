@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	pgfreight "github.com/akuity/kargo/pkg/freight/postgres"
 	"github.com/akuity/kargo/pkg/garbage"
 	"github.com/akuity/kargo/pkg/indexer"
 	"github.com/akuity/kargo/pkg/logging"
@@ -86,6 +87,11 @@ func (o *garbageCollectorOptions) run(ctx context.Context) error {
 		return fmt.Errorf("error setting up controller manager: %w", err)
 	}
 
+	freightStore, err := pgfreight.NewStore(ctx, pgfreight.ConfigFromEnv())
+	if err != nil {
+		return fmt.Errorf("error connecting to the Freight database: %w", err)
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -100,7 +106,11 @@ func (o *garbageCollectorOptions) run(ctx context.Context) error {
 	}
 
 	cfg := garbage.CollectorConfigFromEnv()
-	return garbage.NewCollector(mgr.GetClient(), cfg).Run(ctx)
+	return garbage.NewCollector(
+		mgr.GetClient(),
+		freightStore,
+		cfg,
+	).Run(ctx)
 }
 
 func (o *garbageCollectorOptions) setupManager(ctx context.Context) (manager.Manager, error) {
@@ -140,16 +150,6 @@ func (o *garbageCollectorOptions) setupManager(ctx context.Context) (manager.Man
 		indexer.PromotionsByStage,
 	); err != nil {
 		return nil, fmt.Errorf("error indexing Promotions by Stage: %w", err)
-	}
-
-	// Index Freight by Warehouse
-	if err = mgr.GetFieldIndexer().IndexField(
-		ctx,
-		&kargoapi.Freight{},
-		indexer.FreightByWarehouseField,
-		indexer.FreightByWarehouse,
-	); err != nil {
-		return nil, fmt.Errorf("error indexing Freight by Warehouse: %w", err)
 	}
 
 	// Index Stages by Freight

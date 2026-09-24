@@ -10,6 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/freight/memory"
 )
 
 func TestStepEvaluator_BuildExprEnv(t *testing.T) {
@@ -1025,7 +1026,7 @@ func TestStepEvaluator_Vars(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			evaluator := NewStepEvaluator(testClient, nil, nil)
+			evaluator := NewStepEvaluator(testClient, memory.NewStore(), nil, nil)
 			vars, err := evaluator.Vars(
 				t.Context(),
 				tt.promoCtx,
@@ -1188,6 +1189,7 @@ func TestStepEvaluator_ShouldSkip(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			evaluator := NewStepEvaluator(
 				fake.NewClientBuilder().Build(),
+				memory.NewStore(),
 				nil,
 				nil,
 			)
@@ -1766,7 +1768,7 @@ func TestStepEvaluator_Config(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			evaluator := NewStepEvaluator(testClient, nil, nil)
+			evaluator := NewStepEvaluator(testClient, memory.NewStore(), nil, nil)
 			stepCfg, err := evaluator.Config(
 				t.Context(),
 				tt.promoCtx,
@@ -1901,7 +1903,7 @@ func TestStepEvaluator_BuildStepContext(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			evaluator := NewStepEvaluator(testClient, nil, nil)
+			evaluator := NewStepEvaluator(testClient, memory.NewStore(), nil, nil)
 			stepCtx, err := evaluator.BuildStepContext(
 				t.Context(),
 				tt.promoCtx,
@@ -1978,7 +1980,7 @@ func TestStepEvaluator_Config_target(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			evaluator := NewStepEvaluator(testClient, nil, nil)
+			evaluator := NewStepEvaluator(testClient, memory.NewStore(), nil, nil)
 			cfg, err := evaluator.Config(t.Context(), tt.promoCtx, tt.step)
 			tt.assert(t, cfg, err)
 		})

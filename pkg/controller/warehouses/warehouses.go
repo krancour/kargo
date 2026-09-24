@@ -10,7 +10,6 @@ import (
 
 	"github.com/expr-lang/expr"
 	"github.com/kelseyhightower/envconfig"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -25,6 +24,7 @@ import (
 	kargoEvent "github.com/akuity/kargo/pkg/event"
 	k8sevent "github.com/akuity/kargo/pkg/event/kubernetes"
 	"github.com/akuity/kargo/pkg/expressions/function"
+	libFreight "github.com/akuity/kargo/pkg/freight"
 	"github.com/akuity/kargo/pkg/kargo"
 	"github.com/akuity/kargo/pkg/kubeclient"
 	libEvent "github.com/akuity/kargo/pkg/kubernetes/event"
@@ -60,6 +60,7 @@ type reconciler struct {
 	client             client.Client
 	credentialsDB      credentials.Database
 	subscriberRegistry subscription.SubscriberRegistry
+	freightStore       libFreight.Store
 	cfg                ReconcilerConfig
 	shardPredicate     controller.ResponsibleFor[kargoapi.Warehouse]
 	eventSender        kargoEvent.Sender
@@ -75,7 +76,7 @@ type reconciler struct {
 
 	buildFreightFromLatestArtifactsFn func(string, *kargoapi.DiscoveredArtifacts) (*kargoapi.Freight, error)
 
-	createFreightFn func(context.Context, client.Object, ...client.CreateOption) error
+	createFreightFn func(context.Context, *kargoapi.Freight) error
 
 	patchStatusFn func(context.Context, *kargoapi.Warehouse, func(*kargoapi.WarehouseStatus)) error
 }
@@ -87,6 +88,7 @@ func SetupReconcilerWithManager(
 	mgr manager.Manager,
 	credentialsDB credentials.Database,
 	subscriberRegistry subscription.SubscriberRegistry,
+	freightStore libFreight.Store,
 	cfg ReconcilerConfig,
 ) error {
 	if err := ctrl.NewControllerManagedBy(mgr).
@@ -107,6 +109,7 @@ func SetupReconcilerWithManager(
 			mgr.GetClient(),
 			credentialsDB,
 			subscriberRegistry,
+			freightStore,
 			cfg,
 			k8sevent.NewEventSender(
 				libEvent.NewRecorder(ctx, mgr.GetScheme(), mgr.GetClient(), cfg.Name()),
@@ -127,6 +130,7 @@ func newReconciler(
 	kubeClient client.Client,
 	credentialsDB credentials.Database,
 	subscriberRegistry subscription.SubscriberRegistry,
+	freightStore libFreight.Store,
 	cfg ReconcilerConfig,
 	eventSender kargoEvent.Sender,
 ) *reconciler {
@@ -134,13 +138,14 @@ func newReconciler(
 		client:             kubeClient,
 		credentialsDB:      credentialsDB,
 		subscriberRegistry: subscriberRegistry,
+		freightStore:       freightStore,
 		cfg:                cfg,
 		eventSender:        eventSender,
 		shardPredicate: controller.ResponsibleFor[kargoapi.Warehouse]{
 			IsDefaultController: cfg.IsDefaultController,
 			ShardName:           cfg.ShardName,
 		},
-		createFreightFn: kubeClient.Create,
+		createFreightFn: freightStore.Create,
 	}
 	r.discoverArtifactsFn = r.discoverArtifacts
 	r.buildFreightFromLatestArtifactsFn = r.buildFreightFromLatestArtifacts
@@ -448,7 +453,7 @@ func (r *reconciler) syncWarehouse(
 
 			// Attempt to create the Freight.
 			if err = r.createFreightFn(ctx, freight); err != nil {
-				if !apierrors.IsAlreadyExists(err) {
+				if !errors.Is(err, libFreight.ErrAlreadyExists) {
 					// Make the error visible in the status and mark the Warehouse as
 					// not ready.
 					msg := fmt.Sprintf(

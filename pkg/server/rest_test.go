@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,8 +17,10 @@ import (
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -26,6 +29,7 @@ import (
 	rollouts "github.com/akuity/kargo/api/stubs/rollouts/v1alpha1"
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/pkg/api"
+	"github.com/akuity/kargo/pkg/freight/memory"
 	"github.com/akuity/kargo/pkg/server/config"
 	"github.com/akuity/kargo/pkg/server/kubernetes"
 	"github.com/akuity/kargo/pkg/server/rbac"
@@ -43,7 +47,10 @@ type restTestCase struct {
 	body          io.Reader
 	headers       map[string]string
 	clientBuilder *fake.ClientBuilder
-	serverConfig  *config.ServerConfig
+	// freightStore optionally seeds the server's Freight store. An empty store
+	// is used when nil.
+	freightStore *memory.Store
+	serverConfig *config.ServerConfig
 	// serverSetup is an optional function that can be used to perform additional
 	// case-specific server initialization.
 	serverSetup func(*testing.T, *server)
@@ -156,6 +163,10 @@ func testRESTEndpoint(
 			)
 			require.NoError(t, err)
 			s.authorizeFn = s.client.Authorize
+			if testCase.freightStore == nil {
+				testCase.freightStore = memory.NewStore()
+			}
+			s.freightStore = testCase.freightStore
 			s.rolesDB = rbac.NewKubernetesRolesDatabase(
 				s.client,
 				s.client,
@@ -197,7 +208,13 @@ type restWatchTestCase struct {
 	url           string
 	headers       map[string]string
 	clientBuilder *fake.ClientBuilder
-	serverConfig  *config.ServerConfig
+	// freightStore optionally seeds the server's Freight store. An empty store
+	// is used when nil.
+	freightStore *memory.Store
+	serverConfig *config.ServerConfig
+	// serverSetup is an optional function that can be used to perform additional
+	// case-specific server initialization.
+	serverSetup func(*testing.T, *server)
 	// operations is an optional function that performs operations on the client
 	// asynchronously after the watch has been established. This allows tests to
 	// trigger events (Create, Update, Delete) that the watch will observe.
@@ -258,11 +275,19 @@ func testRESTWatchEndpoint(
 			)
 			require.NoError(t, err)
 			s.authorizeFn = s.client.Authorize
+			if testCase.freightStore == nil {
+				testCase.freightStore = memory.NewStore()
+			}
+			s.freightStore = testCase.freightStore
 			s.rolesDB = rbac.NewKubernetesRolesDatabase(
 				s.client,
 				s.client,
 				rbac.RolesDatabaseConfig{KargoNamespace: testKargoNamespace},
 			)
+
+			if testCase.serverSetup != nil {
+				testCase.serverSetup(t, s)
+			}
 
 			u := url
 			if testCase.url != "" {
@@ -324,4 +349,31 @@ func mustJSONArrayBody(objs ...any) io.Reader {
 		parts = append(parts, string(b))
 	}
 	return strings.NewReader("[" + strings.Join(parts, ",") + "]")
+}
+
+// denyFreightFn returns an authorizeFn that rejects the given verb (and
+// subresource) on Freight and allows everything else.
+func denyFreightFn(verb, subresource string) func(
+	context.Context,
+	string,
+	schema.GroupVersionResource,
+	string,
+	client.ObjectKey,
+) error {
+	return func(
+		_ context.Context,
+		v string,
+		gvr schema.GroupVersionResource,
+		sub string,
+		key client.ObjectKey,
+	) error {
+		if gvr == freightGVR && v == verb && sub == subresource {
+			return apierrors.NewForbidden(
+				gvr.GroupResource(),
+				key.Name,
+				errors.New("not authorized"),
+			)
+		}
+		return nil
+	}
 }

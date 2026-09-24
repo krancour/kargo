@@ -17,6 +17,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	k8sevent "github.com/akuity/kargo/pkg/event/kubernetes"
+	"github.com/akuity/kargo/pkg/freight/memory"
 	fakeevent "github.com/akuity/kargo/pkg/kubernetes/event/fake"
 	"github.com/akuity/kargo/pkg/server/config"
 )
@@ -40,6 +41,8 @@ func authorizeStagesPromoteFn(t *testing.T) func(
 			require.Equal(t, kargoapi.GroupVersion.WithResource("stages"), gvr)
 		case "create":
 			require.Equal(t, kargoapi.GroupVersion.WithResource("promotions"), gvr)
+		case "get":
+			require.Equal(t, freightGVR, gvr)
 		default:
 			require.Failf(t, "unexpected authorization", "verb %q", verb)
 		}
@@ -47,7 +50,7 @@ func authorizeStagesPromoteFn(t *testing.T) func(
 	}
 }
 
-// authorizeAllStagesPromote grants the promote/create checks used by successful
+// authorizeAllStagesPromote grants the promote/create/get checks used by successful
 // promotion creation paths.
 func authorizeAllStagesPromote(t *testing.T, s *server) {
 	s.authorizeFn = authorizeStagesPromoteFn(t)
@@ -71,6 +74,7 @@ func Test_server_promoteToStage(t *testing.T) {
 				kargoapi.LabelKeyAlias: "fake-alias",
 			},
 		},
+		Alias: "fake-alias",
 		Origin: kargoapi.FreightOrigin{
 			Kind: kargoapi.FreightOriginKindWarehouse,
 			Name: testWarehouse.Name,
@@ -133,11 +137,11 @@ func Test_server_promoteToStage(t *testing.T) {
 		http.MethodPost, "/v1beta1/projects/"+testProject.Name+"/stages/"+testStage.Name+"/promotions",
 		[]restTestCase{
 			{
-				name: "Target-aware Stage yields a PromotionRequest",
+				name:         "Target-aware Stage yields a PromotionRequest",
+				freightStore: memory.NewStore(testFreight),
 				clientBuilder: fake.NewClientBuilder().WithObjects(
 					testProject,
 					testTargetAwareStage,
-					testFreight,
 					testTarget,
 					testUnselectedTarget,
 				),
@@ -172,11 +176,11 @@ func Test_server_promoteToStage(t *testing.T) {
 				// rolling back to it, say -- must still produce a request. The
 				// stand-down guard exists only in the Stage controller's
 				// auto-promotion loop; this path creates unconditionally.
-				name: "re-promoting the same Freight yields a second PromotionRequest",
+				name:         "re-promoting the same Freight yields a second PromotionRequest",
+				freightStore: memory.NewStore(testFreight),
 				clientBuilder: fake.NewClientBuilder().WithObjects(
 					testProject,
 					testTargetAwareStage,
-					testFreight,
 					testTarget,
 					&kargoapi.PromotionRequest{
 						ObjectMeta: metav1.ObjectMeta{
@@ -212,11 +216,11 @@ func Test_server_promoteToStage(t *testing.T) {
 				},
 			},
 			{
-				name: "Promotion by origin is refused for a target-aware Stage",
+				name:         "Promotion by origin is refused for a target-aware Stage",
+				freightStore: memory.NewStore(testFreight),
 				clientBuilder: fake.NewClientBuilder().WithObjects(
 					testProject,
 					testTargetAwareStage,
-					testFreight,
 				),
 				serverSetup: authorizeAllStagesPromote,
 				body: mustJSONBody(promoteToStageRequest{
@@ -318,8 +322,40 @@ func Test_server_promoteToStage(t *testing.T) {
 				},
 			},
 			{
+				name:          "not authorized to get Freight",
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject, testStage),
+				freightStore:  memory.NewStore(testFreight),
+				serverSetup: func(_ *testing.T, s *server) {
+					s.authorizeFn = func(
+						_ context.Context,
+						verb string,
+						gvr schema.GroupVersionResource,
+						_ string,
+						key client.ObjectKey,
+					) error {
+						if gvr == freightGVR {
+							require.Equal(t, "get", verb)
+							require.Equal(t, "fake-alias", key.Name)
+							return apierrors.NewForbidden(
+								gvr.GroupResource(),
+								key.Name,
+								errors.New("not authorized"),
+							)
+						}
+						return nil
+					}
+				},
+				body: mustJSONBody(promoteToStageRequest{
+					FreightAlias: "fake-alias",
+				}),
+				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
+					require.Equal(t, http.StatusForbidden, w.Code)
+				},
+			},
+			{
 				name:          "promoting not authorized",
-				clientBuilder: fake.NewClientBuilder().WithObjects(testProject, testStage, testFreight),
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject, testStage),
+				freightStore:  memory.NewStore(testFreight),
 				serverSetup: func(_ *testing.T, s *server) {
 					s.authorizeFn = func(
 						context.Context,
@@ -343,7 +379,8 @@ func Test_server_promoteToStage(t *testing.T) {
 				},
 			},
 			{
-				name: "Freight not available to Stage",
+				name:         "Freight not available to Stage",
+				freightStore: memory.NewStore(testFreight),
 				clientBuilder: fake.NewClientBuilder().WithObjects(
 					testProject,
 					func() *kargoapi.Stage {
@@ -353,7 +390,6 @@ func Test_server_promoteToStage(t *testing.T) {
 						}
 						return s
 					}(),
-					testFreight,
 				),
 				serverSetup: authorizeAllStagesPromote,
 				body: mustJSONBody(promoteToStageRequest{
@@ -365,7 +401,8 @@ func Test_server_promoteToStage(t *testing.T) {
 			},
 			{
 				name:          "Successfully promote by freight name",
-				clientBuilder: fake.NewClientBuilder().WithObjects(testProject, testStage, testFreight),
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject, testStage),
+				freightStore:  memory.NewStore(testFreight),
 				serverSetup:   authorizeAllStagesPromote,
 				body: mustJSONBody(promoteToStageRequest{
 					Freight: testFreight.Name,
@@ -388,7 +425,8 @@ func Test_server_promoteToStage(t *testing.T) {
 			},
 			{
 				name:          "Successfully promote by freight alias",
-				clientBuilder: fake.NewClientBuilder().WithObjects(testProject, testStage, testFreight),
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject, testStage),
+				freightStore:  memory.NewStore(testFreight),
 				serverSetup:   authorizeAllStagesPromote,
 				body: mustJSONBody(promoteToStageRequest{
 					FreightAlias: "fake-alias",
@@ -426,11 +464,11 @@ func Test_server_promoteToStage(t *testing.T) {
 			func() restTestCase {
 				recorder := fakeevent.NewEventRecorder(1)
 				return restTestCase{
-					name: "Successfully promote by origin records created event after resolution",
+					name:         "Successfully promote by origin records created event after resolution",
+					freightStore: memory.NewStore(testFreight),
 					clientBuilder: fake.NewClientBuilder().WithObjects(
 						testProject,
 						testStage,
-						testFreight,
 					),
 					serverSetup: func(t *testing.T, s *server) {
 						authorizeAllStagesPromote(t, s)

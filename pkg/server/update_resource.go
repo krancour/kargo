@@ -108,6 +108,11 @@ func (s *server) updateResource(
 	obj *unstructured.Unstructured,
 	upsert bool,
 ) (createOrUpdateResourceResult, error) {
+	if obj.GroupVersionKind() == freightGVK {
+		return createOrUpdateResourceResult{
+			Error: errFreightViaGenericEndpoint.Error(),
+		}, errFreightViaGenericEndpoint
+	}
 	if obj.GroupVersionKind() == secretGVK && !s.cfg.SecretManagementEnabled {
 		return createOrUpdateResourceResult{
 			Error: errSecretManagementDisabled.Error(),

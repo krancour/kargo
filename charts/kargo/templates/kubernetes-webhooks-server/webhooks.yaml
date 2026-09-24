@@ -14,24 +14,6 @@ metadata:
     {{- end }}
   {{- end }}
 webhooks:
-- name: freight.kargo.akuity.io
-  admissionReviewVersions: ["v1"]
-  sideEffects: None
-  clientConfig:
-    service:
-      namespace: {{ .Release.Namespace }}
-      name: kargo-webhooks-server
-      path: /mutate-kargo-akuity-io-v1alpha1-freight
-    {{- if and (not .Values.webhooksServer.tls.selfSignedCert) .Values.webhooksServer.tls.caBundle }}
-    caBundle: {{ .Values.webhooksServer.tls.caBundle | b64enc }}
-    {{- end }}
-  rules:
-  - scope: Namespaced
-    apiGroups: ["kargo.akuity.io"]
-    apiVersions: ["v1alpha1"]
-    resources: ["freights"]
-    operations: ["CREATE", "UPDATE"]
-  failurePolicy: Fail
 - name: promotion.kargo.akuity.io
   admissionReviewVersions: ["v1"]
   sideEffects: None
@@ -137,24 +119,6 @@ webhooks:
     apiVersions: ["v1alpha1"]
     resources: ["clusterpromotiontasks"]
     operations: ["CREATE", "UPDATE"]
-  failurePolicy: Fail
-- name: freight.kargo.akuity.io
-  admissionReviewVersions: ["v1"]
-  sideEffects: None
-  clientConfig:
-    service:
-      namespace: {{ .Release.Namespace }}
-      name: kargo-webhooks-server
-      path: /validate-kargo-akuity-io-v1alpha1-freight
-    {{- if and (not .Values.webhooksServer.tls.selfSignedCert) .Values.webhooksServer.tls.caBundle }}
-    caBundle: {{ .Values.webhooksServer.tls.caBundle | b64enc }}
-    {{- end }}
-  rules:
-  - scope: Namespaced
-    apiGroups: ["kargo.akuity.io"]
-    apiVersions: ["v1alpha1"]
-    resources: ["freights", "freights/status"]
-    operations: ["CREATE", "UPDATE", "DELETE"]
   failurePolicy: Fail
 - name: project.kargo.akuity.io
   admissionReviewVersions: ["v1"]

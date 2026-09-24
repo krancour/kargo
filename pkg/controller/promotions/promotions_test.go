@@ -25,6 +25,8 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/pkg/controller/metrics"
 	k8sevent "github.com/akuity/kargo/pkg/event/kubernetes"
+	libFreight "github.com/akuity/kargo/pkg/freight"
+	"github.com/akuity/kargo/pkg/freight/memory"
 	fakeevent "github.com/akuity/kargo/pkg/kubernetes/event/fake"
 	"github.com/akuity/kargo/pkg/promotion"
 )
@@ -36,14 +38,17 @@ var (
 
 func TestNewPromotionReconciler(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().Build()
+	freightStore := memory.NewStore()
 	r := newReconciler(
 		kubeClient,
+		freightStore,
 		kubeClient,
 		k8sevent.NewEventSender(&fakeevent.EventRecorder{}),
 		&promotion.MockEngine{},
 		ReconcilerConfig{},
 	)
 	require.NotNil(t, r.kargoClient)
+	require.Same(t, freightStore, r.freightStore)
 	require.NotNil(t, r.sender)
 	require.NotNil(t, r.promoEngine)
 	require.NotNil(t, r.getStageFn)
@@ -54,6 +59,7 @@ func TestNewPromotionReconciler(t *testing.T) {
 func newFakeReconciler(
 	t *testing.T,
 	recorder *fakeevent.EventRecorder,
+	freightStore libFreight.Store,
 	objects ...client.Object,
 ) *reconciler {
 	scheme := k8sruntime.NewScheme()
@@ -62,6 +68,7 @@ func newFakeReconciler(
 		WithObjects(objects...).WithStatusSubresource(objects...).Build()
 	return newReconciler(
 		kargoClient,
+		freightStore,
 		kargoClient,
 		k8sevent.NewEventSender(recorder),
 		&promotion.MockEngine{},
@@ -73,6 +80,9 @@ func TestReconcile(t *testing.T) {
 	testCases := []struct {
 		name   string
 		promos []client.Object
+		// freightStore, if set, is the reconciler's Freight store. Otherwise, an
+		// empty store is used.
+		freightStore *memory.Store
 		// apiReader, if set, overrides the reconciler's direct API reader. Use
 		// this to simulate cache/API divergence or to assert the reader is not
 		// called (e.g. wrap with an interceptor that calls t.Error on Get).
@@ -113,6 +123,82 @@ func TestReconcile(t *testing.T) {
 				newPromo("fake-namespace", "fake-promo", "fake-stage", kargoapi.PromotionPhasePending, now),
 			},
 			promoToReconcile: &types.NamespacedName{Namespace: "fake-namespace", Name: "fake-promo"},
+		},
+		{
+			name:                  "Freight is read from the Freight store",
+			expectPromoteFnCalled: true,
+			expectedPhase:         kargoapi.PromotionPhaseSucceeded,
+			expectedEventRecorded: true,
+			expectedEventType:     kargoapi.EventTypePromotionSucceeded,
+			freightStore: memory.NewStore(&kargoapi.Freight{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "fake-freight",
+					Namespace: "fake-namespace",
+				},
+				Alias: "fake-alias",
+			}),
+			promoToReconcile: &types.NamespacedName{Namespace: "fake-namespace", Name: "fake-promo"},
+			promos: []client.Object{
+				&kargoapi.Stage{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "fake-stage",
+						Namespace: "fake-namespace",
+					},
+					Status: kargoapi.StageStatus{
+						CurrentPromotion: &kargoapi.PromotionReference{
+							Name: "fake-promo",
+						},
+					},
+				},
+				func() *kargoapi.Promotion {
+					p := newPromo(
+						"fake-namespace",
+						"fake-promo",
+						"fake-stage",
+						kargoapi.PromotionPhasePending,
+						now,
+					)
+					p.Spec.Freight = "fake-freight"
+					return p
+				}(),
+			},
+			promoteFn: func(
+				_ context.Context,
+				_ kargoapi.Promotion,
+				f *kargoapi.Freight,
+			) (*kargoapi.PromotionStatus, *time.Duration, error) {
+				if f == nil || f.Name != "fake-freight" || f.Alias != "fake-alias" {
+					return nil, nil, fmt.Errorf("unexpected Freight: %+v", f)
+				}
+				return &kargoapi.PromotionStatus{
+					Phase: kargoapi.PromotionPhaseSucceeded,
+				}, nil, nil
+			},
+		},
+		{
+			name: "error getting Freight from the Freight store",
+			freightStore: func() *memory.Store {
+				s := memory.NewStore()
+				s.Hooks.Get = func(context.Context, string, string) error {
+					return errors.New("something went wrong")
+				}
+				return s
+			}(),
+			promos: []client.Object{
+				func() *kargoapi.Promotion {
+					p := newPromo(
+						"fake-namespace",
+						"fake-promo",
+						"fake-stage",
+						kargoapi.PromotionPhasePending,
+						now,
+					)
+					p.Spec.Freight = "fake-freight"
+					return p
+				}(),
+			},
+			expectPromoteFnCalled: false,
+			expectedErr:           "error finding Freight",
 		},
 		{
 			name:                  "promo doesn't exist",
@@ -432,7 +518,11 @@ func TestReconcile(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
 			recorder := fakeevent.NewEventRecorder(1)
-			r := newFakeReconciler(t, recorder, tc.promos...)
+			freightStore := tc.freightStore
+			if freightStore == nil {
+				freightStore = memory.NewStore()
+			}
+			r := newFakeReconciler(t, recorder, freightStore, tc.promos...)
 			if tc.apiReader != nil {
 				r.apiReader = tc.apiReader
 			}
@@ -768,7 +858,7 @@ func Test_reconciler_handleDeletion(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
 			recorder := fakeevent.NewEventRecorder(1)
-			r := newFakeReconciler(t, recorder, tc.objects...)
+			r := newFakeReconciler(t, recorder, memory.NewStore(), tc.objects...)
 
 			cleanupCalled := false
 			r.cleanupWorkDirFn = func(context.Context, types.UID) {

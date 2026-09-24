@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/freight/memory"
 	"github.com/akuity/kargo/pkg/server/config"
 )
 
@@ -52,6 +53,8 @@ func Test_server_approveFreight(t *testing.T) {
 			Namespace: testProject.Name,
 		},
 	}
+	notApprovedStore := memory.NewStore(testFreight)
+	approvedStore := memory.NewStore(testFreight)
 	testRESTEndpoint(
 		t, &config.ServerConfig{},
 		http.MethodPost, "/v1beta1/projects/"+testProject.Name+"/freight/"+testFreight.Name+"/approve?stage="+testStageName,
@@ -74,20 +77,17 @@ func Test_server_approveFreight(t *testing.T) {
 				},
 			},
 			{
-				name: "Stage not found",
-				clientBuilder: fake.NewClientBuilder().WithObjects(
-					testProject,
-					testFreight,
-				).WithStatusSubresource(testFreight),
+				name:          "Stage not found",
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject),
+				freightStore:  memory.NewStore(testFreight),
 				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
 					require.Equal(t, http.StatusNotFound, w.Code)
 				},
 			},
 			{
-				name: "not authorized to approve (not authorized to promote)",
-				clientBuilder: fake.NewClientBuilder().
-					WithObjects(testProject, testFreight, testStage).
-					WithStatusSubresource(testFreight),
+				name:          "not authorized to approve (not authorized to promote)",
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject, testStage),
+				freightStore:  memory.NewStore(testFreight),
 				serverSetup: func(_ *testing.T, s *server) {
 					s.authorizeFn = func(
 						context.Context,
@@ -108,10 +108,20 @@ func Test_server_approveFreight(t *testing.T) {
 				},
 			},
 			{
-				name: "Stage does not request Freight from origin",
-				clientBuilder: fake.NewClientBuilder().
-					WithObjects(testProject, testFreight, testStageWithoutRequest).
-					WithStatusSubresource(testFreight),
+				name:          "not authorized to patch Freight status",
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject, testStage),
+				freightStore:  memory.NewStore(testFreight),
+				serverSetup: func(_ *testing.T, s *server) {
+					s.authorizeFn = denyFreightFn("patch", "status")
+				},
+				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
+					require.Equal(t, http.StatusForbidden, w.Code)
+				},
+			},
+			{
+				name:          "Stage does not request Freight from origin",
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject, testStageWithoutRequest),
+				freightStore:  notApprovedStore,
 				serverSetup: func(_ *testing.T, s *server) {
 					s.authorizeFn = func(
 						context.Context,
@@ -123,26 +133,20 @@ func Test_server_approveFreight(t *testing.T) {
 						return nil
 					}
 				},
-				assertions: func(t *testing.T, w *httptest.ResponseRecorder, c client.Client) {
+				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
 					require.Equal(t, http.StatusBadRequest, w.Code)
 					require.Contains(t, w.Body.String(), "does not request Freight from origin")
 
 					// Verify the Freight was NOT approved for the Stage
-					freight := &kargoapi.Freight{}
-					err := c.Get(
-						t.Context(),
-						client.ObjectKeyFromObject(testFreight),
-						freight,
-					)
+					freight, err := notApprovedStore.Get(t.Context(), testProject.Name, testFreight.Name)
 					require.NoError(t, err)
 					require.False(t, freight.IsApprovedFor(testStageName))
 				},
 			},
 			{
-				name: "approves Freight",
-				clientBuilder: fake.NewClientBuilder().
-					WithObjects(testProject, testFreight, testStage).
-					WithStatusSubresource(testFreight),
+				name:          "approves Freight",
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject, testStage),
+				freightStore:  approvedStore,
 				serverSetup: func(_ *testing.T, s *server) {
 					s.authorizeFn = func(
 						context.Context,
@@ -154,16 +158,11 @@ func Test_server_approveFreight(t *testing.T) {
 						return nil
 					}
 				},
-				assertions: func(t *testing.T, w *httptest.ResponseRecorder, c client.Client) {
+				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
 					require.Equal(t, http.StatusOK, w.Code)
 
 					// Verify the Freight was approved for the Stage
-					freight := &kargoapi.Freight{}
-					err := c.Get(
-						t.Context(),
-						client.ObjectKeyFromObject(testFreight),
-						freight,
-					)
+					freight, err := approvedStore.Get(t.Context(), testProject.Name, testFreight.Name)
 					require.NoError(t, err)
 					require.True(t, freight.IsApprovedFor(testStage.Name))
 					require.Contains(t, freight.Status.ApprovedFor, testStage.Name)

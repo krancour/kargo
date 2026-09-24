@@ -16,6 +16,7 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	libargocd "github.com/akuity/kargo/pkg/argocd"
 	"github.com/akuity/kargo/pkg/expressions"
+	libFreight "github.com/akuity/kargo/pkg/freight"
 	"github.com/akuity/kargo/pkg/logging"
 	"github.com/akuity/kargo/pkg/promotion"
 	"github.com/akuity/kargo/pkg/urls"
@@ -23,11 +24,6 @@ import (
 
 const (
 	EventsByInvolvedObjectAPIGroupField = "involvedObject.apiGroup"
-
-	FreightByWarehouseField       = "warehouse"
-	FreightByCurrentStagesField   = "currentlyIn"
-	FreightByVerifiedStagesField  = "verifiedIn"
-	FreightApprovedForStagesField = "approvedFor"
 
 	PromotionsByStageAndFreightField = "stageAndFreight"
 	PromotionsByStageField           = "stage"
@@ -145,6 +141,7 @@ func PromotionsByNonTerminal(obj client.Object) []string {
 func RunningPromotionsByArgoCDApplications(
 	ctx context.Context,
 	cl client.Client,
+	freightStore libFreight.Store,
 	shardName string,
 	isDefaultController bool,
 ) client.IndexerFunc {
@@ -220,7 +217,7 @@ func RunningPromotionsByArgoCDApplications(
 				Config: rawConfig,
 			}
 
-			evaluator := promotion.NewStepEvaluator(cl, nil, nil)
+			evaluator := promotion.NewStepEvaluator(cl, freightStore, nil, nil)
 
 			// As step-level variables are allowed to reference to output, we
 			// need to provide the state.
@@ -471,71 +468,6 @@ func PromotionRequestsByStage(obj client.Object) []string {
 // Freight.
 func StageAndFreightKey(stage, freight string) string {
 	return fmt.Sprintf("%s:%s", stage, freight)
-}
-
-// FreightByWarehouse is a client.IndexerFunc that indexes Freight by the
-// Warehouse it is associated with.
-func FreightByWarehouse(obj client.Object) []string {
-	freight, ok := obj.(*kargoapi.Freight)
-	if !ok {
-		return nil
-	}
-
-	if freight.Origin.Kind == kargoapi.FreightOriginKindWarehouse {
-		return []string{freight.Origin.Name}
-	}
-	return nil
-}
-
-// FreightByCurrentStages is a client.IndexerFunc that indexes Freight by the
-// Stages in which it is currently in use.
-func FreightByCurrentStages(obj client.Object) []string {
-	freight, ok := obj.(*kargoapi.Freight)
-	if !ok {
-		return nil
-	}
-
-	currentStages := make([]string, len(freight.Status.CurrentlyIn))
-	var i int
-	for stage := range freight.Status.CurrentlyIn {
-		currentStages[i] = stage
-		i++
-	}
-	return currentStages
-}
-
-// FreightByVerifiedStages is a client.IndexerFunc that indexes Freight by the
-// Stages in which it has been verified.
-func FreightByVerifiedStages(obj client.Object) []string {
-	freight, ok := obj.(*kargoapi.Freight)
-	if !ok {
-		return nil
-	}
-
-	verifiedStages := make([]string, len(freight.Status.VerifiedIn))
-	var i int
-	for stage := range freight.Status.VerifiedIn {
-		verifiedStages[i] = stage
-		i++
-	}
-	return verifiedStages
-}
-
-// FreightApprovedForStages is a client.IndexerFunc that indexes Freight by the
-// Stages for which it has been (manually) approved.
-func FreightApprovedForStages(obj client.Object) []string {
-	freight, ok := obj.(*kargoapi.Freight)
-	if !ok {
-		return nil
-	}
-
-	approvedStages := make([]string, len(freight.Status.ApprovedFor))
-	var i int
-	for stages := range freight.Status.ApprovedFor {
-		approvedStages[i] = stages
-		i++
-	}
-	return approvedStages
 }
 
 // StagesByFreight is a client.IndexerFunc that indexes Stages by the Freight

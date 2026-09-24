@@ -13,6 +13,7 @@ metadata:
     {{- include "kargo.controller.idLabel" . | nindent 4 }}
   {{- include "kargo.annotations" (dict "root" . "annotations" .Values.controller.annotations) | nindent 2 }}
 data:
+  DATABASE_URL: {{ include "kargo.databaseURL" . | quote }}
   {{- if .Values.api.enabled }}
   API_SERVER_BASE_URL: {{ include "kargo.api.baseURL" . }}
   {{- end }}

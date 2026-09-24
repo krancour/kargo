@@ -3,6 +3,7 @@ package function
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"github.com/akuity/kargo/pkg/api"
 	"github.com/akuity/kargo/pkg/controller/freight"
 	"github.com/akuity/kargo/pkg/credentials"
+	libFreight "github.com/akuity/kargo/pkg/freight"
 	"github.com/akuity/kargo/pkg/urls"
 )
 
@@ -37,6 +39,7 @@ type exprFn func(params ...any) (any, error)
 func FreightOperations(
 	ctx context.Context,
 	c client.Client,
+	store libFreight.Store,
 	project string,
 	freightRequests []kargoapi.FreightRequest,
 	freightRefs []kargoapi.FreightReference,
@@ -47,8 +50,8 @@ func FreightOperations(
 		ImageFromFreight(ctx, c, project, freightRequests, freightRefs),
 		ChartFromFreight(ctx, c, project, freightRequests, freightRefs),
 		ArtifactFromFreight(ctx, c, project, freightRequests, freightRefs),
-		FreightMetadata(ctx, c, project),
-		FreightStatus(ctx, c, project),
+		FreightMetadata(ctx, store, project),
+		FreightStatus(ctx, store, project),
 	}
 }
 
@@ -90,8 +93,6 @@ func DataOperations(
 		Secret(ctx, c, cache, project),
 		SharedSecret(ctx, c, cache),
 		RepoCredentials(ctx, credsDB, cache, project),
-		FreightMetadata(ctx, c, project),
-		FreightStatus(ctx, c, project),
 		StageMetadata(ctx, c, project),
 	}
 }
@@ -291,19 +292,19 @@ func ArtifactFromDiscoveredArtifacts(
 
 func FreightMetadata(
 	ctx context.Context,
-	c client.Client,
+	store libFreight.Store,
 	project string,
 ) expr.Option {
 	return expr.Function(
 		"freightMetadata",
-		freightMetadata(ctx, c, project),
+		freightMetadata(ctx, store, project),
 		new(func(freightRefName string) map[string]any),
 	)
 }
 
 func freightMetadata(
 	ctx context.Context,
-	c client.Client,
+	store libFreight.Store,
 	project string,
 ) exprFn {
 	return func(a ...any) (any, error) {
@@ -319,7 +320,7 @@ func freightMetadata(
 			return nil, fmt.Errorf("freight ref name must not be empty")
 		}
 
-		freight, err := getFreightForExpr(ctx, c, project, freightRefName)
+		freight, err := getFreightForExpr(ctx, store, project, freightRefName)
 		if err != nil {
 			return nil, err
 		}
@@ -348,19 +349,19 @@ func freightMetadata(
 // Freight.
 func FreightStatus(
 	ctx context.Context,
-	c client.Client,
+	store libFreight.Store,
 	project string,
 ) expr.Option {
 	return expr.Function(
 		"freightStatus",
-		freightStatus(ctx, c, project),
+		freightStatus(ctx, store, project),
 		new(func(freightRefName string) map[string]any),
 	)
 }
 
 func freightStatus(
 	ctx context.Context,
-	c client.Client,
+	store libFreight.Store,
 	project string,
 ) exprFn {
 	return func(a ...any) (any, error) {
@@ -375,7 +376,7 @@ func freightStatus(
 		if freightRefName == "" {
 			return nil, fmt.Errorf("freight ref name must not be empty")
 		}
-		freight, err := getFreightForExpr(ctx, c, project, freightRefName)
+		freight, err := getFreightForExpr(ctx, store, project, freightRefName)
 		if err != nil {
 			return nil, err
 		}
@@ -395,43 +396,21 @@ func freightStatus(
 	}
 }
 
-// getFreightForExpr retrieves the named Freight resource within the given
-// project for use by expression functions. It returns a nil Freight and nil
-// error if the Freight does not exist.
-//
-// The Freight is retrieved as unstructured because it bypasses the client's
-// cache. This is essential for cases where Freight status is being accessed
-// very shortly after having been updated.
+// getFreightForExpr retrieves the named Freight within the given project for
+// use by expression functions. It returns a nil Freight and nil error if the
+// Freight does not exist.
 func getFreightForExpr(
 	ctx context.Context,
-	c client.Client,
+	store libFreight.Store,
 	project string,
 	freightRefName string,
 ) (*kargoapi.Freight, error) {
-	u := &unstructured.Unstructured{}
-	u.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   kargoapi.GroupVersion.Group,
-		Version: kargoapi.GroupVersion.Version,
-		Kind:    "Freight",
-	})
-	if err := c.Get(
-		ctx,
-		client.ObjectKey{Namespace: project, Name: freightRefName},
-		u,
-	); err != nil {
-		if apierrors.IsNotFound(err) {
+	f, err := store.Get(ctx, project, freightRefName)
+	if err != nil {
+		if errors.Is(err, libFreight.ErrNotFound) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to get freight %s: %w", freightRefName, err)
-	}
-	f := &kargoapi.Freight{}
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(
-		u.Object,
-		f,
-	); err != nil {
-		return nil, fmt.Errorf(
-			"error converting unstructured object to Freight: %w", err,
-		)
 	}
 	return f, nil
 }

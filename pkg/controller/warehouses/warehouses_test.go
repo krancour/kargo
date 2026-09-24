@@ -8,13 +8,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
@@ -23,6 +20,8 @@ import (
 	"github.com/akuity/kargo/pkg/credentials"
 	kargoEvent "github.com/akuity/kargo/pkg/event"
 	k8sevent "github.com/akuity/kargo/pkg/event/kubernetes"
+	"github.com/akuity/kargo/pkg/freight"
+	"github.com/akuity/kargo/pkg/freight/memory"
 	fakeevent "github.com/akuity/kargo/pkg/kubernetes/event/fake"
 	"github.com/akuity/kargo/pkg/logging"
 	"github.com/akuity/kargo/pkg/subscription"
@@ -49,6 +48,7 @@ func TestNewReconciler(t *testing.T) {
 		kubeClient,
 		&credentials.FakeDB{},
 		subscription.MustNewSubscriberRegistry(),
+		memory.NewStore(),
 		ReconcilerConfig{MinReconciliationInterval: minReconciliationInterval},
 		nil,
 	)
@@ -290,18 +290,8 @@ func TestSyncWarehouse(t *testing.T) {
 						},
 					}, nil
 				},
-				createFreightFn: func(
-					context.Context,
-					client.Object,
-					...client.CreateOption,
-				) error {
-					return apierrors.NewAlreadyExists(
-						schema.GroupResource{
-							Group:    kargoapi.GroupVersion.Group,
-							Resource: "Warehouse",
-						},
-						"fake-freight",
-					)
+				createFreightFn: func(context.Context, *kargoapi.Freight) error {
+					return freight.ErrAlreadyExists
 				},
 				patchStatusFn: func(context.Context, *kargoapi.Warehouse, func(*kargoapi.WarehouseStatus)) error {
 					return nil
@@ -372,11 +362,7 @@ func TestSyncWarehouse(t *testing.T) {
 				) (*kargoapi.Freight, error) {
 					return &kargoapi.Freight{}, nil
 				},
-				createFreightFn: func(
-					context.Context,
-					client.Object,
-					...client.CreateOption,
-				) error {
+				createFreightFn: func(context.Context, *kargoapi.Freight) error {
 					return errors.New("something went wrong")
 				},
 				patchStatusFn: func(context.Context, *kargoapi.Warehouse, func(*kargoapi.WarehouseStatus)) error {
@@ -459,11 +445,7 @@ func TestSyncWarehouse(t *testing.T) {
 						},
 					}, nil
 				},
-				createFreightFn: func(
-					context.Context,
-					client.Object,
-					...client.CreateOption,
-				) error {
+				createFreightFn: func(context.Context, *kargoapi.Freight) error {
 					return nil
 				},
 				patchStatusFn: func(context.Context, *kargoapi.Warehouse, func(*kargoapi.WarehouseStatus)) error {
@@ -543,11 +525,7 @@ func TestSyncWarehouse(t *testing.T) {
 						},
 					}, nil
 				},
-				createFreightFn: func(
-					context.Context,
-					client.Object,
-					...client.CreateOption,
-				) error {
+				createFreightFn: func(context.Context, *kargoapi.Freight) error {
 					return nil
 				},
 				patchStatusFn: func(context.Context, *kargoapi.Warehouse, func(*kargoapi.WarehouseStatus)) error {
@@ -605,11 +583,7 @@ func TestSyncWarehouse(t *testing.T) {
 						},
 					}, nil
 				},
-				createFreightFn: func(
-					context.Context,
-					client.Object,
-					...client.CreateOption,
-				) error {
+				createFreightFn: func(context.Context, *kargoapi.Freight) error {
 					return nil
 				},
 				patchStatusFn: func(context.Context, *kargoapi.Warehouse, func(*kargoapi.WarehouseStatus)) error {
@@ -658,11 +632,7 @@ func TestSyncWarehouse(t *testing.T) {
 						},
 					}, nil
 				},
-				createFreightFn: func(
-					context.Context,
-					client.Object,
-					...client.CreateOption,
-				) error {
+				createFreightFn: func(context.Context, *kargoapi.Freight) error {
 					return nil
 				},
 				patchStatusFn: func(context.Context, *kargoapi.Warehouse, func(*kargoapi.WarehouseStatus)) error {
@@ -1676,11 +1646,7 @@ func TestReconcile(t *testing.T) {
 					) (*kargoapi.Freight, error) {
 						return &kargoapi.Freight{}, nil
 					},
-					createFreightFn: func(
-						context.Context,
-						client.Object,
-						...client.CreateOption,
-					) error {
+					createFreightFn: func(context.Context, *kargoapi.Freight) error {
 						return nil
 					},
 					patchStatusFn: func(

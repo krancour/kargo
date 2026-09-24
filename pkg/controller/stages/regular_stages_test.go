@@ -27,6 +27,8 @@ import (
 	"github.com/akuity/kargo/pkg/conditions"
 	"github.com/akuity/kargo/pkg/credentials"
 	k8sevent "github.com/akuity/kargo/pkg/event/kubernetes"
+	libFreight "github.com/akuity/kargo/pkg/freight"
+	"github.com/akuity/kargo/pkg/freight/memory"
 	"github.com/akuity/kargo/pkg/health"
 	"github.com/akuity/kargo/pkg/indexer"
 	fakeevent "github.com/akuity/kargo/pkg/kubernetes/event/fake"
@@ -42,6 +44,7 @@ func TestRegularStageReconciler_Reconcile(t *testing.T) {
 		stage       *kargoapi.Stage
 		objects     []client.Object
 		interceptor interceptor.Funcs
+		hooks       memory.Hooks
 		assertions  func(*testing.T, client.Client, ctrl.Result, error)
 	}{
 		{
@@ -158,8 +161,8 @@ func TestRegularStageReconciler_Reconcile(t *testing.T) {
 					},
 				},
 			},
-			interceptor: interceptor.Funcs{
-				List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+			hooks: memory.Hooks{
+				List: func(context.Context, string, libFreight.ListOptions) error {
 					return fmt.Errorf("something went wrong")
 				},
 			},
@@ -393,26 +396,6 @@ func TestRegularStageReconciler_Reconcile(t *testing.T) {
 					indexer.PromotionsByStage,
 				).
 				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightByWarehouseField,
-					indexer.FreightByWarehouse,
-				).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightByCurrentStagesField,
-					indexer.FreightByCurrentStages,
-				).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightByVerifiedStagesField,
-					indexer.FreightByVerifiedStages,
-				).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightApprovedForStagesField,
-					indexer.FreightApprovedForStages,
-				).
-				WithIndex(
 					&kargoapi.Promotion{},
 					indexer.PromotionsByStageAndFreightField,
 					indexer.PromotionsByStageAndFreight,
@@ -425,9 +408,13 @@ func TestRegularStageReconciler_Reconcile(t *testing.T) {
 				WithInterceptorFuncs(tt.interceptor).
 				Build()
 
+			store := memory.NewStore()
+			store.Hooks = tt.hooks
+
 			r := &RegularStageReconciler{
-				client:      c,
-				eventSender: k8sevent.NewEventSender(fakeevent.NewEventRecorder(10)),
+				client:       c,
+				freightStore: store,
+				eventSender:  k8sevent.NewEventSender(fakeevent.NewEventRecorder(10)),
 			}
 
 			result, err := r.Reconcile(t.Context(), tt.req)
@@ -447,6 +434,7 @@ func TestRegularStagesReconciler_reconcile(t *testing.T) {
 		name        string
 		stage       *kargoapi.Stage
 		objects     []client.Object
+		freight     []*kargoapi.Freight
 		interceptor interceptor.Funcs
 		assertions  func(*testing.T, kargoapi.StageStatus, bool, error)
 	}{
@@ -538,16 +526,6 @@ func TestRegularStagesReconciler_reconcile(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "test-project",
-						Name:      "test-freight",
-					},
-					Origin: kargoapi.FreightOrigin{
-						Kind: kargoapi.FreightOriginKindWarehouse,
-						Name: "test-warehouse",
-					},
-				},
 				&kargoapi.Promotion{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "test-project",
@@ -563,6 +541,18 @@ func TestRegularStagesReconciler_reconcile(t *testing.T) {
 								"Warehouse/test-warehouse": {Name: "test-freight"},
 							},
 						},
+					},
+				},
+			},
+			freight: []*kargoapi.Freight{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "test-project",
+						Name:      "test-freight",
+					},
+					Origin: kargoapi.FreightOrigin{
+						Kind: kargoapi.FreightOriginKindWarehouse,
+						Name: "test-warehouse",
 					},
 				},
 			},
@@ -604,31 +594,11 @@ func TestRegularStagesReconciler_reconcile(t *testing.T) {
 			c := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithObjects(objects...).
-				WithStatusSubresource(&kargoapi.Stage{}, &kargoapi.Freight{}).
+				WithStatusSubresource(&kargoapi.Stage{}).
 				WithIndex(
 					&kargoapi.Promotion{},
 					indexer.PromotionsByStageField,
 					indexer.PromotionsByStage,
-				).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightByWarehouseField,
-					indexer.FreightByWarehouse,
-				).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightByCurrentStagesField,
-					indexer.FreightByCurrentStages,
-				).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightByVerifiedStagesField,
-					indexer.FreightByVerifiedStages,
-				).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightApprovedForStagesField,
-					indexer.FreightApprovedForStages,
 				).
 				WithIndex(
 					&kargoapi.Promotion{},
@@ -646,6 +616,7 @@ func TestRegularStagesReconciler_reconcile(t *testing.T) {
 			r := &RegularStageReconciler{
 				client:        c,
 				eventSender:   k8sevent.NewEventSender(fakeevent.NewEventRecorder(10)),
+				freightStore:  memory.NewStore(tt.freight...),
 				healthChecker: &health.MockAggregatingChecker{},
 			}
 
@@ -679,6 +650,7 @@ func TestRegularStageReconciler_syncPromotions(t *testing.T) {
 		autoPromotionEnabled bool
 		stage                *kargoapi.Stage
 		objects              []client.Object
+		freight              []*kargoapi.Freight
 		interceptor          interceptor.Funcs
 		assertions           func(*testing.T, kargoapi.StageStatus, bool, error)
 	}{
@@ -1445,16 +1417,6 @@ func TestRegularStageReconciler_syncPromotions(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "newest-freight",
-						Namespace: "fake-project",
-					},
-					Origin: kargoapi.FreightOrigin{
-						Kind: kargoapi.FreightOriginKindWarehouse,
-						Name: "test-warehouse",
-					},
-				},
 				&kargoapi.Promotion{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "auto-promotion",
@@ -1482,6 +1444,18 @@ func TestRegularStageReconciler_syncPromotions(t *testing.T) {
 					},
 					Status: kargoapi.PromotionStatus{
 						Phase: kargoapi.PromotionPhaseSucceeded,
+					},
+				},
+			},
+			freight: []*kargoapi.Freight{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "newest-freight",
+						Namespace: "fake-project",
+					},
+					Origin: kargoapi.FreightOrigin{
+						Kind: kargoapi.FreightOriginKindWarehouse,
+						Name: "test-warehouse",
 					},
 				},
 			},
@@ -2279,8 +2253,9 @@ func TestRegularStageReconciler_syncPromotions(t *testing.T) {
 				Build()
 
 			r := &RegularStageReconciler{
-				client:      c,
-				eventSender: k8sevent.NewEventSender(fakeevent.NewEventRecorder(10)),
+				client:       c,
+				eventSender:  k8sevent.NewEventSender(fakeevent.NewEventRecorder(10)),
+				freightStore: memory.NewStore(tt.freight...),
 			}
 
 			status, requeue, err := r.syncPromotions(t.Context(), tt.stage, tt.autoPromotionEnabled)
@@ -2428,7 +2403,9 @@ func TestRegularStageReconciler_syncPromotionRequests(t *testing.T) {
 		name        string
 		stage       *kargoapi.Stage
 		objects     []client.Object
+		freight     []*kargoapi.Freight
 		interceptor interceptor.Funcs
+		hooks       memory.Hooks
 		assertions  func(*testing.T, kargoapi.StageStatus, error)
 	}{
 		{
@@ -2844,8 +2821,10 @@ func TestRegularStageReconciler_syncPromotionRequests(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				testFreight("test-freight", "test-warehouse"),
 				testPromotionRequest(olderRequest, "test-freight", kargoapi.PromotionRequestPhaseSucceeded, &now),
+			},
+			freight: []*kargoapi.Freight{
+				testFreight("test-freight", "test-warehouse"),
 			},
 			assertions: func(t *testing.T, status kargoapi.StageStatus, err error) {
 				require.NoError(t, err)
@@ -2877,8 +2856,10 @@ func TestRegularStageReconciler_syncPromotionRequests(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				testFreight("test-freight", "test-warehouse"),
 				testPromotionRequest(olderRequest, "test-freight", kargoapi.PromotionRequestPhaseFailed, &now),
+			},
+			freight: []*kargoapi.Freight{
+				testFreight("test-freight", "test-warehouse"),
 			},
 			assertions: func(t *testing.T, status kargoapi.StageStatus, err error) {
 				require.NoError(t, err)
@@ -2917,21 +2898,14 @@ func TestRegularStageReconciler_syncPromotionRequests(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				testFreight("test-freight", "test-warehouse"),
 				testPromotionRequest(olderRequest, "test-freight", kargoapi.PromotionRequestPhaseSucceeded, &now),
 			},
-			interceptor: interceptor.Funcs{
-				Get: func(
-					ctx context.Context,
-					c client.WithWatch,
-					key client.ObjectKey,
-					obj client.Object,
-					opts ...client.GetOption,
-				) error {
-					if _, ok := obj.(*kargoapi.Freight); ok {
-						return fmt.Errorf("get error")
-					}
-					return c.Get(ctx, key, obj, opts...)
+			freight: []*kargoapi.Freight{
+				testFreight("test-freight", "test-warehouse"),
+			},
+			hooks: memory.Hooks{
+				Get: func(context.Context, string, string) error {
+					return fmt.Errorf("get error")
 				},
 			},
 			assertions: func(t *testing.T, status kargoapi.StageStatus, err error) {
@@ -2960,8 +2934,10 @@ func TestRegularStageReconciler_syncPromotionRequests(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				testFreight("test-freight", "test-warehouse"),
 				testPromotionRequest(olderRequest, "test-freight", kargoapi.PromotionRequestPhaseSucceeded, &now),
+			},
+			freight: []*kargoapi.Freight{
+				testFreight("test-freight", "test-warehouse"),
 			},
 			assertions: func(t *testing.T, status kargoapi.StageStatus, err error) {
 				require.NoError(t, err)
@@ -2986,10 +2962,12 @@ func TestRegularStageReconciler_syncPromotionRequests(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				testFreight("test-freight", "test-warehouse"),
-				testFreight("newer-freight", "test-warehouse"),
 				testPromotionRequest(olderRequest, "test-freight", kargoapi.PromotionRequestPhaseSucceeded, &now),
 				testPromotionRequest(newerRequest, "newer-freight", kargoapi.PromotionRequestPhaseSucceeded, &now),
+			},
+			freight: []*kargoapi.Freight{
+				testFreight("test-freight", "test-warehouse"),
+				testFreight("newer-freight", "test-warehouse"),
 			},
 			assertions: func(t *testing.T, status kargoapi.StageStatus, err error) {
 				require.NoError(t, err)
@@ -3035,9 +3013,11 @@ func TestRegularStageReconciler_syncPromotionRequests(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				testFreight("new-config", "config"),
 				testPromotionRequest(olderRequest, "new-images", kargoapi.PromotionRequestPhaseSucceeded, &now),
 				testPromotionRequest(newerRequest, "new-config", kargoapi.PromotionRequestPhaseSucceeded, &now),
+			},
+			freight: []*kargoapi.Freight{
+				testFreight("new-config", "config"),
 			},
 			assertions: func(t *testing.T, status kargoapi.StageStatus, err error) {
 				require.NoError(t, err)
@@ -3070,12 +3050,14 @@ func TestRegularStageReconciler_syncPromotionRequests(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				testFreight("test-freight", "test-warehouse"),
-				testFreight("newer-freight", "test-warehouse"),
-				testFreight("newest-freight", "test-warehouse"),
 				testPromotionRequest(olderRequest, "test-freight", kargoapi.PromotionRequestPhaseSucceeded, &now),
 				testPromotionRequest(newerRequest, "newer-freight", kargoapi.PromotionRequestPhaseSucceeded, &now),
 				testPromotionRequest(newestRequest, "newest-freight", kargoapi.PromotionRequestPhaseFailed, &now),
+			},
+			freight: []*kargoapi.Freight{
+				testFreight("test-freight", "test-warehouse"),
+				testFreight("newer-freight", "test-warehouse"),
+				testFreight("newest-freight", "test-warehouse"),
 			},
 			assertions: func(t *testing.T, status kargoapi.StageStatus, err error) {
 				require.NoError(t, err)
@@ -3120,10 +3102,12 @@ func TestRegularStageReconciler_syncPromotionRequests(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				testFreight("new-images", "images"),
-				testFreight("new-config", "config"),
 				testPromotionRequest(olderRequest, "new-images", kargoapi.PromotionRequestPhaseSucceeded, &now),
 				testPromotionRequest(newerRequest, "new-config", kargoapi.PromotionRequestPhaseSucceeded, &now),
+			},
+			freight: []*kargoapi.Freight{
+				testFreight("new-images", "images"),
+				testFreight("new-config", "config"),
 			},
 			assertions: func(t *testing.T, status kargoapi.StageStatus, err error) {
 				require.NoError(t, err)
@@ -3159,9 +3143,13 @@ func TestRegularStageReconciler_syncPromotionRequests(t *testing.T) {
 				WithInterceptorFuncs(tt.interceptor).
 				Build()
 
+			store := memory.NewStore(tt.freight...)
+			store.Hooks = tt.hooks
+
 			r := &RegularStageReconciler{
-				client:      c,
-				eventSender: k8sevent.NewEventSender(fakeevent.NewEventRecorder(10)),
+				client:       c,
+				eventSender:  k8sevent.NewEventSender(fakeevent.NewEventRecorder(10)),
+				freightStore: store,
 			}
 
 			status, err := r.syncPromotionRequests(t.Context(), tt.stage)
@@ -3189,19 +3177,19 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name        string
-		objects     []client.Object
-		interceptor interceptor.Funcs
-		assertions  func(*testing.T, client.Client, error)
+		name       string
+		freight    []*kargoapi.Freight
+		hooks      memory.Hooks
+		assertions func(*testing.T, *memory.Store, error)
 	}{
 		{
 			name: "error listing Freight",
-			interceptor: interceptor.Funcs{
-				List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+			hooks: memory.Hooks{
+				List: func(context.Context, string, libFreight.ListOptions) error {
 					return fmt.Errorf("something went wrong")
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, err error) {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), "error listing Freight in namespace")
 				require.Contains(t, err.Error(), "something went wrong")
@@ -3209,12 +3197,12 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 		},
 		{
 			name: "error getting Freight",
-			interceptor: interceptor.Funcs{
-				Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
+			hooks: memory.Hooks{
+				Get: func(context.Context, string, string) error {
 					return fmt.Errorf("something went wrong")
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, err error) {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), "error getting Freight")
 				require.Contains(t, err.Error(), "something went wrong")
@@ -3222,20 +3210,20 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 		},
 		{
 			name: "successful sync",
-			objects: []client.Object{
-				&kargoapi.Freight{ // The Stage is using this, but the Freight doesn't know it.
+			freight: []*kargoapi.Freight{
+				{ // The Stage is using this, but the Freight doesn't know it.
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-1",
 					},
 				},
-				&kargoapi.Freight{ // The Stage is using this, but the Freight doesn't know it.
+				{ // The Stage is using this, but the Freight doesn't know it.
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-2",
 					},
 				},
-				&kargoapi.Freight{ // The Freight thinks the Stage is using this, but it's not.
+				{ // The Freight thinks the Stage is using this, but it's not.
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-3",
@@ -3244,7 +3232,7 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 						CurrentlyIn: map[string]kargoapi.CurrentStage{testStage.Name: {}},
 					},
 				},
-				&kargoapi.Freight{ // The Freight thinks the Stage is using this, but it's not.
+				{ // The Freight thinks the Stage is using this, but it's not.
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-4",
@@ -3254,43 +3242,27 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, c client.Client, err error) {
+			assertions: func(t *testing.T, store *memory.Store, err error) {
 				require.NoError(t, err)
-				freight := &kargoapi.Freight{}
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{Namespace: testProject, Name: "fake-freight-1"},
-					freight,
-				)
+				var freight *kargoapi.Freight
+				freight, err = store.Get(t.Context(), testProject, "fake-freight-1")
 				require.NoError(t, err)
 				require.Contains(t, freight.Status.CurrentlyIn, testStage.Name)
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{Namespace: testProject, Name: "fake-freight-2"},
-					freight,
-				)
+				freight, err = store.Get(t.Context(), testProject, "fake-freight-2")
 				require.NoError(t, err)
 				require.Contains(t, freight.Status.CurrentlyIn, testStage.Name)
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{Namespace: testProject, Name: "fake-freight-3"},
-					freight,
-				)
+				freight, err = store.Get(t.Context(), testProject, "fake-freight-3")
 				require.NoError(t, err)
 				require.NotContains(t, freight.Status.CurrentlyIn, testStage.Name)
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{Namespace: testProject, Name: "fake-freight-4"},
-					freight,
-				)
+				freight, err = store.Get(t.Context(), testProject, "fake-freight-4")
 				require.NoError(t, err)
 				require.NotContains(t, freight.Status.CurrentlyIn, testStage.Name)
 			},
 		},
 		{
 			name: "removes verified freight and updates soak time when current soak is longer",
-			objects: []client.Object{
-				&kargoapi.Freight{ // The Stage is using this, and the Freight knows it.
+			freight: []*kargoapi.Freight{
+				{ // The Stage is using this, and the Freight knows it.
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-1",
@@ -3299,7 +3271,7 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 						CurrentlyIn: map[string]kargoapi.CurrentStage{testStage.Name: {}},
 					},
 				},
-				&kargoapi.Freight{ // The Stage is using this, and the Freight knows it.
+				{ // The Stage is using this, and the Freight knows it.
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-2",
@@ -3308,7 +3280,7 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 						CurrentlyIn: map[string]kargoapi.CurrentStage{testStage.Name: {}},
 					},
 				},
-				&kargoapi.Freight{ // Verified freight that should have soak time updated
+				{ // Verified freight that should have soak time updated
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "verified-freight",
@@ -3327,33 +3299,21 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, c client.Client, err error) {
+			assertions: func(t *testing.T, store *memory.Store, err error) {
 				require.NoError(t, err)
 
 				// Check that expected freight remain in CurrentlyIn (they're in the stage's FreightHistory)
-				freight := &kargoapi.Freight{}
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{Namespace: testProject, Name: "fake-freight-1"},
-					freight,
-				)
+				var freight *kargoapi.Freight
+				freight, err = store.Get(t.Context(), testProject, "fake-freight-1")
 				require.NoError(t, err)
 				require.Contains(t, freight.Status.CurrentlyIn, testStage.Name)
 
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{Namespace: testProject, Name: "fake-freight-2"},
-					freight,
-				)
+				freight, err = store.Get(t.Context(), testProject, "fake-freight-2")
 				require.NoError(t, err)
 				require.Contains(t, freight.Status.CurrentlyIn, testStage.Name)
 
 				// Check verified freight - should be removed from CurrentlyIn and soak time updated
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{Namespace: testProject, Name: "verified-freight"},
-					freight,
-				)
+				freight, err = store.Get(t.Context(), testProject, "verified-freight")
 				require.NoError(t, err)
 				require.NotContains(t, freight.Status.CurrentlyIn, testStage.Name)
 				require.Contains(t, freight.Status.VerifiedIn, testStage.Name)
@@ -3364,8 +3324,8 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 		},
 		{
 			name: "removes unverified freight without affecting verification status",
-			objects: []client.Object{
-				&kargoapi.Freight{ // The Stage is using this, and the Freight knows it.
+			freight: []*kargoapi.Freight{
+				{ // The Stage is using this, and the Freight knows it.
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-1",
@@ -3374,7 +3334,7 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 						CurrentlyIn: map[string]kargoapi.CurrentStage{testStage.Name: {}},
 					},
 				},
-				&kargoapi.Freight{ // The Stage is using this, and the Freight knows it.
+				{ // The Stage is using this, and the Freight knows it.
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-2",
@@ -3383,7 +3343,7 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 						CurrentlyIn: map[string]kargoapi.CurrentStage{testStage.Name: {}},
 					},
 				},
-				&kargoapi.Freight{ // Unverified freight that should just be removed
+				{ // Unverified freight that should just be removed
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "unverified-freight",
@@ -3397,16 +3357,12 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, c client.Client, err error) {
+			assertions: func(t *testing.T, store *memory.Store, err error) {
 				require.NoError(t, err)
 
 				// Check unverified freight - should just be removed from CurrentlyIn
-				freight := &kargoapi.Freight{}
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{Namespace: testProject, Name: "unverified-freight"},
-					freight,
-				)
+				var freight *kargoapi.Freight
+				freight, err = store.Get(t.Context(), testProject, "unverified-freight")
 				require.NoError(t, err)
 				require.NotContains(t, freight.Status.CurrentlyIn, testStage.Name)
 				require.NotContains(t, freight.Status.VerifiedIn, testStage.Name)
@@ -3414,8 +3370,8 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 		},
 		{
 			name: "preserves longer existing soak time for verified freight",
-			objects: []client.Object{
-				&kargoapi.Freight{ // The Stage is using this, and the Freight knows it.
+			freight: []*kargoapi.Freight{
+				{ // The Stage is using this, and the Freight knows it.
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-1",
@@ -3424,7 +3380,7 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 						CurrentlyIn: map[string]kargoapi.CurrentStage{testStage.Name: {}},
 					},
 				},
-				&kargoapi.Freight{ // The Stage is using this, and the Freight knows it.
+				{ // The Stage is using this, and the Freight knows it.
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-2",
@@ -3433,7 +3389,7 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 						CurrentlyIn: map[string]kargoapi.CurrentStage{testStage.Name: {}},
 					},
 				},
-				&kargoapi.Freight{ // Verified freight with longer existing soak time
+				{ // Verified freight with longer existing soak time
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "longer-soak-freight",
@@ -3452,16 +3408,12 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, c client.Client, err error) {
+			assertions: func(t *testing.T, store *memory.Store, err error) {
 				require.NoError(t, err)
 
 				// Check longer soak freight - should be removed but soak time should not be updated
-				freight := &kargoapi.Freight{}
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{Namespace: testProject, Name: "longer-soak-freight"},
-					freight,
-				)
+				var freight *kargoapi.Freight
+				freight, err = store.Get(t.Context(), testProject, "longer-soak-freight")
 				require.NoError(t, err)
 				require.NotContains(t, freight.Status.CurrentlyIn, testStage.Name)
 				require.Contains(t, freight.Status.VerifiedIn, testStage.Name)
@@ -3471,8 +3423,8 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 		},
 		{
 			name: "handles freight with nil Since field gracefully",
-			objects: []client.Object{
-				&kargoapi.Freight{ // The Stage is using this, and the Freight knows it.
+			freight: []*kargoapi.Freight{
+				{ // The Stage is using this, and the Freight knows it.
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-1",
@@ -3485,7 +3437,7 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 						},
 					},
 				},
-				&kargoapi.Freight{ // The Stage is using this, and the Freight knows it.
+				{ // The Stage is using this, and the Freight knows it.
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-2",
@@ -3498,7 +3450,7 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 						},
 					},
 				},
-				&kargoapi.Freight{ // Freight with nil Since field - should not panic
+				{ // Freight with nil Since field - should not panic
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "nil-since-freight",
@@ -3517,33 +3469,21 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, c client.Client, err error) {
+			assertions: func(t *testing.T, store *memory.Store, err error) {
 				require.NoError(t, err)
 
 				// Check that expected freight remains in CurrentlyIn (they're in the stage's FreightHistory)
-				freight := &kargoapi.Freight{}
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{Namespace: testProject, Name: "fake-freight-1"},
-					freight,
-				)
+				var freight *kargoapi.Freight
+				freight, err = store.Get(t.Context(), testProject, "fake-freight-1")
 				require.NoError(t, err)
 				require.Contains(t, freight.Status.CurrentlyIn, testStage.Name)
 
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{Namespace: testProject, Name: "fake-freight-2"},
-					freight,
-				)
+				freight, err = store.Get(t.Context(), testProject, "fake-freight-2")
 				require.NoError(t, err)
 				require.Contains(t, freight.Status.CurrentlyIn, testStage.Name)
 
 				// Should handle nil Since field gracefully without panic
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{Namespace: testProject, Name: "nil-since-freight"},
-					freight,
-				)
+				freight, err = store.Get(t.Context(), testProject, "nil-since-freight")
 				require.NoError(t, err)
 				require.NotContains(t, freight.Status.CurrentlyIn, testStage.Name)
 				require.Contains(t, freight.Status.VerifiedIn, testStage.Name)
@@ -3553,8 +3493,8 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 		},
 		{
 			name: "handles freight with nil LongestCompletedSoak gracefully",
-			objects: []client.Object{
-				&kargoapi.Freight{ // The Stage is using this, and the Freight knows it.
+			freight: []*kargoapi.Freight{
+				{ // The Stage is using this, and the Freight knows it.
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-1",
@@ -3567,7 +3507,7 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 						},
 					},
 				},
-				&kargoapi.Freight{ // The Stage is using this, and the Freight knows it.
+				{ // The Stage is using this, and the Freight knows it.
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-2",
@@ -3580,7 +3520,7 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 						},
 					},
 				},
-				&kargoapi.Freight{ // Freight with nil LongestCompletedSoak
+				{ // Freight with nil LongestCompletedSoak
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "nil-soak-freight",
@@ -3599,33 +3539,21 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, c client.Client, err error) {
+			assertions: func(t *testing.T, store *memory.Store, err error) {
 				require.NoError(t, err)
 
 				// Check that expected freight remains in CurrentlyIn (they're in the stage's FreightHistory)
-				freight := &kargoapi.Freight{}
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{Namespace: testProject, Name: "fake-freight-1"},
-					freight,
-				)
+				var freight *kargoapi.Freight
+				freight, err = store.Get(t.Context(), testProject, "fake-freight-1")
 				require.NoError(t, err)
 				require.Contains(t, freight.Status.CurrentlyIn, testStage.Name)
 
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{Namespace: testProject, Name: "fake-freight-2"},
-					freight,
-				)
+				freight, err = store.Get(t.Context(), testProject, "fake-freight-2")
 				require.NoError(t, err)
 				require.Contains(t, freight.Status.CurrentlyIn, testStage.Name)
 
 				// Should handle nil LongestCompletedSoak gracefully
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{Namespace: testProject, Name: "nil-soak-freight"},
-					freight,
-				)
+				freight, err = store.Get(t.Context(), testProject, "nil-soak-freight")
 				require.NoError(t, err)
 				require.NotContains(t, freight.Status.CurrentlyIn, testStage.Name)
 				require.Contains(t, freight.Status.VerifiedIn, testStage.Name)
@@ -3636,27 +3564,15 @@ func TestRegularStageReconciler_syncFreight(t *testing.T) {
 		},
 	}
 
-	scheme := runtime.NewScheme()
-	require.NoError(t, kargoapi.AddToScheme(scheme))
-
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			c := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(testCase.objects...).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightByCurrentStagesField,
-					indexer.FreightByCurrentStages,
-				).
-				WithStatusSubresource(&kargoapi.Stage{}, &kargoapi.Freight{}).
-				WithInterceptorFuncs(testCase.interceptor).
-				Build()
+			store := memory.NewStore(testCase.freight...)
+			store.Hooks = testCase.hooks
 
-			r := &RegularStageReconciler{client: c}
+			r := &RegularStageReconciler{freightStore: store}
 
 			err := r.syncFreight(t.Context(), testStage)
-			testCase.assertions(t, c, err)
+			testCase.assertions(t, store, err)
 		})
 	}
 }
@@ -3950,6 +3866,7 @@ func TestRegularStageReconciler_verifyStageFreight(t *testing.T) {
 		name             string
 		stage            *kargoapi.Stage
 		objects          []client.Object
+		freight          []*kargoapi.Freight
 		assertions       func(*testing.T, client.Client, *fakeevent.EventRecorder, kargoapi.StageStatus, error)
 		rolloutsDisabled bool
 	}{
@@ -4042,14 +3959,14 @@ func TestRegularStageReconciler_verifyStageFreight(t *testing.T) {
 					},
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-freight",
 						Namespace: "fake-project",
 					},
 				},
-				&kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-freight-2",
 						Namespace: "fake-project",
@@ -4188,8 +4105,8 @@ func TestRegularStageReconciler_verifyStageFreight(t *testing.T) {
 					},
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-freight",
 						Namespace: "fake-project",
@@ -4257,15 +4174,17 @@ func TestRegularStageReconciler_verifyStageFreight(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-freight",
-						Namespace: "fake-project",
-					},
-				},
 				&rolloutsapi.AnalysisRun{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-analysis-run",
+						Namespace: "fake-project",
+					},
+				},
+			},
+			freight: []*kargoapi.Freight{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-freight",
 						Namespace: "fake-project",
 					},
 				},
@@ -4340,8 +4259,8 @@ func TestRegularStageReconciler_verifyStageFreight(t *testing.T) {
 					},
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-freight",
 						Namespace: "fake-project",
@@ -4492,8 +4411,8 @@ func TestRegularStageReconciler_verifyStageFreight(t *testing.T) {
 					},
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-freight",
 						Namespace: "fake-project",
@@ -4551,12 +4470,6 @@ func TestRegularStageReconciler_verifyStageFreight(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-freight",
-						Namespace: "fake-project",
-					},
-				},
 				&rolloutsapi.AnalysisRun{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "existing-analysis",
@@ -4569,6 +4482,14 @@ func TestRegularStageReconciler_verifyStageFreight(t *testing.T) {
 					Status: rolloutsapi.AnalysisRunStatus{
 						Phase:   "Successful",
 						Message: "Analysis completed successfully",
+					},
+				},
+			},
+			freight: []*kargoapi.Freight{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-freight",
+						Namespace: "fake-project",
 					},
 				},
 			},
@@ -4637,8 +4558,8 @@ func TestRegularStageReconciler_verifyStageFreight(t *testing.T) {
 					},
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-freight",
 						Namespace: "fake-project",
@@ -4711,12 +4632,6 @@ func TestRegularStageReconciler_verifyStageFreight(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-freight",
-						Namespace: "fake-project",
-					},
-				},
 				&rolloutsapi.AnalysisRun{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-analysis-run",
@@ -4725,6 +4640,14 @@ func TestRegularStageReconciler_verifyStageFreight(t *testing.T) {
 					Status: rolloutsapi.AnalysisRunStatus{
 						Phase:   "Failed",
 						Message: "Analysis failed due to metric error",
+					},
+				},
+			},
+			freight: []*kargoapi.Freight{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-freight",
+						Namespace: "fake-project",
 					},
 				},
 			},
@@ -4769,7 +4692,8 @@ func TestRegularStageReconciler_verifyStageFreight(t *testing.T) {
 			recorder := fakeevent.NewEventRecorder(10)
 
 			r := &RegularStageReconciler{
-				client: c,
+				client:       c,
+				freightStore: memory.NewStore(tt.freight...),
 				cfg: ReconcilerConfig{
 					RolloutsIntegrationEnabled: !tt.rolloutsDisabled,
 				},
@@ -4790,16 +4714,14 @@ func TestRegularStageReconciler_verifyStageFreight(t *testing.T) {
 }
 
 func TestRegularStageReconciler_markFreightVerifiedForStage(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, kargoapi.AddToScheme(scheme))
-
 	endTime := metav1.Now()
 
 	tests := []struct {
 		name       string
 		stage      *kargoapi.Stage
-		objects    []client.Object
-		assertions func(*testing.T, client.Client, kargoapi.StageStatus, error)
+		freight    []*kargoapi.Freight
+		hooks      memory.Hooks
+		assertions func(*testing.T, *memory.Store, kargoapi.StageStatus, error)
 	}{
 		{
 			name: "skips verification when unhealthy",
@@ -4827,7 +4749,7 @@ func TestRegularStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, status kargoapi.StageStatus, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, status kargoapi.StageStatus, err error) {
 				require.NoError(t, err)
 				// Status should remain unchanged
 				assert.Equal(t, kargoapi.HealthStateUnhealthy, status.Health.Status)
@@ -4846,7 +4768,7 @@ func TestRegularStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, _ kargoapi.StageStatus, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, _ kargoapi.StageStatus, err error) {
 				require.NoError(t, err)
 			},
 		},
@@ -4876,7 +4798,7 @@ func TestRegularStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, _ kargoapi.StageStatus, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, _ kargoapi.StageStatus, err error) {
 				require.NoError(t, err)
 			},
 		},
@@ -4906,7 +4828,7 @@ func TestRegularStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, _ kargoapi.StageStatus, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, _ kargoapi.StageStatus, err error) {
 				require.NoError(t, err)
 			},
 		},
@@ -4936,7 +4858,7 @@ func TestRegularStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, _ kargoapi.StageStatus, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, _ kargoapi.StageStatus, err error) {
 				require.ErrorContains(t, err, "error getting Freight")
 			},
 		},
@@ -4967,23 +4889,20 @@ func TestRegularStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 					},
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "fake-project",
 						Name:      "test-freight",
 					},
 				},
 			},
-			assertions: func(t *testing.T, c client.Client, _ kargoapi.StageStatus, err error) {
+			assertions: func(t *testing.T, store *memory.Store, _ kargoapi.StageStatus, err error) {
 				require.NoError(t, err)
 
 				// Check if freight was properly marked as verified
-				freight := &kargoapi.Freight{}
-				require.NoError(t, c.Get(t.Context(), client.ObjectKey{
-					Namespace: "fake-project",
-					Name:      "test-freight",
-				}, freight))
+				freight, err := store.Get(t.Context(), "fake-project", "test-freight")
+				require.NoError(t, err)
 
 				verifiedStage, ok := freight.Status.VerifiedIn["test-stage"]
 				require.True(t, ok)
@@ -5016,8 +4935,8 @@ func TestRegularStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 					},
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "fake-project",
 						Name:      "test-freight",
@@ -5029,15 +4948,12 @@ func TestRegularStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, c client.Client, _ kargoapi.StageStatus, err error) {
+			assertions: func(t *testing.T, store *memory.Store, _ kargoapi.StageStatus, err error) {
 				require.NoError(t, err)
 
 				// Verify no changes were made to the freight
-				freight := &kargoapi.Freight{}
-				require.NoError(t, c.Get(t.Context(), client.ObjectKey{
-					Namespace: "fake-project",
-					Name:      "test-freight",
-				}, freight))
+				freight, err := store.Get(t.Context(), "fake-project", "test-freight")
+				require.NoError(t, err)
 				assert.Len(t, freight.Status.VerifiedIn, 1)
 			},
 		},
@@ -5069,15 +4985,15 @@ func TestRegularStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 					},
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "fake-project",
 						Name:      "freight-1",
 					},
 					Status: kargoapi.FreightStatus{},
 				},
-				&kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "fake-project",
 						Name:      "freight-2",
@@ -5085,16 +5001,13 @@ func TestRegularStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 					Status: kargoapi.FreightStatus{},
 				},
 			},
-			assertions: func(t *testing.T, c client.Client, _ kargoapi.StageStatus, err error) {
+			assertions: func(t *testing.T, store *memory.Store, _ kargoapi.StageStatus, err error) {
 				require.NoError(t, err)
 
 				// Check both freight objects were marked as verified
 				for _, name := range []string{"freight-1", "freight-2"} {
-					freight := &kargoapi.Freight{}
-					require.NoError(t, c.Get(t.Context(), client.ObjectKey{
-						Namespace: "fake-project",
-						Name:      name,
-					}, freight))
+					freight, err := store.Get(t.Context(), "fake-project", name)
+					require.NoError(t, err)
 
 					verifiedStage, ok := freight.Status.VerifiedIn["test-stage"]
 					require.True(t, ok, "freight %s should be verified", name)
@@ -5129,16 +5042,20 @@ func TestRegularStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 					},
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
-						Namespace:       "fake-project",
-						Name:            "test-freight",
-						ResourceVersion: "invalid", // This will cause patch to fail
+						Namespace: "fake-project",
+						Name:      "test-freight",
 					},
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, _ kargoapi.StageStatus, err error) {
+			hooks: memory.Hooks{
+				UpdateStatus: func(context.Context, string, string) error {
+					return fmt.Errorf("something went wrong")
+				},
+			},
+			assertions: func(t *testing.T, _ *memory.Store, _ kargoapi.StageStatus, err error) {
 				require.ErrorContains(t, err, "error marking Freight")
 			},
 		},
@@ -5164,7 +5081,7 @@ func TestRegularStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, _ kargoapi.StageStatus, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, _ kargoapi.StageStatus, err error) {
 				require.NoError(t, err)
 			},
 		},
@@ -5192,7 +5109,7 @@ func TestRegularStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, _ kargoapi.StageStatus, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, _ kargoapi.StageStatus, err error) {
 				require.NoError(t, err)
 			},
 		},
@@ -5200,19 +5117,16 @@ func TestRegularStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(tt.objects...).
-				WithStatusSubresource(&kargoapi.Stage{}, &kargoapi.Freight{}).
-				Build()
+			store := memory.NewStore(tt.freight...)
+			store.Hooks = tt.hooks
 
 			r := &RegularStageReconciler{
-				client:        c,
+				freightStore:  store,
 				healthChecker: &health.MockAggregatingChecker{},
 			}
 
 			status, err := r.markFreightVerifiedForStage(t.Context(), tt.stage)
-			tt.assertions(t, c, status, err)
+			tt.assertions(t, store, status, err)
 		})
 	}
 }
@@ -5252,6 +5166,7 @@ func TestRegularStageReconciler_recordFreightVerificationEvent(t *testing.T) {
 		freightRef kargoapi.FreightReference
 		vi         *kargoapi.VerificationInfo
 		objects    []client.Object
+		freight    []*kargoapi.Freight
 		assertions func(*testing.T, *fakeevent.EventRecorder)
 	}{
 		{
@@ -5263,7 +5178,7 @@ func TestRegularStageReconciler_recordFreightVerificationEvent(t *testing.T) {
 				StartTime:  &startTime,
 				FinishTime: &finishTime,
 			},
-			objects: []client.Object{baseFreight},
+			freight: []*kargoapi.Freight{baseFreight},
 			assertions: func(t *testing.T, recorder *fakeevent.EventRecorder) {
 				require.Len(t, recorder.Events, 1)
 
@@ -5294,7 +5209,7 @@ func TestRegularStageReconciler_recordFreightVerificationEvent(t *testing.T) {
 				Phase:   kargoapi.VerificationPhaseFailed,
 				Message: "verification failed due to metrics",
 			},
-			objects: []client.Object{baseFreight},
+			freight: []*kargoapi.Freight{baseFreight},
 			assertions: func(t *testing.T, recorder *fakeevent.EventRecorder) {
 				require.Len(t, recorder.Events, 1)
 
@@ -5315,7 +5230,6 @@ func TestRegularStageReconciler_recordFreightVerificationEvent(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				baseFreight,
 				&rolloutsapi.AnalysisRun{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-analysis",
@@ -5325,6 +5239,9 @@ func TestRegularStageReconciler_recordFreightVerificationEvent(t *testing.T) {
 						},
 					},
 				},
+			},
+			freight: []*kargoapi.Freight{
+				baseFreight,
 			},
 			assertions: func(t *testing.T, recorder *fakeevent.EventRecorder) {
 				require.Len(t, recorder.Events, 1)
@@ -5342,7 +5259,7 @@ func TestRegularStageReconciler_recordFreightVerificationEvent(t *testing.T) {
 				Phase: kargoapi.VerificationPhaseSuccessful,
 				Actor: "manual-user",
 			},
-			objects: []client.Object{baseFreight},
+			freight: []*kargoapi.Freight{baseFreight},
 			assertions: func(t *testing.T, recorder *fakeevent.EventRecorder) {
 				require.Len(t, recorder.Events, 1)
 
@@ -5357,7 +5274,7 @@ func TestRegularStageReconciler_recordFreightVerificationEvent(t *testing.T) {
 			vi: &kargoapi.VerificationInfo{
 				Phase: kargoapi.VerificationPhaseSuccessful,
 			},
-			objects: []client.Object{
+			freight: []*kargoapi.Freight{
 				// Freight does not exist
 			},
 			assertions: func(t *testing.T, recorder *fakeevent.EventRecorder) {
@@ -5376,7 +5293,7 @@ func TestRegularStageReconciler_recordFreightVerificationEvent(t *testing.T) {
 					Namespace: "test-project",
 				},
 			},
-			objects: []client.Object{baseFreight},
+			freight: []*kargoapi.Freight{baseFreight},
 			assertions: func(t *testing.T, recorder *fakeevent.EventRecorder) {
 				require.Len(t, recorder.Events, 1)
 
@@ -5394,7 +5311,7 @@ func TestRegularStageReconciler_recordFreightVerificationEvent(t *testing.T) {
 				Phase:   kargoapi.VerificationPhaseError,
 				Message: "internal error occurred",
 			},
-			objects: []client.Object{baseFreight},
+			freight: []*kargoapi.Freight{baseFreight},
 			assertions: func(t *testing.T, recorder *fakeevent.EventRecorder) {
 				require.Len(t, recorder.Events, 1)
 
@@ -5411,7 +5328,7 @@ func TestRegularStageReconciler_recordFreightVerificationEvent(t *testing.T) {
 				Phase:   kargoapi.VerificationPhaseAborted,
 				Message: "verification was canceled",
 			},
-			objects: []client.Object{baseFreight},
+			freight: []*kargoapi.Freight{baseFreight},
 			assertions: func(t *testing.T, recorder *fakeevent.EventRecorder) {
 				require.Len(t, recorder.Events, 1)
 
@@ -5428,7 +5345,7 @@ func TestRegularStageReconciler_recordFreightVerificationEvent(t *testing.T) {
 				Phase:   kargoapi.VerificationPhaseInconclusive,
 				Message: "results were inconclusive",
 			},
-			objects: []client.Object{baseFreight},
+			freight: []*kargoapi.Freight{baseFreight},
 			assertions: func(t *testing.T, recorder *fakeevent.EventRecorder) {
 				require.Len(t, recorder.Events, 1)
 
@@ -5445,7 +5362,7 @@ func TestRegularStageReconciler_recordFreightVerificationEvent(t *testing.T) {
 				Phase:   "invalid-phase",
 				Message: "custom message",
 			},
-			objects: []client.Object{baseFreight},
+			freight: []*kargoapi.Freight{baseFreight},
 			assertions: func(t *testing.T, recorder *fakeevent.EventRecorder) {
 				require.Len(t, recorder.Events, 1)
 
@@ -5466,8 +5383,9 @@ func TestRegularStageReconciler_recordFreightVerificationEvent(t *testing.T) {
 			recorder := fakeevent.NewEventRecorder(10)
 
 			r := &RegularStageReconciler{
-				client:      c,
-				eventSender: k8sevent.NewEventSender(recorder),
+				client:       c,
+				eventSender:  k8sevent.NewEventSender(recorder),
+				freightStore: memory.NewStore(tt.freight...),
 			}
 
 			r.recordFreightVerificationEvent(tt.stage, tt.freightRef, tt.vi)
@@ -5639,14 +5557,6 @@ func TestRegularStageReconciler_startVerification(t *testing.T) {
 					"warehouse": {Name: "test-freight"},
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-freight",
-						Namespace: "fake-project",
-					},
-				},
-			},
 			assertions: func(t *testing.T, c client.Client, vi *kargoapi.VerificationInfo, err error) {
 				require.NoError(t, err)
 
@@ -5685,14 +5595,6 @@ func TestRegularStageReconciler_startVerification(t *testing.T) {
 				ID: "test-collection",
 				Freight: map[string]kargoapi.FreightReference{
 					"warehouse": {Name: "test-freight"},
-				},
-			},
-			objects: []client.Object{
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-freight",
-						Namespace: "fake-project",
-					},
 				},
 			},
 			assertions: func(t *testing.T, c client.Client, vi *kargoapi.VerificationInfo, err error) {
@@ -5754,14 +5656,6 @@ func TestRegularStageReconciler_startVerification(t *testing.T) {
 					},
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "fake-project",
-						Name:      "test-freight",
-					},
-				},
-			},
 			req: &kargoapi.VerificationRequest{
 				ID:           "prev-verification",
 				Actor:        "test-user",
@@ -5811,14 +5705,6 @@ func TestRegularStageReconciler_startVerification(t *testing.T) {
 				VerificationHistory: []kargoapi.VerificationInfo{
 					{
 						ID: "prev-verification",
-					},
-				},
-			},
-			objects: []client.Object{
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "fake-project",
-						Name:      "test-freight",
 					},
 				},
 			},
@@ -5888,12 +5774,6 @@ func TestRegularStageReconciler_startVerification(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-freight",
-						Namespace: "fake-project",
-					},
-				},
 				&rolloutsapi.AnalysisTemplate{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-template",
@@ -5963,12 +5843,6 @@ func TestRegularStageReconciler_startVerification(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-freight",
-						Namespace: "fake-project",
-					},
-				},
 				&rolloutsapi.AnalysisTemplate{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-template",
@@ -5989,34 +5863,6 @@ func TestRegularStageReconciler_startVerification(t *testing.T) {
 				assert.Contains(t, vi.Message, "repoCredentials is not available")
 			},
 		},
-		{
-			name: "handles analysis run build error",
-			stage: &kargoapi.Stage{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "fake-project",
-					Name:      "test-stage",
-				},
-				Spec: kargoapi.StageSpec{
-					Verification: &kargoapi.Verification{},
-				},
-			},
-			freightCol: kargoapi.FreightCollection{
-				ID: "test-collection",
-				Freight: map[string]kargoapi.FreightReference{
-					"warehouse": {Name: "test-freight"},
-				},
-			},
-			objects: []client.Object{
-				// Missing Freight object for owner reference
-			},
-			assertions: func(t *testing.T, _ client.Client, vi *kargoapi.VerificationInfo, err error) {
-				require.NoError(t, err)
-
-				require.NotNil(t, vi)
-				assert.Equal(t, kargoapi.VerificationPhaseError, vi.Phase)
-				assert.Contains(t, vi.Message, "error building AnalysisRun")
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -6024,7 +5870,7 @@ func TestRegularStageReconciler_startVerification(t *testing.T) {
 			c := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithObjects(tt.objects...).
-				WithStatusSubresource(&kargoapi.Stage{}, &kargoapi.Freight{}, &rolloutsapi.AnalysisRun{}).
+				WithStatusSubresource(&kargoapi.Stage{}, &rolloutsapi.AnalysisRun{}).
 				Build()
 
 			r := &RegularStageReconciler{
@@ -6359,7 +6205,7 @@ func TestRegularStageReconciler_getVerificationResult(t *testing.T) {
 			c := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithObjects(tt.objects...).
-				WithStatusSubresource(&kargoapi.Stage{}, &kargoapi.Freight{}, &rolloutsapi.AnalysisRun{}).
+				WithStatusSubresource(&kargoapi.Stage{}, &rolloutsapi.AnalysisRun{}).
 				Build()
 
 			r := &RegularStageReconciler{
@@ -6710,7 +6556,7 @@ func TestRegularStageReconciler_abortVerification(t *testing.T) {
 			builder := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithObjects(tt.objects...).
-				WithStatusSubresource(&kargoapi.Stage{}, &kargoapi.Freight{}, &rolloutsapi.AnalysisRun{})
+				WithStatusSubresource(&kargoapi.Stage{}, &rolloutsapi.AnalysisRun{})
 
 			if tt.interceptor.Patch != nil {
 				builder = builder.WithInterceptorFuncs(tt.interceptor)
@@ -7199,6 +7045,7 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 		autoPromotionEnabled bool
 		stage                *kargoapi.Stage
 		objects              []client.Object
+		freight              []*kargoapi.Freight
 		interceptor          interceptor.Funcs
 		assertions           func(*testing.T, *fakeevent.EventRecorder, client.Client, kargoapi.StageStatus, error)
 	}{
@@ -7303,7 +7150,9 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight-1",
@@ -7314,7 +7163,7 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name: "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight-2",
@@ -7374,17 +7223,6 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace:         "fake-project",
-						Name:              "test-freight-1",
-						CreationTimestamp: metav1.Time{Time: now},
-					},
-					Origin: kargoapi.FreightOrigin{
-						Kind: kargoapi.FreightOriginKindWarehouse,
-						Name: "test-warehouse",
-					},
-				},
 				&kargoapi.Target{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "fake-project",
@@ -7399,6 +7237,19 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Namespace: "fake-project",
 						Name:      "eu-west",
 						Labels:    map[string]string{"region": "eu"},
+					},
+				},
+			},
+			freight: []*kargoapi.Freight{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:         "fake-project",
+						Name:              "test-freight-1",
+						CreationTimestamp: metav1.Time{Time: now},
+					},
+					Origin: kargoapi.FreightOrigin{
+						Kind: kargoapi.FreightOriginKindWarehouse,
+						Name: "test-warehouse",
 					},
 				},
 			},
@@ -7463,17 +7314,6 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace:         "fake-project",
-						Name:              "test-freight-1",
-						CreationTimestamp: metav1.Time{Time: now},
-					},
-					Origin: kargoapi.FreightOrigin{
-						Kind: kargoapi.FreightOriginKindWarehouse,
-						Name: "test-warehouse",
-					},
-				},
 				// Already terminal. Unlike the Promotion path, a target-aware
 				// Stage stands down on any existing PromotionRequest regardless of
 				// phase, so that a Stage whose PromotionRequests never reach a
@@ -7490,6 +7330,19 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 					},
 					Status: kargoapi.PromotionRequestStatus{
 						Phase: kargoapi.PromotionRequestPhaseErrored,
+					},
+				},
+			},
+			freight: []*kargoapi.Freight{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:         "fake-project",
+						Name:              "test-freight-1",
+						CreationTimestamp: metav1.Time{Time: now},
+					},
+					Origin: kargoapi.FreightOrigin{
+						Kind: kargoapi.FreightOriginKindWarehouse,
+						Name: "test-warehouse",
 					},
 				},
 			},
@@ -7544,8 +7397,10 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
+			},
+			freight: []*kargoapi.Freight{
 				// freight-1 has an older creationTimestamp but a newer discoveredAt
-				&kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight-1",
@@ -7558,7 +7413,7 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 					},
 				},
 				// freight-2 has a newer creationTimestamp but an older discoveredAt
-				&kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight-2",
@@ -7626,7 +7481,9 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight-1",
@@ -7637,7 +7494,7 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name: "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight-2",
@@ -7706,7 +7563,9 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight-1",
@@ -7764,17 +7623,6 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace:         "fake-project",
-						Name:              "test-freight-1",
-						CreationTimestamp: metav1.Time{Time: now},
-					},
-					Origin: kargoapi.FreightOrigin{
-						Kind: kargoapi.FreightOriginKindWarehouse,
-						Name: "test-warehouse",
-					},
-				},
 				&kargoapi.Promotion{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "fake-project",
@@ -7786,6 +7634,19 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 					Spec: kargoapi.PromotionSpec{
 						Stage:   "test-stage",
 						Freight: "test-freight-1",
+					},
+				},
+			},
+			freight: []*kargoapi.Freight{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:         "fake-project",
+						Name:              "test-freight-1",
+						CreationTimestamp: metav1.Time{Time: now},
+					},
+					Origin: kargoapi.FreightOrigin{
+						Kind: kargoapi.FreightOriginKindWarehouse,
+						Name: "test-warehouse",
 					},
 				},
 			},
@@ -7843,17 +7704,6 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace:         "fake-project",
-						Name:              "test-freight-1",
-						CreationTimestamp: metav1.Time{Time: now},
-					},
-					Origin: kargoapi.FreightOrigin{
-						Kind: kargoapi.FreightOriginKindWarehouse,
-						Name: "test-warehouse",
-					},
-				},
 				&kargoapi.Promotion{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "fake-project",
@@ -7868,6 +7718,19 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 					},
 					Status: kargoapi.PromotionStatus{
 						Phase: kargoapi.PromotionPhaseSucceeded,
+					},
+				},
+			},
+			freight: []*kargoapi.Freight{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:         "fake-project",
+						Name:              "test-freight-1",
+						CreationTimestamp: metav1.Time{Time: now},
+					},
+					Origin: kargoapi.FreightOrigin{
+						Kind: kargoapi.FreightOriginKindWarehouse,
+						Name: "test-warehouse",
 					},
 				},
 			},
@@ -7929,17 +7792,6 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace:         "fake-project",
-						Name:              "test-freight-1",
-						CreationTimestamp: metav1.Time{Time: now},
-					},
-					Origin: kargoapi.FreightOrigin{
-						Kind: kargoapi.FreightOriginKindWarehouse,
-						Name: "test-warehouse",
-					},
-				},
 				&kargoapi.Promotion{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "fake-project",
@@ -7954,6 +7806,19 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 					},
 					Status: kargoapi.PromotionStatus{
 						Phase: kargoapi.PromotionPhaseSucceeded,
+					},
+				},
+			},
+			freight: []*kargoapi.Freight{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:         "fake-project",
+						Name:              "test-freight-1",
+						CreationTimestamp: metav1.Time{Time: now},
+					},
+					Origin: kargoapi.FreightOrigin{
+						Kind: kargoapi.FreightOriginKindWarehouse,
+						Name: "test-warehouse",
 					},
 				},
 			},
@@ -8011,17 +7876,6 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace:         "fake-project",
-						Name:              "test-freight-1",
-						CreationTimestamp: metav1.Time{Time: now},
-					},
-					Origin: kargoapi.FreightOrigin{
-						Kind: kargoapi.FreightOriginKindWarehouse,
-						Name: "test-warehouse",
-					},
-				},
 				&kargoapi.Promotion{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "fake-project",
@@ -8036,6 +7890,19 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 					},
 					Status: kargoapi.PromotionStatus{
 						Phase: kargoapi.PromotionPhaseErrored,
+					},
+				},
+			},
+			freight: []*kargoapi.Freight{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:         "fake-project",
+						Name:              "test-freight-1",
+						CreationTimestamp: metav1.Time{Time: now},
+					},
+					Origin: kargoapi.FreightOrigin{
+						Kind: kargoapi.FreightOriginKindWarehouse,
+						Name: "test-warehouse",
 					},
 				},
 			},
@@ -8080,6 +7947,7 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 					},
 				},
 			},
+			freight: terminalPromotionOrderingFreight(),
 			objects: terminalPromotionOrderingObjects(
 				kargoapi.PromotionPhaseSucceeded,
 				kargoapi.PromotionPhaseErrored,
@@ -8132,6 +8000,7 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 					},
 				},
 			},
+			freight: terminalPromotionOrderingFreight(),
 			objects: terminalPromotionOrderingObjects(
 				kargoapi.PromotionPhaseErrored,
 				kargoapi.PromotionPhaseSucceeded,
@@ -8185,6 +8054,7 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 					},
 				},
 			},
+			freight: terminalPromotionOrderingFreight(),
 			objects: terminalPromotionOrderingObjects(
 				kargoapi.PromotionPhaseSucceeded,
 				kargoapi.PromotionPhaseErrored,
@@ -8245,7 +8115,9 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight-1",
@@ -8327,22 +8199,6 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace:         "fake-project",
-						Name:              "test-freight-1",
-						CreationTimestamp: metav1.Time{Time: now},
-					},
-					Origin: kargoapi.FreightOrigin{
-						Kind: kargoapi.FreightOriginKindWarehouse,
-						Name: "test-warehouse",
-					},
-					Status: kargoapi.FreightStatus{
-						VerifiedIn: map[string]kargoapi.VerifiedStage{
-							"upstream-stage": {},
-						},
-					},
-				},
 				&kargoapi.Promotion{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
@@ -8356,6 +8212,24 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 					},
 					Status: kargoapi.PromotionStatus{
 						Phase: kargoapi.PromotionPhaseSucceeded,
+					},
+				},
+			},
+			freight: []*kargoapi.Freight{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:         "fake-project",
+						Name:              "test-freight-1",
+						CreationTimestamp: metav1.Time{Time: now},
+					},
+					Origin: kargoapi.FreightOrigin{
+						Kind: kargoapi.FreightOriginKindWarehouse,
+						Name: "test-warehouse",
+					},
+					Status: kargoapi.FreightStatus{
+						VerifiedIn: map[string]kargoapi.VerifiedStage{
+							"upstream-stage": {},
+						},
 					},
 				},
 			},
@@ -8416,7 +8290,9 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight-1",
@@ -8433,7 +8309,7 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						},
 					},
 				},
-				&kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight-2",
@@ -8452,7 +8328,7 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						},
 					},
 				},
-				&kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight-3",
@@ -8519,7 +8395,9 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight-1",
@@ -8605,7 +8483,9 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "warehouse-2",
 					},
 				},
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "freight-1",
@@ -8617,7 +8497,7 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 					},
 					Status: kargoapi.FreightStatus{},
 				},
-				&kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "freight-2",
@@ -8692,7 +8572,9 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight",
@@ -8763,7 +8645,9 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight",
@@ -8836,7 +8720,9 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight",
@@ -8905,7 +8791,9 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight",
@@ -8992,7 +8880,9 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight-new",
@@ -9068,7 +8958,9 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "test-freight-new",
@@ -9150,7 +9042,9 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "open-warehouse",
 					},
 				},
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "held-freight-new",
@@ -9161,7 +9055,7 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name: "held-warehouse",
 					},
 				},
-				&kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:         "fake-project",
 						Name:              "open-freight-new",
@@ -9232,28 +9126,6 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace:         "fake-project",
-						Name:              "freight-old",
-						CreationTimestamp: metav1.Time{Time: hourAgo},
-					},
-					Origin: kargoapi.FreightOrigin{
-						Kind: kargoapi.FreightOriginKindWarehouse,
-						Name: "test-warehouse",
-					},
-				},
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace:         "fake-project",
-						Name:              "freight-new",
-						CreationTimestamp: metav1.Time{Time: now},
-					},
-					Origin: kargoapi.FreightOrigin{
-						Kind: kargoapi.FreightOriginKindWarehouse,
-						Name: "test-warehouse",
-					},
-				},
 				// The hold-clearing Promotion that put the Stage at freight-old.
 				&kargoapi.Promotion{
 					ObjectMeta: metav1.ObjectMeta{
@@ -9270,6 +9142,30 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 					},
 					Status: kargoapi.PromotionStatus{
 						Phase: kargoapi.PromotionPhaseSucceeded,
+					},
+				},
+			},
+			freight: []*kargoapi.Freight{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:         "fake-project",
+						Name:              "freight-old",
+						CreationTimestamp: metav1.Time{Time: hourAgo},
+					},
+					Origin: kargoapi.FreightOrigin{
+						Kind: kargoapi.FreightOriginKindWarehouse,
+						Name: "test-warehouse",
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:         "fake-project",
+						Name:              "freight-new",
+						CreationTimestamp: metav1.Time{Time: now},
+					},
+					Origin: kargoapi.FreightOrigin{
+						Kind: kargoapi.FreightOriginKindWarehouse,
+						Name: "test-warehouse",
 					},
 				},
 			},
@@ -9342,38 +9238,6 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 						Name:      "test-warehouse",
 					},
 				},
-				// freight-old is no longer in the upstream Stage.
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace:         "fake-project",
-						Name:              "freight-old",
-						CreationTimestamp: metav1.Time{Time: hourAgo},
-					},
-					Origin: kargoapi.FreightOrigin{
-						Kind: kargoapi.FreightOriginKindWarehouse,
-						Name: "test-warehouse",
-					},
-				},
-				// freight-new is the current upstream candidate.
-				&kargoapi.Freight{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace:         "fake-project",
-						Name:              "freight-new",
-						CreationTimestamp: metav1.Time{Time: now},
-					},
-					Origin: kargoapi.FreightOrigin{
-						Kind: kargoapi.FreightOriginKindWarehouse,
-						Name: "test-warehouse",
-					},
-					Status: kargoapi.FreightStatus{
-						CurrentlyIn: map[string]kargoapi.CurrentStage{
-							"upstream-stage": {},
-						},
-						VerifiedIn: map[string]kargoapi.VerifiedStage{
-							"upstream-stage": {},
-						},
-					},
-				},
 				// The hold-clearing Promotion that put the Stage at freight-old.
 				&kargoapi.Promotion{
 					ObjectMeta: metav1.ObjectMeta{
@@ -9390,6 +9254,40 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 					},
 					Status: kargoapi.PromotionStatus{
 						Phase: kargoapi.PromotionPhaseSucceeded,
+					},
+				},
+			},
+			freight: []*kargoapi.Freight{
+				// freight-old is no longer in the upstream Stage.
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:         "fake-project",
+						Name:              "freight-old",
+						CreationTimestamp: metav1.Time{Time: hourAgo},
+					},
+					Origin: kargoapi.FreightOrigin{
+						Kind: kargoapi.FreightOriginKindWarehouse,
+						Name: "test-warehouse",
+					},
+				},
+				// freight-new is the current upstream candidate.
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:         "fake-project",
+						Name:              "freight-new",
+						CreationTimestamp: metav1.Time{Time: now},
+					},
+					Origin: kargoapi.FreightOrigin{
+						Kind: kargoapi.FreightOriginKindWarehouse,
+						Name: "test-warehouse",
+					},
+					Status: kargoapi.FreightStatus{
+						CurrentlyIn: map[string]kargoapi.CurrentStage{
+							"upstream-stage": {},
+						},
+						VerifiedIn: map[string]kargoapi.VerifiedStage{
+							"upstream-stage": {},
+						},
 					},
 				},
 			},
@@ -9424,7 +9322,7 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 			builder := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithObjects(objects...).
-				WithStatusSubresource(&kargoapi.Stage{}, &kargoapi.Freight{}).
+				WithStatusSubresource(&kargoapi.Stage{}).
 				WithInterceptorFuncs(tt.interceptor).
 				WithIndex(
 					&kargoapi.Promotion{},
@@ -9442,26 +9340,6 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 					indexer.PromotionsByTerminal,
 				).
 				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightByWarehouseField,
-					indexer.FreightByWarehouse,
-				).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightByVerifiedStagesField,
-					indexer.FreightByVerifiedStages,
-				).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightByCurrentStagesField,
-					indexer.FreightByCurrentStages,
-				).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightApprovedForStagesField,
-					indexer.FreightApprovedForStages,
-				).
-				WithIndex(
 					&kargoapi.PromotionRequest{},
 					indexer.PromotionRequestsByStageAndFreightField,
 					indexer.PromotionRequestsByStageAndFreight,
@@ -9471,8 +9349,9 @@ func TestRegularStageReconciler_autoPromoteFreight(t *testing.T) {
 			recorder := fakeevent.NewEventRecorder(5)
 
 			r := &RegularStageReconciler{
-				client:      c,
-				eventSender: k8sevent.NewEventSender(recorder),
+				client:       c,
+				eventSender:  k8sevent.NewEventSender(recorder),
+				freightStore: memory.NewStore(tt.freight...),
 			}
 
 			status, err := r.autoPromoteFreight(t.Context(), tt.stage, tt.autoPromotionEnabled)
@@ -9492,25 +9371,6 @@ func terminalPromotionOrderingObjects(
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: "fake-project",
 				Name:      "test-warehouse",
-			},
-		},
-		&kargoapi.Freight{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace:         "fake-project",
-				Name:              "test-freight-1",
-				CreationTimestamp: metav1.Time{Time: newerTime},
-			},
-			Origin: kargoapi.FreightOrigin{
-				Kind: kargoapi.FreightOriginKindWarehouse,
-				Name: "test-warehouse",
-			},
-			Status: kargoapi.FreightStatus{
-				CurrentlyIn: map[string]kargoapi.CurrentStage{
-					"upstream-stage": {},
-				},
-				VerifiedIn: map[string]kargoapi.VerifiedStage{
-					"upstream-stage": {},
-				},
 			},
 		},
 		&kargoapi.Promotion{
@@ -9544,6 +9404,30 @@ func terminalPromotionOrderingObjects(
 			Status: kargoapi.PromotionStatus{Phase: newerPhase},
 		},
 	}
+}
+
+// terminalPromotionOrderingFreight returns the Freight that the Promotions
+// returned by terminalPromotionOrderingObjects reference.
+func terminalPromotionOrderingFreight() []*kargoapi.Freight {
+	return []*kargoapi.Freight{{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:         "fake-project",
+			Name:              "test-freight-1",
+			CreationTimestamp: metav1.Time{Time: time.Now()},
+		},
+		Origin: kargoapi.FreightOrigin{
+			Kind: kargoapi.FreightOriginKindWarehouse,
+			Name: "test-warehouse",
+		},
+		Status: kargoapi.FreightStatus{
+			CurrentlyIn: map[string]kargoapi.CurrentStage{
+				"upstream-stage": {},
+			},
+			VerifiedIn: map[string]kargoapi.VerifiedStage{
+				"upstream-stage": {},
+			},
+		},
+	}}
 }
 
 func Test_summarizeConditions(t *testing.T) {

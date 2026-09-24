@@ -2,6 +2,7 @@ package stages
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -38,6 +39,7 @@ import (
 	kargoEvent "github.com/akuity/kargo/pkg/event"
 	k8sevent "github.com/akuity/kargo/pkg/event/kubernetes"
 	exprfn "github.com/akuity/kargo/pkg/expressions/function"
+	libFreight "github.com/akuity/kargo/pkg/freight"
 	"github.com/akuity/kargo/pkg/health"
 	"github.com/akuity/kargo/pkg/indexer"
 	"github.com/akuity/kargo/pkg/kargo"
@@ -81,6 +83,7 @@ type RegularStageReconciler struct {
 	client         client.Client
 	credentialsDB  credentials.Database
 	eventSender    kargoEvent.Sender
+	freightStore   libFreight.Store
 	healthChecker  health.AggregatingChecker
 	shardPredicate controller.ResponsibleFor[kargoapi.Stage]
 
@@ -92,10 +95,12 @@ func NewRegularStageReconciler(
 	cfg ReconcilerConfig,
 	credentialsDB credentials.Database,
 	healthChecker health.AggregatingChecker,
+	freightStore libFreight.Store,
 ) *RegularStageReconciler {
 	return &RegularStageReconciler{
 		cfg:           cfg,
 		credentialsDB: credentialsDB,
+		freightStore:  freightStore,
 		healthChecker: healthChecker,
 		shardPredicate: controller.ResponsibleFor[kargoapi.Stage]{
 			IsDefaultController: cfg.IsDefaultController,
@@ -183,39 +188,6 @@ func (r *RegularStageReconciler) SetupWithManager(
 		return fmt.Errorf(
 			"error setting up index for PromotionRequests by Stage: %w", err,
 		)
-	}
-
-	// This index is used to find Freight that are directly available from a
-	// Warehouse and can be automatically promoted to a Stage.
-	if err := sharedIndexer.IndexField(
-		ctx,
-		&kargoapi.Freight{},
-		indexer.FreightByWarehouseField,
-		indexer.FreightByWarehouse,
-	); err != nil {
-		return fmt.Errorf("error setting up index for Freight by Warehouse: %w", err)
-	}
-
-	// This index is used to find all Freight that have been verified in upstream
-	// Stages and can be automatically promoted to a Stage.
-	if err := sharedIndexer.IndexField(
-		ctx,
-		&kargoapi.Freight{},
-		indexer.FreightByVerifiedStagesField,
-		indexer.FreightByVerifiedStages,
-	); err != nil {
-		return fmt.Errorf("error setting up index for Freight by Stages in which it has been verified: %w", err)
-	}
-
-	// This index is used to find all Freight that have been explicitly approved
-	// for a Stage and can be automatically promoted to that Stage.
-	if err := sharedIndexer.IndexField(
-		ctx,
-		&kargoapi.Freight{},
-		indexer.FreightApprovedForStagesField,
-		indexer.FreightApprovedForStages,
-	); err != nil {
-		return fmt.Errorf("index Freight by Stages for which it has been approved: %w", err)
 	}
 
 	metrics.RegisterStageMetrics(r.client)
@@ -1129,7 +1101,7 @@ func (r *RegularStageReconciler) recordSucceededPromotionRequest(
 		"freight", promotionRequest.Spec.Freight,
 	)
 
-	freight, err := api.GetFreight(ctx, r.client, types.NamespacedName{
+	freight, err := api.GetFreight(ctx, r.freightStore, types.NamespacedName{
 		Namespace: stage.Namespace,
 		Name:      promotionRequest.Spec.Freight,
 	})
@@ -1332,7 +1304,7 @@ func (r *RegularStageReconciler) syncFreight(ctx context.Context, stage *kargoap
 	curFreight := stage.Status.FreightHistory.Current()
 	// Find all Freight that think they're currently in use by this Stage.
 	var freight []kargoapi.Freight
-	freight, err := api.ListFreightByCurrentStage(ctx, r.client, stage)
+	freight, err := api.ListFreightByCurrentStage(ctx, r.freightStore, stage)
 	if err != nil {
 		return err
 	}
@@ -1340,11 +1312,15 @@ func (r *RegularStageReconciler) syncFreight(ctx context.Context, stage *kargoap
 	// Stage and, if they're not, patch their status to accurately reflect that.
 	for _, f := range freight {
 		if !curFreight.Includes(f.Name) {
-			newStatus := f.Status.DeepCopy()
-			newStatus.RemoveCurrentStage(stage.Name)
-			if err := kubeclient.PatchStatus(ctx, r.client, &f, func(status *kargoapi.FreightStatus) {
-				*status = *newStatus
-			}); err != nil {
+			if _, err = r.freightStore.UpdateStatus(
+				ctx,
+				f.Namespace,
+				f.Name,
+				func(status *kargoapi.FreightStatus) error {
+					status.RemoveCurrentStage(stage.Name)
+					return nil
+				},
+			); err != nil {
 				return fmt.Errorf(
 					"error patching status of Freight %q in namespace %q: %w",
 					f.Name, f.Namespace, err,
@@ -1365,7 +1341,7 @@ func (r *RegularStageReconciler) syncFreight(ctx context.Context, stage *kargoap
 	for _, fr := range curFreight.References() {
 		f, err := api.GetFreight(
 			ctx,
-			r.client,
+			r.freightStore,
 			types.NamespacedName{
 				Namespace: stage.Namespace,
 				Name:      fr.Name,
@@ -1382,11 +1358,15 @@ func (r *RegularStageReconciler) syncFreight(ctx context.Context, stage *kargoap
 			return fmt.Errorf("Freight %q not found in namespace %q", fr.Name, stage.Namespace)
 		}
 		if !f.IsCurrentlyIn(stage.Name) {
-			newStatus := f.Status.DeepCopy()
-			newStatus.AddCurrentStage(stage.Name, now)
-			if err = kubeclient.PatchStatus(ctx, r.client, f, func(status *kargoapi.FreightStatus) {
-				*status = *newStatus
-			}); err != nil {
+			if _, err = r.freightStore.UpdateStatus(
+				ctx,
+				f.Namespace,
+				f.Name,
+				func(status *kargoapi.FreightStatus) error {
+					status.AddCurrentStage(stage.Name, now)
+					return nil
+				},
+			); err != nil {
 				return fmt.Errorf(
 					"error patching status of Freight %q in namespace %q: %w",
 					f.Name, f.Namespace, err,
@@ -1642,11 +1622,8 @@ func (r *RegularStageReconciler) markFreightVerifiedForStage(
 	// At this point, all preconditions for verifying the Freight have been met,
 	// and we can proceed with the verification.
 	for _, ref := range curFreight.Freight {
-		freight := &kargoapi.Freight{}
-		if err := r.client.Get(ctx, types.NamespacedName{
-			Namespace: stage.Namespace,
-			Name:      ref.Name,
-		}, freight); err != nil {
+		freight, err := r.freightStore.Get(ctx, stage.Namespace, ref.Name)
+		if err != nil {
 			return newStatus, fmt.Errorf(
 				"error getting Freight %q in namespace %q: %w",
 				ref.Name, stage.Namespace, err,
@@ -1661,12 +1638,18 @@ func (r *RegularStageReconciler) markFreightVerifiedForStage(
 		}
 
 		// Verify the Freight.
-		if err := kubeclient.PatchStatus(ctx, r.client, freight, func(status *kargoapi.FreightStatus) {
-			if status.VerifiedIn == nil {
-				status.VerifiedIn = make(map[string]kargoapi.VerifiedStage)
-			}
-			status.AddVerifiedStage(stage.Name, curFreight.VerificationHistory.Current().FinishTime.Time)
-		}); err != nil {
+		if _, err = r.freightStore.UpdateStatus(
+			ctx,
+			freight.Namespace,
+			freight.Name,
+			func(status *kargoapi.FreightStatus) error {
+				if status.VerifiedIn == nil {
+					status.VerifiedIn = make(map[string]kargoapi.VerifiedStage)
+				}
+				status.AddVerifiedStage(stage.Name, curFreight.VerificationHistory.Current().FinishTime.Time)
+				return nil
+			},
+		); err != nil {
 			return newStatus, fmt.Errorf(
 				"error marking Freight %q as verified in Stage: %w",
 				freight.Name, err,
@@ -1686,11 +1669,8 @@ func (r *RegularStageReconciler) recordFreightVerificationEvent(
 	freightRef kargoapi.FreightReference,
 	vi *kargoapi.VerificationInfo,
 ) {
-	freight := &kargoapi.Freight{}
-	if err := r.client.Get(context.Background(), types.NamespacedName{
-		Namespace: stage.Namespace,
-		Name:      freightRef.Name,
-	}, freight); err != nil {
+	freight, err := r.freightStore.Get(context.Background(), stage.Namespace, freightRef.Name)
+	if err != nil {
 		logging.LoggerFromContext(context.Background()).Error(
 			err, "failed to get Freight for verification event",
 			"freight", freightRef.Name,
@@ -1857,6 +1837,7 @@ func (r *RegularStageReconciler) startVerification(
 				exprfn.FreightOperations(
 					ctx,
 					r.client,
+					r.freightStore,
 					stage.Namespace,
 					stage.Spec.RequestedFreight,
 					freight.References(),
@@ -1873,13 +1854,6 @@ func (r *RegularStageReconciler) startVerification(
 		}))
 	}
 
-	for _, freightRef := range freight.Freight {
-		builderOpts = append(builderOpts, rollouts.WithOwner{
-			APIVersion: kargoapi.GroupVersion.String(),
-			Kind:       "Freight",
-			Reference:  types.NamespacedName{Namespace: stage.Namespace, Name: freightRef.Name},
-		})
-	}
 	if curVI == nil || (req.ForID(curVI.ID) && req.ControlPlane && req.Actor != "") {
 		if stage.Status.LastPromotion != nil {
 			builderOpts = append(builderOpts, rollouts.WithExtraAnnotations{
@@ -2259,7 +2233,7 @@ func (r *RegularStageReconciler) autoPromoteFreight(
 		return newStatus, nil
 	}
 
-	availableFreight, err := api.ListFreightAvailableToStage(ctx, r.client, stage)
+	availableFreight, err := api.ListFreightAvailableToStage(ctx, r.client, r.freightStore, stage)
 	if err != nil {
 		return newStatus, fmt.Errorf(
 			"error listing available Freight for Stage %q: %w",
@@ -2662,18 +2636,12 @@ func (r *RegularStageReconciler) handleDelete(ctx context.Context, stage *kargoa
 // been verified in the given Stage. It removes the Stage from the VerifiedIn
 // map of each Freight.
 func (r *RegularStageReconciler) clearVerifications(ctx context.Context, stage *kargoapi.Stage) error {
-	verified := kargoapi.FreightList{}
-	if err := r.client.List(
+	verified, err := r.freightStore.List(
 		ctx,
-		&verified,
-		client.InNamespace(stage.Namespace),
-		client.MatchingFieldsSelector{
-			Selector: fields.OneTermEqualSelector(
-				indexer.FreightByVerifiedStagesField,
-				stage.Name,
-			),
-		},
-	); err != nil {
+		stage.Namespace,
+		libFreight.ListOptions{VerifiedIn: []string{stage.Name}},
+	)
+	if err != nil {
 		return fmt.Errorf(
 			"error listing Freight verified in Stage %q in namespace %q: %w",
 			stage.Name,
@@ -2683,16 +2651,16 @@ func (r *RegularStageReconciler) clearVerifications(ctx context.Context, stage *
 	}
 
 	var errs []error
-	for _, f := range verified.Items {
-		newStatus := *f.Status.DeepCopy()
-		if newStatus.VerifiedIn == nil {
-			continue
-		}
-		delete(newStatus.VerifiedIn, stage.Name)
-
-		if err := kubeclient.PatchStatus(ctx, r.client, &f, func(status *kargoapi.FreightStatus) {
-			*status = newStatus
-		}); client.IgnoreNotFound(err) != nil {
+	for _, f := range verified {
+		if _, err = r.freightStore.UpdateStatus(
+			ctx,
+			f.Namespace,
+			f.Name,
+			func(status *kargoapi.FreightStatus) error {
+				delete(status.VerifiedIn, stage.Name)
+				return nil
+			},
+		); err != nil && !errors.Is(err, libFreight.ErrNotFound) {
 			errs = append(errs, fmt.Errorf(
 				"error clearing verification status of Freight %q in namespace %q: %w",
 				f.Name, f.Namespace, err,
@@ -2706,18 +2674,12 @@ func (r *RegularStageReconciler) clearVerifications(ctx context.Context, stage *
 // approved for the given Stage. It removes the Stage from the ApprovedFor map
 // of each Freight.
 func (r *RegularStageReconciler) clearApprovals(ctx context.Context, stage *kargoapi.Stage) error {
-	approved := kargoapi.FreightList{}
-	if err := r.client.List(
+	approved, err := r.freightStore.List(
 		ctx,
-		&approved,
-		client.InNamespace(stage.Namespace),
-		client.MatchingFieldsSelector{
-			Selector: fields.OneTermEqualSelector(
-				indexer.FreightApprovedForStagesField,
-				stage.Name,
-			),
-		},
-	); err != nil {
+		stage.Namespace,
+		libFreight.ListOptions{ApprovedFor: stage.Name},
+	)
+	if err != nil {
 		return fmt.Errorf("error listing Freight approved for Stage %q in namespace %q: %w",
 			stage.Name,
 			stage.Namespace,
@@ -2726,16 +2688,16 @@ func (r *RegularStageReconciler) clearApprovals(ctx context.Context, stage *karg
 	}
 
 	var errs []error
-	for _, f := range approved.Items {
-		newStatus := *f.Status.DeepCopy()
-		if newStatus.ApprovedFor == nil {
-			continue
-		}
-		delete(newStatus.ApprovedFor, stage.Name)
-
-		if err := kubeclient.PatchStatus(ctx, r.client, &f, func(status *kargoapi.FreightStatus) {
-			*status = newStatus
-		}); client.IgnoreNotFound(err) != nil {
+	for _, f := range approved {
+		if _, err = r.freightStore.UpdateStatus(
+			ctx,
+			f.Namespace,
+			f.Name,
+			func(status *kargoapi.FreightStatus) error {
+				delete(status.ApprovedFor, stage.Name)
+				return nil
+			},
+		); err != nil && !errors.Is(err, libFreight.ErrNotFound) {
 			errs = append(errs, fmt.Errorf(
 				"error clearing approval status of Freight %q in namespace %q: %w",
 				f.Name, f.Namespace, err,

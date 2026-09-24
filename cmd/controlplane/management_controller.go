@@ -23,6 +23,7 @@ import (
 	"github.com/akuity/kargo/pkg/controller/management/projects"
 	"github.com/akuity/kargo/pkg/controller/management/replication"
 	"github.com/akuity/kargo/pkg/controller/management/serviceaccounts"
+	pgfreight "github.com/akuity/kargo/pkg/freight/postgres"
 	"github.com/akuity/kargo/pkg/logging"
 	"github.com/akuity/kargo/pkg/os"
 	"github.com/akuity/kargo/pkg/server/kubernetes"
@@ -92,6 +93,11 @@ func (o *managementControllerOptions) run(ctx context.Context) error {
 		return fmt.Errorf("error initializing Kargo controller manager: %w", err)
 	}
 
+	freightStore, err := pgfreight.NewStore(ctx, pgfreight.ConfigFromEnv())
+	if err != nil {
+		return fmt.Errorf("error connecting to the Freight database: %w", err)
+	}
+
 	// One-time cleanup of a hazard left behind by the removal of the
 	// automatic Secret migration reconciler. See the package doc comment
 	// on legacysecrets for details.
@@ -124,6 +130,7 @@ func (o *managementControllerOptions) run(ctx context.Context) error {
 	if err := projects.SetupReconcilerWithManager(
 		ctx,
 		kargoMgr,
+		freightStore,
 		projects.ReconcilerConfigFromEnv(),
 	); err != nil {
 		return fmt.Errorf("error setting up Projects reconciler: %w", err)

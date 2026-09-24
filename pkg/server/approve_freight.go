@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -15,33 +14,9 @@ import (
 	"github.com/akuity/kargo/pkg/api"
 	"github.com/akuity/kargo/pkg/event"
 	libhttp "github.com/akuity/kargo/pkg/http"
-	"github.com/akuity/kargo/pkg/kubeclient"
 	"github.com/akuity/kargo/pkg/logging"
 	"github.com/akuity/kargo/pkg/server/user"
 )
-
-func (s *server) patchFreightStatus(
-	ctx context.Context,
-	freight *kargoapi.Freight,
-	newStatus kargoapi.FreightStatus,
-) error {
-	if err := kubeclient.PatchStatus(
-		ctx,
-		s.client,
-		freight,
-		func(status *kargoapi.FreightStatus) {
-			*status = newStatus
-		},
-	); err != nil {
-		return fmt.Errorf(
-			"error patching Freight %q status in namespace %q: %w",
-			freight.Name,
-			freight.Namespace,
-			err,
-		)
-	}
-	return nil
-}
 
 // @id ApproveFreight
 // @Summary Approve Freight for promotion to a Stage
@@ -98,6 +73,22 @@ func (s *server) approveFreight(c *gin.Context) {
 		return
 	}
 
+	// Freight lives outside the Kubernetes API server, so the authorizing
+	// client cannot check this implicitly.
+	if err := s.authorizeFn(
+		ctx,
+		"patch",
+		freightGVR,
+		"status",
+		types.NamespacedName{
+			Namespace: project,
+			Name:      freight.Name,
+		},
+	); err != nil {
+		_ = c.Error(err)
+		return
+	}
+
 	// Approval bypasses verification and soak requirements, but not origin
 	// membership: an approval for a Stage that doesn't request Freight from the
 	// Freight's origin could never be acted upon and is certainly a mistake.
@@ -117,21 +108,19 @@ func (s *server) approveFreight(c *gin.Context) {
 		return
 	}
 
-	newStatus := *freight.Status.DeepCopy()
-	if newStatus.ApprovedFor == nil {
-		newStatus.ApprovedFor = make(map[string]kargoapi.ApprovedStage)
-	}
-	newStatus.AddApprovedStage(stageName, time.Now())
-
-	if err := kubeclient.PatchStatus(
+	if _, err := s.freightStore.UpdateStatus(
 		ctx,
-		s.client,
-		freight,
-		func(status *kargoapi.FreightStatus) {
-			*status = newStatus
+		project,
+		freight.Name,
+		func(status *kargoapi.FreightStatus) error {
+			if status.ApprovedFor == nil {
+				status.ApprovedFor = map[string]kargoapi.ApprovedStage{}
+			}
+			status.AddApprovedStage(stageName, time.Now())
+			return nil
 		},
 	); err != nil {
-		_ = c.Error(fmt.Errorf("patch freight status: %w", err))
+		_ = c.Error(fmt.Errorf("update freight status: %w", err))
 		return
 	}
 

@@ -11,6 +11,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/pkg/credentials"
+	"github.com/akuity/kargo/pkg/freight"
 )
 
 // ReservedStepAliasRegex is a regular expression that matches step aliases that
@@ -47,6 +48,7 @@ type LocalEngine struct {
 // uses built-in StepRunners locally.
 func NewLocalEngine(
 	kargoClient client.Client,
+	freightStore freight.Store,
 	argocdClient client.Client,
 	credsDB credentials.Database,
 	gitUserResolver GitUserResolver,
@@ -56,6 +58,7 @@ func NewLocalEngine(
 		orchestator: NewLocalOrchestrator(
 			DefaultStepRunnerRegistry,
 			kargoClient,
+			freightStore,
 			argocdClient,
 			credsDB,
 			gitUserResolver,

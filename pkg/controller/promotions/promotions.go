@@ -27,6 +27,7 @@ import (
 	"github.com/akuity/kargo/pkg/controller/metrics"
 	"github.com/akuity/kargo/pkg/event"
 	k8sevent "github.com/akuity/kargo/pkg/event/kubernetes"
+	libFreight "github.com/akuity/kargo/pkg/freight"
 	"github.com/akuity/kargo/pkg/indexer"
 	"github.com/akuity/kargo/pkg/kargo"
 	"github.com/akuity/kargo/pkg/kubeclient"
@@ -61,6 +62,7 @@ func ReconcilerConfigFromEnv() ReconcilerConfig {
 // reconciler reconciles Promotion resources.
 type reconciler struct {
 	kargoClient    client.Client
+	freightStore   libFreight.Store
 	promoEngine    promotion.Engine
 	apiReader      client.Reader
 	shardPredicate controller.ResponsibleFor[kargoapi.Promotion]
@@ -102,6 +104,7 @@ func SetupReconcilerWithManager(
 	ctx context.Context,
 	kargoMgr manager.Manager,
 	argocdMgr manager.Manager,
+	freightStore libFreight.Store,
 	promoEngine promotion.Engine,
 	cfg ReconcilerConfig,
 ) error {
@@ -113,6 +116,7 @@ func SetupReconcilerWithManager(
 		indexer.RunningPromotionsByArgoCDApplications(
 			ctx,
 			kargoMgr.GetClient(),
+			freightStore,
 			cfg.ShardName,
 			cfg.IsDefaultController,
 		),
@@ -149,6 +153,7 @@ func SetupReconcilerWithManager(
 
 	reconciler := newReconciler(
 		kargoMgr.GetClient(),
+		freightStore,
 		kargoMgr.GetAPIReader(),
 		k8sevent.NewEventSender(
 			libEvent.NewRecorder(ctx, kargoMgr.GetScheme(), kargoMgr.GetClient(), cfg.Name()),
@@ -209,7 +214,8 @@ func SetupReconcilerWithManager(
 				argocdMgr.GetCache(),
 				&argocd.Application{},
 				&UpdatedArgoCDAppHandler[*argocd.Application]{
-					kargoClient: kargoMgr.GetClient(),
+					kargoClient:  kargoMgr.GetClient(),
+					freightStore: freightStore,
 				},
 				predicate.Or(
 					ArgoCDAppOperationCompleted[*argocd.Application]{
@@ -245,6 +251,7 @@ func SetupReconcilerWithManager(
 
 func newReconciler(
 	kargoClient client.Client,
+	freightStore libFreight.Store,
 	apiReader client.Reader,
 	sender event.Sender,
 	promoEngine promotion.Engine,
@@ -252,6 +259,7 @@ func newReconciler(
 ) *reconciler {
 	r := &reconciler{
 		kargoClient:  kargoClient,
+		freightStore: freightStore,
 		apiReader:    apiReader,
 		promoEngine:  promoEngine,
 		sender:       sender,
@@ -320,7 +328,7 @@ func (r *reconciler) Reconcile(
 	}
 
 	// Find the Freight
-	freight, err := api.GetFreight(ctx, r.kargoClient, types.NamespacedName{
+	freight, err := api.GetFreight(ctx, r.freightStore, types.NamespacedName{
 		Namespace: promo.Namespace,
 		Name:      promo.Spec.Freight,
 	})

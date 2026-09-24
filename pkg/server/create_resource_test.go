@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 	authnv1 "k8s.io/api/authentication/v1"
 	authv1 "k8s.io/api/authorization/v1"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -23,9 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
-	"github.com/akuity/kargo/pkg/event"
-	k8sevent "github.com/akuity/kargo/pkg/event/kubernetes"
-	fakeevent "github.com/akuity/kargo/pkg/kubernetes/event/fake"
 	"github.com/akuity/kargo/pkg/server/kubernetes"
 	"github.com/akuity/kargo/pkg/server/user"
 )
@@ -293,104 +289,33 @@ func Test_server_createResources(t *testing.T) {
 	)
 }
 
-type errSender struct{ err error }
-
-func (s *errSender) Send(_ context.Context, _ event.Meta) error { return s.err }
-func (s *errSender) Shutdown()                                  {}
-
-func Test_server_createResources_freightEvent(t *testing.T) {
-	testFreight := &kargoapi.Freight{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: kargoapi.GroupVersion.String(),
-			Kind:       "Freight",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "fake-freight",
-			Namespace: "fake-project",
-		},
-	}
-
-	// recorder is reassigned by each serverSetup before assertions reads it.
-	// Test cases are run sequentially so this is safe.
-	var recorder *fakeevent.EventRecorder
-
+func Test_server_createResources_rejectsFreight(t *testing.T) {
 	testRESTEndpoint(
 		t, nil,
 		http.MethodPost, "/v1beta1/resources",
-		[]restTestCase{
-			{
-				name: "non-Freight resource does not send event",
-				serverSetup: func(_ *testing.T, s *server) {
-					recorder = fakeevent.NewEventRecorder(1)
-					s.sender = k8sevent.NewEventSender(recorder)
+		[]restTestCase{{
+			name: "Freight manifest is rejected",
+			body: mustJSONBody(&kargoapi.Freight{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: kargoapi.GroupVersion.String(),
+					Kind:       "Freight",
 				},
-				body: mustJSONBody(&kargoapi.Warehouse{
-					TypeMeta: metav1.TypeMeta{
-						APIVersion: kargoapi.GroupVersion.String(),
-						Kind:       "Warehouse",
-					},
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "fake-warehouse",
-						Namespace: "fake-project",
-					},
-				}),
-				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
-					require.Equal(t, http.StatusCreated, w.Code)
-					require.Empty(t, recorder.Events)
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "fake-freight",
+					Namespace: "fake-project",
 				},
+			}),
+			assertions: func(t *testing.T, w *httptest.ResponseRecorder, c client.Client) {
+				require.Equal(t, http.StatusBadRequest, w.Code)
+				require.Contains(t, w.Body.String(), "/v1beta1/projects/{project}/freight")
+				err := c.Get(
+					t.Context(),
+					client.ObjectKey{Namespace: "fake-project", Name: "fake-freight"},
+					&kargoapi.Freight{},
+				)
+				require.True(t, apierrors.IsNotFound(err))
 			},
-			{
-				name: "Freight without sender succeeds without event",
-				body: mustJSONBody(testFreight),
-				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
-					require.Equal(t, http.StatusCreated, w.Code)
-				},
-			},
-			{
-				name: "Freight with sender sends FreightCreated event",
-				serverSetup: func(_ *testing.T, s *server) {
-					recorder = fakeevent.NewEventRecorder(1)
-					s.sender = k8sevent.NewEventSender(recorder)
-				},
-				body: mustJSONBody(testFreight),
-				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
-					require.Equal(t, http.StatusCreated, w.Code)
-					require.Len(t, recorder.Events, 1)
-					evt := <-recorder.Events
-					require.Equal(t, corev1.EventTypeNormal, evt.EventType)
-					require.Equal(t, string(kargoapi.EventTypeFreightCreated), evt.Reason)
-					require.Equal(t, "Freight created", evt.Message)
-				},
-			},
-			{
-				name: "Freight with sender error still succeeds",
-				serverSetup: func(_ *testing.T, s *server) {
-					s.sender = &errSender{err: errors.New("send failed")}
-				},
-				body: mustJSONBody(testFreight),
-				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
-					require.Equal(t, http.StatusCreated, w.Code)
-				},
-			},
-			{
-				name: "Freight with user context includes actor in event message",
-				serverSetup: func(_ *testing.T, s *server) {
-					recorder = fakeevent.NewEventRecorder(1)
-					s.sender = k8sevent.NewEventSender(recorder)
-				},
-				ctxSetup: func(ctx context.Context) context.Context {
-					return user.ContextWithInfo(ctx, user.Info{IsAdmin: true})
-				},
-				body: mustJSONBody(testFreight),
-				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
-					require.Equal(t, http.StatusCreated, w.Code)
-					require.Len(t, recorder.Events, 1)
-					evt := <-recorder.Events
-					require.Equal(t, string(kargoapi.EventTypeFreightCreated), evt.Reason)
-					require.Contains(t, evt.Message, kargoapi.EventActorAdmin)
-				},
-			},
-		},
+		}},
 	)
 }
 
@@ -471,7 +396,7 @@ func Test_server_createResources_clusterScopedNamespaceSpoofing(t *testing.T) {
 
 	// capturedClient is reassigned by each serverSetup before assertions reads
 	// it. Test cases are run sequentially, so this is safe (see the same
-	// pattern in Test_server_createResources_freightEvent above).
+	// pattern in Test_server_createFreight in create_freight_test.go).
 	var capturedClient client.WithWatch
 
 	testRESTEndpoint(

@@ -28,6 +28,7 @@ import (
 	"github.com/akuity/kargo/pkg/api"
 	"github.com/akuity/kargo/pkg/conditions"
 	"github.com/akuity/kargo/pkg/controller"
+	"github.com/akuity/kargo/pkg/freight"
 	"github.com/akuity/kargo/pkg/kubeclient"
 	"github.com/akuity/kargo/pkg/kubernetes"
 	"github.com/akuity/kargo/pkg/logging"
@@ -57,8 +58,9 @@ var errProjectNamespaceExists = errors.New("namespace already exists and is not 
 
 // reconciler reconciles Project resources.
 type reconciler struct {
-	cfg    ReconcilerConfig
-	client client.Client
+	cfg          ReconcilerConfig
+	client       client.Client
+	freightStore freight.Store
 
 	// The following behaviors are overridable for testing purposes:
 
@@ -159,6 +161,8 @@ type reconciler struct {
 		client.Object,
 		...client.DeleteOption,
 	) error
+
+	deleteProjectFreightFn func(context.Context, string) error
 }
 
 // SetupReconcilerWithManager initializes a reconciler for Project resources and
@@ -166,6 +170,7 @@ type reconciler struct {
 func SetupReconcilerWithManager(
 	ctx context.Context,
 	kargoMgr manager.Manager,
+	freightStore freight.Store,
 	cfg ReconcilerConfig,
 ) error {
 	c, err := ctrl.NewControllerManagedBy(kargoMgr).
@@ -179,7 +184,7 @@ func SetupReconcilerWithManager(
 			},
 		).
 		WithOptions(controller.CommonOptions(cfg.MaxConcurrentReconciles)).
-		Build(newReconciler(kargoMgr.GetClient(), cfg))
+		Build(newReconciler(kargoMgr.GetClient(), freightStore, cfg))
 	if err != nil {
 		return fmt.Errorf("error creating Project reconciler: %w", err)
 	}
@@ -214,10 +219,15 @@ func SetupReconcilerWithManager(
 	return err
 }
 
-func newReconciler(kubeClient client.Client, cfg ReconcilerConfig) *reconciler {
+func newReconciler(
+	kubeClient client.Client,
+	freightStore freight.Store,
+	cfg ReconcilerConfig,
+) *reconciler {
 	r := &reconciler{
-		cfg:    cfg,
-		client: kubeClient,
+		cfg:          cfg,
+		client:       kubeClient,
+		freightStore: freightStore,
 	}
 	r.getProjectFn = api.GetProject
 	r.reconcileFn = r.reconcile
@@ -238,6 +248,7 @@ func newReconciler(kubeClient client.Client, cfg ReconcilerConfig) *reconciler {
 	r.createClusterRoleBindingFn = r.client.Create
 	r.deleteClusterRoleFn = r.client.Delete
 	r.deleteClusterRoleBindingFn = r.client.Delete
+	r.deleteProjectFreightFn = r.freightStore.DeleteProject
 	return r
 }
 
@@ -413,9 +424,12 @@ func (r *reconciler) cleanupProject(ctx context.Context, project *kargoapi.Proje
 	err := r.getNamespaceFn(ctx, types.NamespacedName{Name: project.Name}, ns)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			// Namespace already deleted or never existed, just remove finalizer
-			// from project
+			// Namespace already deleted or never existed. Delete the Project's
+			// Freight and remove the finalizer from the Project.
 			logger.Debug("namespace not found, removing project finalizer")
+			if err = r.deleteProjectFreight(ctx, project); err != nil {
+				return err
+			}
 			if err = r.removeFinalizerFn(ctx, r.client, project); err != nil {
 				return fmt.Errorf("failed to remove finalizer from project %q: %w", project.Name, err)
 			}
@@ -431,6 +445,9 @@ func (r *reconciler) cleanupProject(ctx context.Context, project *kargoapi.Proje
 
 	if !shouldKeepNamespace(project, ns) {
 		logger.Debug("keep-namespace annotation absent; deleting namespace")
+		if err = r.deleteProjectFreight(ctx, project); err != nil {
+			return err
+		}
 		if err = r.deleteNamespaceFn(ctx, ns); err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("error deleting namespace %q: %w", ns.Name, err)
 		}
@@ -439,6 +456,19 @@ func (r *reconciler) cleanupProject(ctx context.Context, project *kargoapi.Proje
 	// Remove finalizer from Project
 	if err = r.removeFinalizerFn(ctx, r.client, project); err != nil {
 		return fmt.Errorf("failed to remove finalizer from project %q: %w", project.Name, err)
+	}
+	return nil
+}
+
+// deleteProjectFreight deletes the Project's Freight. Freight lives outside
+// the Project's namespace, so deleting the namespace does not delete it. It
+// must be deleted before the Project's finalizer is removed so that a
+// same-named Project can never be created while the old Project's Freight
+// still exists. When the namespace is kept, its Freight is kept along with
+// everything else in it, so this is not called.
+func (r *reconciler) deleteProjectFreight(ctx context.Context, project *kargoapi.Project) error {
+	if err := r.deleteProjectFreightFn(ctx, project.Name); err != nil {
+		return fmt.Errorf("error deleting Freight of Project %q: %w", project.Name, err)
 	}
 	return nil
 }

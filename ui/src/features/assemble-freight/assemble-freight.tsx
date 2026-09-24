@@ -3,9 +3,9 @@ import { faAnchor } from '@fortawesome/free-solid-svg-icons';
 import { Button, notification } from 'antd';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import yaml from 'yaml';
 
 import { WarehouseExpanded } from '@ui/extend/types';
+import { useCreateFreight } from '@ui/gen/api/v2/core/core';
 import {
   ArtifactReference,
   Chart,
@@ -19,7 +19,6 @@ import {
   ImageDiscoveryResult,
   DiscoveryResult as GenericDiscoveryResult
 } from '@ui/gen/api/v2/models';
-import { useCreateResource } from '@ui/gen/api/v2/resources/resources';
 import { ApiError } from '@ui/lib/api/custom-fetch';
 
 import { FreightContents } from '../freight-timeline/freight-contents';
@@ -109,7 +108,7 @@ export const AssembleFreight = ({
 }) => {
   const { name: project } = useParams();
 
-  const { mutate } = useCreateResource({
+  const { mutate } = useCreateFreight({
     mutation: {
       onError: (err) => {
         const errorMessage = err instanceof ApiError ? err.message : 'Unexpected API error';
@@ -250,15 +249,9 @@ export const AssembleFreight = ({
             <Button
               className='ml-auto'
               onClick={() => {
-                const freight = constructFreight(chosenItems, warehouse?.metadata?.name || '');
-
                 mutate({
-                  data: yaml.stringify({
-                    kind: 'Freight',
-                    apiVersion: 'kargo.akuity.io/v1alpha1',
-                    metadata: { name: 'freight', namespace: project },
-                    ...freight
-                  })
+                  project: project || '',
+                  data: constructFreight(chosenItems, warehouse?.metadata?.name || '')
                 });
               }}
             >

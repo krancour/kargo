@@ -12,52 +12,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/freight"
+	"github.com/akuity/kargo/pkg/freight/memory"
 )
-
-// TODO(krancour): If we move our actual indexers to this package, we can use
-// them here instead of duplicating them for the sake of avoiding an import
-// cycle.
-const warehouseField = "warehouse"
-
-func warehouseIndexer(obj client.Object) []string {
-	return []string{obj.(*kargoapi.Freight).Origin.Name} // nolint: forcetypeassert
-}
-
-const approvedField = "approvedFor"
-
-func approvedForIndexer(obj client.Object) []string {
-	freight := obj.(*kargoapi.Freight) // nolint: forcetypeassert
-	var approvedFor []string
-	for stage := range freight.Status.ApprovedFor {
-		approvedFor = append(approvedFor, stage)
-	}
-	return approvedFor
-}
-
-const verifiedInField = "verifiedIn"
-
-func verifiedInIndexer(obj client.Object) []string {
-	freight := obj.(*kargoapi.Freight) // nolint: forcetypeassert
-	var verifiedIn []string
-	for stage := range freight.Status.VerifiedIn {
-		verifiedIn = append(verifiedIn, stage)
-	}
-	return verifiedIn
-}
-
-const currentlyInField = "currentlyIn"
-
-func currentlyInIndexer(obj client.Object) []string {
-	freight := obj.(*kargoapi.Freight) // nolint: forcetypeassert
-	var currentlyIn []string
-	for stage := range freight.Status.CurrentlyIn {
-		currentlyIn = append(currentlyIn, stage)
-	}
-	return currentlyIn
-}
 
 func TestGetWarehouse(t *testing.T) {
 	scheme := k8sruntime.NewScheme()
@@ -118,34 +77,25 @@ func TestListFreightFromWarehouse(t *testing.T) {
 	const testUpstreamStage2 = "fake-upstream-stage2"
 
 	testCases := []struct {
-		name        string
-		opts        *ListWarehouseFreightOptions
-		objects     []client.Object
-		interceptor interceptor.Funcs
-		assertions  func(*testing.T, []kargoapi.Freight, error)
+		name       string
+		opts       *ListWarehouseFreightOptions
+		seed       []*kargoapi.Freight
+		hookErr    error
+		assertions func(*testing.T, []kargoapi.Freight, error)
 	}{
 		{
-			name: "error listing Freight",
-			interceptor: interceptor.Funcs{
-				List: func(
-					context.Context,
-					client.WithWatch,
-					client.ObjectList,
-					...client.ListOption,
-				) error {
-					return errors.New("something went wrong")
-				},
-			},
-			assertions: func(t *testing.T, freight []kargoapi.Freight, err error) {
+			name:    "error listing Freight",
+			hookErr: errors.New("something went wrong"),
+			assertions: func(t *testing.T, result []kargoapi.Freight, err error) {
 				require.ErrorContains(t, err, "error listing Freight")
 				require.ErrorContains(t, err, "something went wrong")
-				require.Nil(t, freight)
+				require.Nil(t, result)
 			},
 		},
 		{
 			name: "success with no options",
-			objects: []client.Object{
-				&kargoapi.Freight{ // This should be returned
+			seed: []*kargoapi.Freight{
+				{ // This should be returned
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight",
@@ -155,7 +105,7 @@ func TestListFreightFromWarehouse(t *testing.T) {
 						Name: testWarehouse,
 					},
 				},
-				&kargoapi.Freight{ // This should not be returned
+				{ // This should not be returned
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "another-fake-freight",
@@ -165,7 +115,7 @@ func TestListFreightFromWarehouse(t *testing.T) {
 						Name: "wrong-warehouse",
 					},
 				},
-				&kargoapi.Freight{ // This should not be returned
+				{ // This should not be returned
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "wrong-project",
 						Name:      "another-fake-freight",
@@ -176,11 +126,11 @@ func TestListFreightFromWarehouse(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, freight []kargoapi.Freight, err error) {
+			assertions: func(t *testing.T, result []kargoapi.Freight, err error) {
 				require.NoError(t, err)
-				require.Len(t, freight, 1)
-				require.Equal(t, testProject, freight[0].Namespace)
-				require.Equal(t, "fake-freight", freight[0].Name)
+				require.Len(t, result, 1)
+				require.Equal(t, testProject, result[0].Namespace)
+				require.Equal(t, "fake-freight", result[0].Name)
 			},
 		},
 		{
@@ -190,8 +140,8 @@ func TestListFreightFromWarehouse(t *testing.T) {
 				VerifiedIn:       []string{testUpstreamStage},
 				RequiredSoakTime: &metav1.Duration{Duration: time.Hour},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{ // This should not be returned
+			seed: []*kargoapi.Freight{
+				{ // This should not be returned
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-1",
@@ -211,7 +161,7 @@ func TestListFreightFromWarehouse(t *testing.T) {
 						}},
 					},
 				},
-				&kargoapi.Freight{ // This should not be returned
+				{ // This should not be returned
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-2",
@@ -222,7 +172,7 @@ func TestListFreightFromWarehouse(t *testing.T) {
 					},
 					// This is not approved or verified in any Stages
 				},
-				&kargoapi.Freight{ // This should be returned
+				{ // This should be returned
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-3",
@@ -236,7 +186,7 @@ func TestListFreightFromWarehouse(t *testing.T) {
 						ApprovedFor: map[string]kargoapi.ApprovedStage{testStage: {}},
 					},
 				},
-				&kargoapi.Freight{ // This should not be returned
+				{ // This should not be returned
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-4",
@@ -255,7 +205,7 @@ func TestListFreightFromWarehouse(t *testing.T) {
 						},
 					},
 				},
-				&kargoapi.Freight{ // This should be returned
+				{ // This should be returned
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-5",
@@ -275,13 +225,13 @@ func TestListFreightFromWarehouse(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, freight []kargoapi.Freight, err error) {
+			assertions: func(t *testing.T, result []kargoapi.Freight, err error) {
 				require.NoError(t, err)
-				require.Len(t, freight, 2)
-				require.Equal(t, testProject, freight[0].Namespace)
-				require.Equal(t, "fake-freight-3", freight[0].Name)
-				require.Equal(t, testProject, freight[1].Namespace)
-				require.Equal(t, "fake-freight-5", freight[1].Name)
+				require.Len(t, result, 2)
+				require.Equal(t, testProject, result[0].Namespace)
+				require.Equal(t, "fake-freight-3", result[0].Name)
+				require.Equal(t, testProject, result[1].Namespace)
+				require.Equal(t, "fake-freight-5", result[1].Name)
 			},
 		},
 		{
@@ -292,8 +242,8 @@ func TestListFreightFromWarehouse(t *testing.T) {
 				VerifiedIn:           []string{testUpstreamStage, testUpstreamStage2},
 				RequiredSoakTime:     &metav1.Duration{Duration: time.Hour},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{ // This should be returned as its approved for the Stage
+			seed: []*kargoapi.Freight{
+				{ // This should be returned as its approved for the Stage
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-1",
@@ -309,7 +259,7 @@ func TestListFreightFromWarehouse(t *testing.T) {
 						VerifiedIn: map[string]kargoapi.VerifiedStage{},
 					},
 				},
-				&kargoapi.Freight{
+				{
 					// This should be returned because its verified in both upstream Stages and soak time has lapsed
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
@@ -333,7 +283,7 @@ func TestListFreightFromWarehouse(t *testing.T) {
 						},
 					},
 				},
-				&kargoapi.Freight{ // This should not be returned because it's not verified in all of the upstream Stages
+				{ // This should not be returned because it's not verified in all of the upstream Stages
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-3",
@@ -351,7 +301,7 @@ func TestListFreightFromWarehouse(t *testing.T) {
 						},
 					},
 				},
-				&kargoapi.Freight{ // This should not be returned because its not passed the soak time in all Stages
+				{ // This should not be returned because its not passed the soak time in all Stages
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-4",
@@ -375,13 +325,13 @@ func TestListFreightFromWarehouse(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, freight []kargoapi.Freight, err error) {
+			assertions: func(t *testing.T, result []kargoapi.Freight, err error) {
 				require.NoError(t, err)
-				require.Len(t, freight, 2)
-				require.Equal(t, testProject, freight[0].Namespace)
-				require.Equal(t, "fake-freight-1", freight[0].Name)
-				require.Equal(t, testProject, freight[1].Namespace)
-				require.Equal(t, "fake-freight-2", freight[1].Name)
+				require.Len(t, result, 2)
+				require.Equal(t, testProject, result[0].Namespace)
+				require.Equal(t, "fake-freight-1", result[0].Name)
+				require.Equal(t, testProject, result[1].Namespace)
+				require.Equal(t, "fake-freight-2", result[1].Name)
 			},
 		},
 		{
@@ -393,12 +343,12 @@ func TestListFreightFromWarehouse(t *testing.T) {
 				RequiredSoakTime:     &metav1.Duration{Duration: time.Hour},
 				CurrentlyIn:          testUpstreamStage,
 			},
-			objects: []client.Object{
+			seed: []*kargoapi.Freight{
 				// This would ordinarily be returned because it is approved for the
 				// Stage, verified in the upstream Stage, and the soak time has elapsed,
 				// BUT this test case asks only for Freight that's currently in the
 				// upstream Stage.
-				&kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-1",
@@ -421,7 +371,7 @@ func TestListFreightFromWarehouse(t *testing.T) {
 				},
 				// This should be returned because: Its verified upstream, soak time has
 				// elapsed, and it's currently in use by the upstream Stage.
-				&kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-2",
@@ -445,11 +395,11 @@ func TestListFreightFromWarehouse(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, freight []kargoapi.Freight, err error) {
+			assertions: func(t *testing.T, result []kargoapi.Freight, err error) {
 				require.NoError(t, err)
-				require.Len(t, freight, 1)
-				require.Equal(t, testProject, freight[0].Namespace)
-				require.Equal(t, "fake-freight-2", freight[0].Name)
+				require.Len(t, result, 1)
+				require.Equal(t, testProject, result[0].Namespace)
+				require.Equal(t, "fake-freight-2", result[0].Name)
 			},
 		},
 		{
@@ -466,20 +416,13 @@ func TestListFreightFromWarehouse(t *testing.T) {
 		},
 	}
 
-	testScheme := k8sruntime.NewScheme()
-	err := kargoapi.AddToScheme(testScheme)
-	require.NoError(t, err)
-
 	for _, testCase := range testCases {
-		c := fake.NewClientBuilder().WithScheme(testScheme).
-			WithScheme(testScheme).
-			WithIndex(&kargoapi.Freight{}, warehouseField, warehouseIndexer).
-			WithIndex(&kargoapi.Freight{}, approvedField, approvedForIndexer).
-			WithIndex(&kargoapi.Freight{}, verifiedInField, verifiedInIndexer).
-			WithIndex(&kargoapi.Freight{}, currentlyInField, currentlyInIndexer).
-			WithObjects(testCase.objects...).
-			WithInterceptorFuncs(testCase.interceptor).
-			Build()
+		store := memory.NewStore(testCase.seed...)
+		if testCase.hookErr != nil {
+			store.Hooks.List = func(context.Context, string, freight.ListOptions) error {
+				return testCase.hookErr
+			}
+		}
 
 		t.Run(testCase.name, func(t *testing.T) {
 			warehouse := &kargoapi.Warehouse{
@@ -488,10 +431,10 @@ func TestListFreightFromWarehouse(t *testing.T) {
 					Name:      "fake-warehouse",
 				},
 			}
-			freight, err := ListFreightFromWarehouse(
-				t.Context(), c, warehouse, testCase.opts,
+			result, err := ListFreightFromWarehouse(
+				t.Context(), store, warehouse, testCase.opts,
 			)
-			testCase.assertions(t, freight, err)
+			testCase.assertions(t, result, err)
 		})
 	}
 }

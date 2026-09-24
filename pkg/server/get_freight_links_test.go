@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/freight/memory"
 	"github.com/akuity/kargo/pkg/server/config"
 )
 
@@ -45,10 +46,21 @@ func Test_server_getFreightLinks(t *testing.T) {
 				},
 			},
 			{
-				name: "no configs exist returns empty links",
+				name:          "not authorized to get Freight",
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject),
+				freightStore:  memory.NewStore(testFreight),
+				serverSetup: func(_ *testing.T, s *server) {
+					s.authorizeFn = denyFreightFn("get", "")
+				},
+				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
+					require.Equal(t, http.StatusForbidden, w.Code)
+				},
+			},
+			{
+				name:         "no configs exist returns empty links",
+				freightStore: memory.NewStore(testFreight),
 				clientBuilder: fake.NewClientBuilder().WithObjects(
 					testProject,
-					testFreight,
 				),
 				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
 					require.Equal(t, http.StatusOK, w.Code)
@@ -59,10 +71,10 @@ func Test_server_getFreightLinks(t *testing.T) {
 				},
 			},
 			{
-				name: "cluster config freight links are returned",
+				name:         "cluster config freight links are returned",
+				freightStore: memory.NewStore(testFreight),
 				clientBuilder: fake.NewClientBuilder().WithObjects(
 					testProject,
-					testFreight,
 					&kargoapi.ClusterConfig{
 						ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
 						Spec: kargoapi.ClusterConfigSpec{
@@ -83,10 +95,10 @@ func Test_server_getFreightLinks(t *testing.T) {
 				},
 			},
 			{
-				name: "project config freight links are returned",
+				name:         "project config freight links are returned",
+				freightStore: memory.NewStore(testFreight),
 				clientBuilder: fake.NewClientBuilder().WithObjects(
 					testProject,
-					testFreight,
 					&kargoapi.ProjectConfig{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      testProject.Name,
@@ -109,10 +121,10 @@ func Test_server_getFreightLinks(t *testing.T) {
 				},
 			},
 			{
-				name: "cluster and project links are merged",
+				name:         "cluster and project links are merged",
+				freightStore: memory.NewStore(testFreight),
 				clientBuilder: fake.NewClientBuilder().WithObjects(
 					testProject,
-					testFreight,
 					&kargoapi.ClusterConfig{
 						ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
 						Spec: kargoapi.ClusterConfigSpec{
@@ -145,10 +157,10 @@ func Test_server_getFreightLinks(t *testing.T) {
 				},
 			},
 			{
-				name: "links with false conditions are omitted",
+				name:         "links with false conditions are omitted",
+				freightStore: memory.NewStore(testFreight),
 				clientBuilder: fake.NewClientBuilder().WithObjects(
 					testProject,
-					testFreight,
 					&kargoapi.ClusterConfig{
 						ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
 						Spec: kargoapi.ClusterConfigSpec{
@@ -168,10 +180,10 @@ func Test_server_getFreightLinks(t *testing.T) {
 				},
 			},
 			{
-				name: "template evaluation errors are reported",
+				name:         "template evaluation errors are reported",
+				freightStore: memory.NewStore(testFreight),
 				clientBuilder: fake.NewClientBuilder().WithObjects(
 					testProject,
-					testFreight,
 					&kargoapi.ClusterConfig{
 						ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
 						Spec: kargoapi.ClusterConfigSpec{

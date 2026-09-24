@@ -3,14 +3,12 @@ package stages
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -25,7 +23,8 @@ import (
 	"github.com/akuity/kargo/pkg/conditions"
 	"github.com/akuity/kargo/pkg/controller"
 	k8sevent "github.com/akuity/kargo/pkg/event/kubernetes"
-	"github.com/akuity/kargo/pkg/indexer"
+	libFreight "github.com/akuity/kargo/pkg/freight"
+	"github.com/akuity/kargo/pkg/freight/memory"
 	fakeevent "github.com/akuity/kargo/pkg/kubernetes/event/fake"
 )
 
@@ -61,7 +60,9 @@ func TestControlFlowStageReconciler_Reconcile(t *testing.T) {
 		req         ctrl.Request
 		stage       *kargoapi.Stage
 		objects     []client.Object
+		freight     []*kargoapi.Freight
 		interceptor interceptor.Funcs
+		hooks       memory.Hooks
 		assertions  func(*testing.T, client.Client, ctrl.Result, error)
 	}{
 		{
@@ -145,8 +146,8 @@ func TestControlFlowStageReconciler_Reconcile(t *testing.T) {
 					},
 				},
 			},
-			interceptor: interceptor.Funcs{
-				List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+			hooks: memory.Hooks{
+				List: func(context.Context, string, libFreight.ListOptions) error {
 					return fmt.Errorf("something went wrong")
 				},
 			},
@@ -218,9 +219,9 @@ func TestControlFlowStageReconciler_Reconcile(t *testing.T) {
 				},
 			},
 			objects: []client.Object{testWarehouse},
-			interceptor: interceptor.Funcs{
+			hooks: memory.Hooks{
 				// This will force an error when attempting to list available Freight
-				List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+				List: func(context.Context, string, libFreight.ListOptions) error {
 					return fmt.Errorf("something went wrong")
 				},
 			},
@@ -247,11 +248,13 @@ func TestControlFlowStageReconciler_Reconcile(t *testing.T) {
 				},
 			},
 			objects: []client.Object{testWarehouse},
-			interceptor: interceptor.Funcs{
+			hooks: memory.Hooks{
 				// This will force an error when attempting to list available Freight
-				List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+				List: func(context.Context, string, libFreight.ListOptions) error {
 					return fmt.Errorf("something went wrong")
 				},
+			},
+			interceptor: interceptor.Funcs{
 				// This will force an error when attempting to update the Stage status
 				SubResourcePatch: func(
 					context.Context,
@@ -321,28 +324,17 @@ func TestControlFlowStageReconciler_Reconcile(t *testing.T) {
 			c := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithObjects(objects...).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightByWarehouseField,
-					indexer.FreightByWarehouse,
-				).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightByVerifiedStagesField,
-					indexer.FreightByVerifiedStages,
-				).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightApprovedForStagesField,
-					indexer.FreightApprovedForStages,
-				).
-				WithStatusSubresource(&kargoapi.Stage{}, &kargoapi.Freight{}).
+				WithStatusSubresource(&kargoapi.Stage{}).
 				WithInterceptorFuncs(tt.interceptor).
 				Build()
 
+			store := memory.NewStore(tt.freight...)
+			store.Hooks = tt.hooks
+
 			r := &ControlFlowStageReconciler{
-				client:      c,
-				eventSender: k8sevent.NewEventSender(fakeevent.NewEventRecorder(10)),
+				client:       c,
+				freightStore: store,
+				eventSender:  k8sevent.NewEventSender(fakeevent.NewEventRecorder(10)),
 				shardPredicate: controller.ResponsibleFor[kargoapi.Stage]{
 					IsDefaultController: false,
 					ShardName:           "test-shard",
@@ -378,8 +370,10 @@ func TestControlFlowStageReconciler_reconcile(t *testing.T) {
 		name        string
 		stage       *kargoapi.Stage
 		objects     []client.Object
+		freight     []*kargoapi.Freight
 		interceptor interceptor.Funcs
-		assertions  func(*testing.T, kargoapi.StageStatus, client.Client, error)
+		hooks       memory.Hooks
+		assertions  func(*testing.T, kargoapi.StageStatus, *memory.Store, error)
 	}{
 		{
 			name: "no available Freight",
@@ -396,7 +390,7 @@ func TestControlFlowStageReconciler_reconcile(t *testing.T) {
 				testWarehouse,
 				// No Freight exists from this Warehouse
 			},
-			assertions: func(t *testing.T, status kargoapi.StageStatus, _ client.Client, err error) {
+			assertions: func(t *testing.T, status kargoapi.StageStatus, _ *memory.Store, err error) {
 				require.NoError(t, err)
 
 				require.Len(t, status.Conditions, 1)
@@ -418,7 +412,9 @@ func TestControlFlowStageReconciler_reconcile(t *testing.T) {
 			},
 			objects: []client.Object{
 				testWarehouse,
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight",
@@ -426,17 +422,9 @@ func TestControlFlowStageReconciler_reconcile(t *testing.T) {
 					Origin: testWarehouseOrigin,
 				},
 			},
-			assertions: func(t *testing.T, status kargoapi.StageStatus, c client.Client, err error) {
+			assertions: func(t *testing.T, status kargoapi.StageStatus, store *memory.Store, err error) {
 				require.NoError(t, err)
-				updatedFreight := &kargoapi.Freight{}
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{
-						Namespace: testProject,
-						Name:      "fake-freight",
-					},
-					updatedFreight,
-				)
+				updatedFreight, err := store.Get(t.Context(), testProject, "fake-freight")
 				require.NoError(t, err)
 				assert.Contains(t, updatedFreight.Status.VerifiedIn, testStage)
 
@@ -464,7 +452,7 @@ func TestControlFlowStageReconciler_reconcile(t *testing.T) {
 					return fmt.Errorf("something went wrong")
 				},
 			},
-			assertions: func(t *testing.T, status kargoapi.StageStatus, _ client.Client, err error) {
+			assertions: func(t *testing.T, status kargoapi.StageStatus, _ *memory.Store, err error) {
 				require.ErrorContains(t, err, "something went wrong")
 
 				require.Len(t, status.Conditions, 2)
@@ -495,7 +483,9 @@ func TestControlFlowStageReconciler_reconcile(t *testing.T) {
 			},
 			objects: []client.Object{
 				testWarehouse,
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight",
@@ -503,19 +493,12 @@ func TestControlFlowStageReconciler_reconcile(t *testing.T) {
 					Origin: testWarehouseOrigin,
 				},
 			},
-			interceptor: interceptor.Funcs{
-				SubResourcePatch: func(
-					context.Context,
-					client.Client,
-					string,
-					client.Object,
-					client.Patch,
-					...client.SubResourcePatchOption,
-				) error {
+			hooks: memory.Hooks{
+				UpdateStatus: func(context.Context, string, string) error {
 					return fmt.Errorf("something went wrong")
 				},
 			},
-			assertions: func(t *testing.T, status kargoapi.StageStatus, _ client.Client, err error) {
+			assertions: func(t *testing.T, status kargoapi.StageStatus, _ *memory.Store, err error) {
 				require.ErrorContains(t, err, "failed to verify 1 Freight")
 
 				require.Len(t, status.Conditions, 2)
@@ -546,7 +529,9 @@ func TestControlFlowStageReconciler_reconcile(t *testing.T) {
 			},
 			objects: []client.Object{
 				testWarehouse,
-				&kargoapi.Freight{
+			},
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight",
@@ -559,22 +544,15 @@ func TestControlFlowStageReconciler_reconcile(t *testing.T) {
 					},
 				},
 			},
-			interceptor: interceptor.Funcs{
+			hooks: memory.Hooks{
 				// This is intended to force an error if there is an unexpected attempt
-				// to patch the Freight status, which should not happen if the Freight
+				// to update the Freight status, which should not happen if the Freight
 				// is already marked as verified.
-				SubResourcePatch: func(
-					context.Context,
-					client.Client,
-					string,
-					client.Object,
-					client.Patch,
-					...client.SubResourcePatchOption,
-				) error {
+				UpdateStatus: func(context.Context, string, string) error {
 					return fmt.Errorf("something went wrong")
 				},
 			},
-			assertions: func(t *testing.T, status kargoapi.StageStatus, _ client.Client, err error) {
+			assertions: func(t *testing.T, status kargoapi.StageStatus, _ *memory.Store, err error) {
 				require.NoError(t, err)
 
 				require.Len(t, status.Conditions, 1)
@@ -596,7 +574,7 @@ func TestControlFlowStageReconciler_reconcile(t *testing.T) {
 				},
 			},
 			objects: []client.Object{testWarehouse},
-			assertions: func(t *testing.T, status kargoapi.StageStatus, _ client.Client, err error) {
+			assertions: func(t *testing.T, status kargoapi.StageStatus, _ *memory.Store, err error) {
 				require.NoError(t, err)
 				assert.Equal(t, "refresh-token", status.LastHandledRefresh)
 			},
@@ -613,7 +591,7 @@ func TestControlFlowStageReconciler_reconcile(t *testing.T) {
 					ObservedGeneration: 1,
 				},
 			},
-			assertions: func(t *testing.T, status kargoapi.StageStatus, _ client.Client, err error) {
+			assertions: func(t *testing.T, status kargoapi.StageStatus, _ *memory.Store, err error) {
 				require.NoError(t, err)
 				assert.Equal(t, int64(2), status.ObservedGeneration)
 			},
@@ -634,7 +612,7 @@ func TestControlFlowStageReconciler_reconcile(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, status kargoapi.StageStatus, _ client.Client, err error) {
+			assertions: func(t *testing.T, status kargoapi.StageStatus, _ *memory.Store, err error) {
 				require.NoError(t, err)
 				assert.Len(t, status.Conditions, 1)
 				assert.Equal(t, kargoapi.ConditionTypeReady, status.Conditions[0].Type)
@@ -652,23 +630,16 @@ func TestControlFlowStageReconciler_reconcile(t *testing.T) {
 			c := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithObjects(tt.objects...).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightByWarehouseField,
-					indexer.FreightByWarehouse,
-				).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightByVerifiedStagesField,
-					indexer.FreightByVerifiedStages,
-				).
-				WithStatusSubresource(&kargoapi.Freight{}).
 				WithInterceptorFuncs(tt.interceptor).
 				Build()
 
+			store := memory.NewStore(tt.freight...)
+			store.Hooks = tt.hooks
+
 			r := &ControlFlowStageReconciler{
-				client:      c,
-				eventSender: k8sevent.NewEventSender(fakeevent.NewEventRecorder(10)),
+				client:       c,
+				freightStore: store,
+				eventSender:  k8sevent.NewEventSender(fakeevent.NewEventRecorder(10)),
 				shardPredicate: controller.ResponsibleFor[kargoapi.Stage]{
 					IsDefaultController: false,
 					ShardName:           "test-shard",
@@ -676,7 +647,7 @@ func TestControlFlowStageReconciler_reconcile(t *testing.T) {
 			}
 
 			status, err := r.reconcile(t.Context(), tt.stage, time.Now())
-			tt.assertions(t, status, c, err)
+			tt.assertions(t, status, store, err)
 		})
 	}
 }
@@ -773,13 +744,10 @@ func TestControlFlowStageReconciler_initializeStatus(t *testing.T) {
 }
 
 func TestControlFlowStageReconciler_markFreightVerifiedForStage(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, kargoapi.AddToScheme(scheme))
-
-	toObjSlice := func(freights []kargoapi.Freight) []client.Object {
-		ptrs := make([]client.Object, len(freights))
-		for i, f := range freights {
-			ptrs[i] = f.DeepCopy()
+	toPtrSlice := func(freight []kargoapi.Freight) []*kargoapi.Freight {
+		ptrs := make([]*kargoapi.Freight, len(freight))
+		for i := range freight {
+			ptrs[i] = &freight[i]
 		}
 		return ptrs
 	}
@@ -789,13 +757,13 @@ func TestControlFlowStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 	oneMinuteAgo := justNow.Add(-time.Minute)
 
 	tests := []struct {
-		name        string
-		stage       *kargoapi.Stage
-		freight     []kargoapi.Freight
-		startTime   time.Time
-		finishTime  time.Time
-		interceptor interceptor.Funcs
-		assertions  func(*testing.T, client.Client, *fakeevent.EventRecorder, error)
+		name       string
+		stage      *kargoapi.Stage
+		freight    []kargoapi.Freight
+		startTime  time.Time
+		finishTime time.Time
+		hooks      memory.Hooks
+		assertions func(*testing.T, *memory.Store, *fakeevent.EventRecorder, error)
 	}{
 		{
 			name: "no freight to verify",
@@ -806,7 +774,7 @@ func TestControlFlowStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 				},
 			},
 			freight: nil,
-			assertions: func(t *testing.T, _ client.Client, recorder *fakeevent.EventRecorder, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, recorder *fakeevent.EventRecorder, err error) {
 				require.NoError(t, err)
 				assert.Len(t, recorder.Events, 0)
 			},
@@ -832,7 +800,7 @@ func TestControlFlowStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, recorder *fakeevent.EventRecorder, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, recorder *fakeevent.EventRecorder, err error) {
 				require.NoError(t, err)
 				assert.Len(t, recorder.Events, 0)
 			},
@@ -860,15 +828,12 @@ func TestControlFlowStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 				},
 			},
 			finishTime: justNow,
-			assertions: func(t *testing.T, c client.Client, recorder *fakeevent.EventRecorder, err error) {
+			assertions: func(t *testing.T, store *memory.Store, recorder *fakeevent.EventRecorder, err error) {
 				require.NoError(t, err)
 				assert.Len(t, recorder.Events, 2)
 
-				freight1 := &kargoapi.Freight{}
-				require.NoError(t, c.Get(t.Context(), types.NamespacedName{
-					Namespace: "default",
-					Name:      "freight-1",
-				}, freight1))
+				freight1, err := store.Get(t.Context(), "default", "freight-1")
+				require.NoError(t, err)
 				assert.Contains(t, freight1.Status.VerifiedIn, "test-stage")
 				assert.Equal(
 					t,
@@ -876,11 +841,8 @@ func TestControlFlowStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 					freight1.Status.VerifiedIn["test-stage"].VerifiedAt.Unix(),
 				)
 
-				freight2 := &kargoapi.Freight{}
-				require.NoError(t, c.Get(t.Context(), types.NamespacedName{
-					Namespace: "default",
-					Name:      "freight-2",
-				}, freight2))
+				freight2, err := store.Get(t.Context(), "default", "freight-2")
+				require.NoError(t, err)
 				assert.Contains(t, freight2.Status.VerifiedIn, "test-stage")
 				assert.Equal(
 					t,
@@ -911,7 +873,7 @@ func TestControlFlowStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 			},
 			startTime:  oneMinuteAgo,
 			finishTime: justNow,
-			assertions: func(t *testing.T, _ client.Client, recorder *fakeevent.EventRecorder, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, recorder *fakeevent.EventRecorder, err error) {
 				require.NoError(t, err)
 				require.Len(t, recorder.Events, 1)
 
@@ -967,58 +929,37 @@ func TestControlFlowStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 					},
 				},
 			},
-			interceptor: interceptor.Funcs{
-				SubResourcePatch: func(
-					ctx context.Context,
-					client client.Client,
-					subResourceName string,
-					obj client.Object,
-					patch client.Patch,
-					opts ...client.SubResourcePatchOption,
-				) error {
-					switch obj.GetName() {
+			hooks: memory.Hooks{
+				UpdateStatus: func(_ context.Context, _ string, name string) error {
+					switch name {
 					case "freight-2":
 						return fmt.Errorf("something went wrong")
 					case "freight-4":
-						return apierrors.NewNotFound(
-							kargoapi.GroupVersion.WithResource("freight").GroupResource(), "freight-4",
-						)
+						return libFreight.ErrNotFound
 					default:
-						return client.SubResource(subResourceName).Patch(ctx, obj, patch, opts...)
+						return nil
 					}
 				},
 			},
-			assertions: func(t *testing.T, c client.Client, recorder *fakeevent.EventRecorder, err error) {
+			assertions: func(t *testing.T, store *memory.Store, recorder *fakeevent.EventRecorder, err error) {
 				require.ErrorContains(t, err, "failed to verify 1 Freight")
 
 				assert.Len(t, recorder.Events, 2)
 
-				freight1 := &kargoapi.Freight{}
-				require.NoError(t, c.Get(t.Context(), types.NamespacedName{
-					Namespace: "default",
-					Name:      "freight-1",
-				}, freight1))
+				freight1, err := store.Get(t.Context(), "default", "freight-1")
+				require.NoError(t, err)
 				assert.Contains(t, freight1.Status.VerifiedIn, "test-stage")
 
-				freight2 := &kargoapi.Freight{}
-				require.NoError(t, c.Get(t.Context(), types.NamespacedName{
-					Namespace: "default",
-					Name:      "freight-2",
-				}, freight2))
+				freight2, err := store.Get(t.Context(), "default", "freight-2")
+				require.NoError(t, err)
 				assert.NotContains(t, freight2.Status.VerifiedIn, "test-stage")
 
-				freight3 := &kargoapi.Freight{}
-				require.NoError(t, c.Get(t.Context(), types.NamespacedName{
-					Namespace: "default",
-					Name:      "freight-3",
-				}, freight3))
+				freight3, err := store.Get(t.Context(), "default", "freight-3")
+				require.NoError(t, err)
 				assert.Contains(t, freight3.Status.VerifiedIn, "test-stage")
 
-				freight4 := &kargoapi.Freight{}
-				require.NoError(t, c.Get(t.Context(), types.NamespacedName{
-					Namespace: "default",
-					Name:      "freight-4",
-				}, freight4))
+				freight4, err := store.Get(t.Context(), "default", "freight-4")
+				require.NoError(t, err)
 				assert.NotContains(t, freight4.Status.VerifiedIn, "test-stage")
 			},
 		},
@@ -1026,21 +967,17 @@ func TestControlFlowStageReconciler_markFreightVerifiedForStage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(toObjSlice(tt.freight)...).
-				WithStatusSubresource(&kargoapi.Freight{}).
-				WithInterceptorFuncs(tt.interceptor).
-				Build()
+			store := memory.NewStore(toPtrSlice(tt.freight)...)
+			store.Hooks = tt.hooks
 			recorder := fakeevent.NewEventRecorder(10)
 
 			r := &ControlFlowStageReconciler{
-				client:      c,
-				eventSender: k8sevent.NewEventSender(recorder),
+				freightStore: store,
+				eventSender:  k8sevent.NewEventSender(recorder),
 			}
 
 			_, err := r.markFreightVerifiedForStage(t.Context(), tt.stage, tt.freight, tt.startTime, tt.finishTime)
-			tt.assertions(t, c, recorder, err)
+			tt.assertions(t, store, recorder, err)
 		})
 	}
 }
@@ -1053,6 +990,7 @@ func TestControlFlowStageReconciler_handleDelete(t *testing.T) {
 		name        string
 		stage       *kargoapi.Stage
 		interceptor interceptor.Funcs
+		hooks       memory.Hooks
 		assertions  func(*testing.T, *kargoapi.Stage, error)
 	}{
 		{
@@ -1063,8 +1001,8 @@ func TestControlFlowStageReconciler_handleDelete(t *testing.T) {
 					Namespace: "default",
 				},
 			},
-			interceptor: interceptor.Funcs{
-				List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+			hooks: memory.Hooks{
+				List: func(context.Context, string, libFreight.ListOptions) error {
 					return fmt.Errorf("unexpected call to List")
 				},
 			},
@@ -1095,24 +1033,12 @@ func TestControlFlowStageReconciler_handleDelete(t *testing.T) {
 					Finalizers: []string{kargoapi.FinalizerName},
 				},
 			},
-			interceptor: interceptor.Funcs{
-				List: func(
-					ctx context.Context,
-					c client.WithWatch,
-					list client.ObjectList,
-					opts ...client.ListOption,
-				) error {
-					listOpts := &client.ListOptions{}
-					for _, opt := range opts {
-						opt.ApplyToList(listOpts)
-					}
-
-					switch {
-					case strings.Contains(listOpts.FieldSelector.String(), indexer.FreightApprovedForStagesField):
+			hooks: memory.Hooks{
+				List: func(_ context.Context, _ string, opts libFreight.ListOptions) error {
+					if opts.ApprovedFor != "" {
 						return fmt.Errorf("something went wrong")
-					default:
-						return c.List(ctx, list, opts...)
 					}
+					return nil
 				},
 			},
 			assertions: func(t *testing.T, stage *kargoapi.Stage, err error) {
@@ -1151,21 +1077,15 @@ func TestControlFlowStageReconciler_handleDelete(t *testing.T) {
 			c := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithObjects(tt.stage).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightByVerifiedStagesField,
-					indexer.FreightByVerifiedStages,
-				).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightApprovedForStagesField,
-					indexer.FreightApprovedForStages,
-				).
 				WithInterceptorFuncs(tt.interceptor).
 				Build()
 
+			store := memory.NewStore()
+			store.Hooks = tt.hooks
+
 			r := &ControlFlowStageReconciler{
-				client: c,
+				client:       c,
+				freightStore: store,
 			}
 
 			err := r.handleDelete(t.Context(), tt.stage)
@@ -1175,15 +1095,12 @@ func TestControlFlowStageReconciler_handleDelete(t *testing.T) {
 }
 
 func TestControlFlowStageReconciler_clearVerifications(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, kargoapi.AddToScheme(scheme))
-
 	tests := []struct {
-		name        string
-		stage       *kargoapi.Stage
-		objects     []client.Object
-		interceptor interceptor.Funcs
-		assertions  func(*testing.T, client.Client, error)
+		name       string
+		stage      *kargoapi.Stage
+		freight    []*kargoapi.Freight
+		hooks      memory.Hooks
+		assertions func(*testing.T, *memory.Store, error)
 	}{
 		{
 			name: "no freight to clear",
@@ -1193,7 +1110,7 @@ func TestControlFlowStageReconciler_clearVerifications(t *testing.T) {
 					Name:      "test-stage",
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, err error) {
 				require.NoError(t, err)
 			},
 		},
@@ -1205,8 +1122,8 @@ func TestControlFlowStageReconciler_clearVerifications(t *testing.T) {
 					Name:      "test-stage",
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "default",
 						Name:      "freight-1",
@@ -1218,7 +1135,7 @@ func TestControlFlowStageReconciler_clearVerifications(t *testing.T) {
 						},
 					},
 				},
-				&kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "default",
 						Name:      "freight-2",
@@ -1230,22 +1147,16 @@ func TestControlFlowStageReconciler_clearVerifications(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, c client.Client, err error) {
+			assertions: func(t *testing.T, store *memory.Store, err error) {
 				require.NoError(t, err)
 
-				freight1 := &kargoapi.Freight{}
-				require.NoError(t, c.Get(t.Context(), types.NamespacedName{
-					Namespace: "default",
-					Name:      "freight-1",
-				}, freight1))
+				freight1, err := store.Get(t.Context(), "default", "freight-1")
+				require.NoError(t, err)
 				assert.NotContains(t, freight1.Status.VerifiedIn, "test-stage")
 				assert.Contains(t, freight1.Status.VerifiedIn, "another-stage")
 
-				freight2 := &kargoapi.Freight{}
-				require.NoError(t, c.Get(t.Context(), types.NamespacedName{
-					Namespace: "default",
-					Name:      "freight-2",
-				}, freight2))
+				freight2, err := store.Get(t.Context(), "default", "freight-2")
+				require.NoError(t, err)
 				assert.Empty(t, freight2.Status.VerifiedIn)
 			},
 		},
@@ -1257,12 +1168,12 @@ func TestControlFlowStageReconciler_clearVerifications(t *testing.T) {
 					Name:      "test-stage",
 				},
 			},
-			interceptor: interceptor.Funcs{
-				List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+			hooks: memory.Hooks{
+				List: func(context.Context, string, libFreight.ListOptions) error {
 					return fmt.Errorf("listing error")
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, err error) {
 				require.ErrorContains(t, err, "listing error")
 			},
 		},
@@ -1274,8 +1185,8 @@ func TestControlFlowStageReconciler_clearVerifications(t *testing.T) {
 					Name:      "test-stage",
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "default",
 						Name:      "freight-1",
@@ -1287,19 +1198,12 @@ func TestControlFlowStageReconciler_clearVerifications(t *testing.T) {
 					},
 				},
 			},
-			interceptor: interceptor.Funcs{
-				SubResourcePatch: func(
-					context.Context,
-					client.Client,
-					string,
-					client.Object,
-					client.Patch,
-					...client.SubResourcePatchOption,
-				) error {
+			hooks: memory.Hooks{
+				UpdateStatus: func(context.Context, string, string) error {
 					return fmt.Errorf("something went wrong")
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, err error) {
 				require.ErrorContains(t, err, "something went wrong")
 			},
 		},
@@ -1311,8 +1215,8 @@ func TestControlFlowStageReconciler_clearVerifications(t *testing.T) {
 					Name:      "test-stage",
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "default",
 						Name:      "freight-1",
@@ -1324,22 +1228,12 @@ func TestControlFlowStageReconciler_clearVerifications(t *testing.T) {
 					},
 				},
 			},
-			interceptor: interceptor.Funcs{
-				SubResourcePatch: func(
-					context.Context,
-					client.Client,
-					string,
-					client.Object,
-					client.Patch,
-					...client.SubResourcePatchOption,
-				) error {
-					return apierrors.NewNotFound(
-						kargoapi.GroupVersion.WithResource("freight").GroupResource(),
-						"freight-1",
-					)
+			hooks: memory.Hooks{
+				UpdateStatus: func(context.Context, string, string) error {
+					return libFreight.ErrNotFound
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, err error) {
 				require.NoError(t, err)
 			},
 		},
@@ -1347,37 +1241,23 @@ func TestControlFlowStageReconciler_clearVerifications(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(tt.objects...).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightByVerifiedStagesField,
-					indexer.FreightByVerifiedStages,
-				).
-				WithStatusSubresource(&kargoapi.Freight{}).
-				WithInterceptorFuncs(tt.interceptor).
-				Build()
+			store := memory.NewStore(tt.freight...)
+			store.Hooks = tt.hooks
 
-			r := &ControlFlowStageReconciler{
-				client: c,
-			}
+			r := &ControlFlowStageReconciler{freightStore: store}
 
-			tt.assertions(t, c, r.clearVerifications(t.Context(), tt.stage))
+			tt.assertions(t, store, r.clearVerifications(t.Context(), tt.stage))
 		})
 	}
 }
 
 func TestControlFlowStageReconciler_clearApprovals(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, kargoapi.AddToScheme(scheme))
-
 	tests := []struct {
-		name        string
-		stage       *kargoapi.Stage
-		objects     []client.Object
-		interceptor interceptor.Funcs
-		assertions  func(*testing.T, client.Client, error)
+		name       string
+		stage      *kargoapi.Stage
+		freight    []*kargoapi.Freight
+		hooks      memory.Hooks
+		assertions func(*testing.T, *memory.Store, error)
 	}{
 		{
 			name: "no freight to clear",
@@ -1387,7 +1267,7 @@ func TestControlFlowStageReconciler_clearApprovals(t *testing.T) {
 					Name:      "test-stage",
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, err error) {
 				require.NoError(t, err)
 			},
 		},
@@ -1399,8 +1279,8 @@ func TestControlFlowStageReconciler_clearApprovals(t *testing.T) {
 					Name:      "test-stage",
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "default",
 						Name:      "freight-1",
@@ -1412,7 +1292,7 @@ func TestControlFlowStageReconciler_clearApprovals(t *testing.T) {
 						},
 					},
 				},
-				&kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "default",
 						Name:      "freight-2",
@@ -1424,22 +1304,16 @@ func TestControlFlowStageReconciler_clearApprovals(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, c client.Client, err error) {
+			assertions: func(t *testing.T, store *memory.Store, err error) {
 				require.NoError(t, err)
 
-				freight1 := &kargoapi.Freight{}
-				require.NoError(t, c.Get(t.Context(), types.NamespacedName{
-					Namespace: "default",
-					Name:      "freight-1",
-				}, freight1))
+				freight1, err := store.Get(t.Context(), "default", "freight-1")
+				require.NoError(t, err)
 				assert.NotContains(t, freight1.Status.ApprovedFor, "test-stage")
 				assert.Contains(t, freight1.Status.ApprovedFor, "another-stage")
 
-				freight2 := &kargoapi.Freight{}
-				require.NoError(t, c.Get(t.Context(), types.NamespacedName{
-					Namespace: "default",
-					Name:      "freight-2",
-				}, freight2))
+				freight2, err := store.Get(t.Context(), "default", "freight-2")
+				require.NoError(t, err)
 				assert.Empty(t, freight2.Status.ApprovedFor)
 			},
 		},
@@ -1451,12 +1325,12 @@ func TestControlFlowStageReconciler_clearApprovals(t *testing.T) {
 					Name:      "test-stage",
 				},
 			},
-			interceptor: interceptor.Funcs{
-				List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+			hooks: memory.Hooks{
+				List: func(context.Context, string, libFreight.ListOptions) error {
 					return fmt.Errorf("listing error")
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, err error) {
 				require.ErrorContains(t, err, "listing error")
 			},
 		},
@@ -1468,8 +1342,8 @@ func TestControlFlowStageReconciler_clearApprovals(t *testing.T) {
 					Name:      "test-stage",
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "default",
 						Name:      "freight-1",
@@ -1481,19 +1355,12 @@ func TestControlFlowStageReconciler_clearApprovals(t *testing.T) {
 					},
 				},
 			},
-			interceptor: interceptor.Funcs{
-				SubResourcePatch: func(
-					context.Context,
-					client.Client,
-					string,
-					client.Object,
-					client.Patch,
-					...client.SubResourcePatchOption,
-				) error {
+			hooks: memory.Hooks{
+				UpdateStatus: func(context.Context, string, string) error {
 					return fmt.Errorf("something went wrong")
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, err error) {
 				require.ErrorContains(t, err, "something went wrong")
 			},
 		},
@@ -1505,8 +1372,8 @@ func TestControlFlowStageReconciler_clearApprovals(t *testing.T) {
 					Name:      "test-stage",
 				},
 			},
-			objects: []client.Object{
-				&kargoapi.Freight{
+			freight: []*kargoapi.Freight{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "default",
 						Name:      "freight-1",
@@ -1518,22 +1385,12 @@ func TestControlFlowStageReconciler_clearApprovals(t *testing.T) {
 					},
 				},
 			},
-			interceptor: interceptor.Funcs{
-				SubResourcePatch: func(
-					context.Context,
-					client.Client,
-					string,
-					client.Object,
-					client.Patch,
-					...client.SubResourcePatchOption,
-				) error {
-					return apierrors.NewNotFound(
-						kargoapi.GroupVersion.WithResource("freight").GroupResource(),
-						"freight-1",
-					)
+			hooks: memory.Hooks{
+				UpdateStatus: func(context.Context, string, string) error {
+					return libFreight.ErrNotFound
 				},
 			},
-			assertions: func(t *testing.T, _ client.Client, err error) {
+			assertions: func(t *testing.T, _ *memory.Store, err error) {
 				require.NoError(t, err)
 			},
 		},
@@ -1541,23 +1398,12 @@ func TestControlFlowStageReconciler_clearApprovals(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(tt.objects...).
-				WithIndex(
-					&kargoapi.Freight{},
-					indexer.FreightApprovedForStagesField,
-					indexer.FreightApprovedForStages,
-				).
-				WithStatusSubresource(&kargoapi.Freight{}).
-				WithInterceptorFuncs(tt.interceptor).
-				Build()
+			store := memory.NewStore(tt.freight...)
+			store.Hooks = tt.hooks
 
-			r := &ControlFlowStageReconciler{
-				client: c,
-			}
+			r := &ControlFlowStageReconciler{freightStore: store}
 
-			tt.assertions(t, c, r.clearApprovals(t.Context(), tt.stage))
+			tt.assertions(t, store, r.clearApprovals(t.Context(), tt.stage))
 		})
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/freight/memory"
 	"github.com/akuity/kargo/pkg/server/config"
 )
 
@@ -47,11 +48,20 @@ func Test_server_getFreight(t *testing.T) {
 				},
 			},
 			{
-				name: "gets Freight by name",
-				clientBuilder: fake.NewClientBuilder().WithObjects(
-					testProject,
-					testFreight,
-				),
+				name:          "not authorized to get Freight",
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject),
+				freightStore:  memory.NewStore(testFreight),
+				serverSetup: func(_ *testing.T, s *server) {
+					s.authorizeFn = denyFreightFn("get", "")
+				},
+				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
+					require.Equal(t, http.StatusForbidden, w.Code)
+				},
+			},
+			{
+				name:          "gets Freight by name",
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject),
+				freightStore:  memory.NewStore(testFreight),
 				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
 					require.Equal(t, http.StatusOK, w.Code)
 
@@ -64,12 +74,10 @@ func Test_server_getFreight(t *testing.T) {
 				},
 			},
 			{
-				name: "gets Freight by alias",
-				url:  "/v1beta1/projects/" + testProject.Name + "/freight/" + testFreight.Alias,
-				clientBuilder: fake.NewClientBuilder().WithObjects(
-					testProject,
-					testFreight,
-				),
+				name:          "gets Freight by alias",
+				url:           "/v1beta1/projects/" + testProject.Name + "/freight/" + testFreight.Alias,
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject),
+				freightStore:  memory.NewStore(testFreight),
 				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
 					require.Equal(t, http.StatusOK, w.Code)
 

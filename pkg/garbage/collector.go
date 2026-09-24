@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	libFreight "github.com/akuity/kargo/pkg/freight"
 )
 
 // CollectorConfig is configuration for the garbage collector.
@@ -115,10 +116,10 @@ type collector struct {
 	) error
 
 	listFreightFn func(
-		context.Context,
-		client.ObjectList,
-		...client.ListOption,
-	) error
+		ctx context.Context,
+		project string,
+		opts libFreight.ListOptions,
+	) ([]kargoapi.Freight, error)
 
 	listStagesFn func(
 		context.Context,
@@ -127,15 +128,19 @@ type collector struct {
 	) error
 
 	deleteFreightFn func(
-		context.Context,
-		client.Object,
-		...client.DeleteOption,
+		ctx context.Context,
+		project string,
+		name string,
 	) error
 }
 
 // NewCollector initializes and returns an implementation of the Collector
 // interface.
-func NewCollector(kubeClient client.Client, cfg CollectorConfig) Collector {
+func NewCollector(
+	kubeClient client.Client,
+	freightStore libFreight.Store,
+	cfg CollectorConfig,
+) Collector {
 	c := &collector{
 		cfg: cfg,
 	}
@@ -149,9 +154,9 @@ func NewCollector(kubeClient client.Client, cfg CollectorConfig) Collector {
 	c.cleanProjectFreightFn = c.cleanProjectFreight
 	c.listWarehousesFn = kubeClient.List
 	c.cleanWarehouseFreightFn = c.cleanWarehouseFreight
-	c.listFreightFn = kubeClient.List
+	c.listFreightFn = freightStore.List
 	c.listStagesFn = kubeClient.List
-	c.deleteFreightFn = kubeClient.Delete
+	c.deleteFreightFn = freightStore.Delete
 	return c
 }
 

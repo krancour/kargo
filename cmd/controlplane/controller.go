@@ -31,6 +31,8 @@ import (
 	"github.com/akuity/kargo/pkg/controller/warehouses"
 	"github.com/akuity/kargo/pkg/credentials"
 	credsdb "github.com/akuity/kargo/pkg/credentials/kubernetes"
+	"github.com/akuity/kargo/pkg/freight"
+	pgfreight "github.com/akuity/kargo/pkg/freight/postgres"
 	"github.com/akuity/kargo/pkg/health"
 	healthCheckers "github.com/akuity/kargo/pkg/health/checker/builtin"
 	"github.com/akuity/kargo/pkg/heartbeat"
@@ -162,11 +164,17 @@ func (o *controllerOptions) run(ctx context.Context) error {
 		credsdb.DatabaseConfigFromEnv(),
 	)
 
+	freightStore, err := pgfreight.NewStore(ctx, pgfreight.ConfigFromEnv())
+	if err != nil {
+		return fmt.Errorf("error connecting to the Freight database: %w", err)
+	}
+
 	if err := o.setupReconcilers(
 		ctx,
 		kargoMgr,
 		argocdMgr,
 		credentialsDB,
+		freightStore,
 		stagesReconcilerCfg,
 	); err != nil {
 		return fmt.Errorf("error setting up reconcilers: %w", err)
@@ -442,6 +450,7 @@ func (o *controllerOptions) setupReconcilers(
 	ctx context.Context,
 	kargoMgr, argocdMgr manager.Manager,
 	credentialsDB credentials.Database,
+	freightStore freight.Store,
 	stagesReconcilerCfg stages.ReconcilerConfig,
 ) error {
 	var argoCDClient client.Client
@@ -457,8 +466,10 @@ func (o *controllerOptions) setupReconcilers(
 		ctx,
 		kargoMgr,
 		argocdMgr,
+		freightStore,
 		promotion.NewLocalEngine(
 			kargoMgr.GetClient(),
+			freightStore,
 			argoCDClient,
 			credentialsDB,
 			promotion.NewGitUserResolver(
@@ -485,6 +496,7 @@ func (o *controllerOptions) setupReconcilers(
 		stagesReconcilerCfg,
 		credentialsDB,
 		health.NewAggregatingChecker(),
+		freightStore,
 	).SetupWithManager(
 		ctx,
 		kargoMgr,
@@ -494,7 +506,10 @@ func (o *controllerOptions) setupReconcilers(
 		return fmt.Errorf("error setting up regular Stages reconciler: %w", err)
 	}
 
-	if err := stages.NewControlFlowStageReconciler(stagesReconcilerCfg).SetupWithManager(
+	if err := stages.NewControlFlowStageReconciler(
+		stagesReconcilerCfg,
+		freightStore,
+	).SetupWithManager(
 		ctx,
 		kargoMgr,
 		sharedIndexer,
@@ -507,6 +522,7 @@ func (o *controllerOptions) setupReconcilers(
 		kargoMgr,
 		credentialsDB,
 		subscription.DefaultSubscriberRegistry,
+		freightStore,
 		warehouses.ReconcilerConfigFromEnv(),
 	); err != nil {
 		return fmt.Errorf("error setting up Warehouses reconciler: %w", err)

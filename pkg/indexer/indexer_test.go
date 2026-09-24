@@ -16,6 +16,7 @@ import (
 	rbacapi "github.com/akuity/kargo/api/rbac/v1alpha1"
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/pkg/argocd"
+	"github.com/akuity/kargo/pkg/freight/memory"
 )
 
 func TestEventsByInvolvedObjectAPIGroup(t *testing.T) {
@@ -489,6 +490,36 @@ func TestRunningPromotionsByArgoCDApplications(t *testing.T) {
 			},
 		},
 		{
+			name: "Promotion step variable reads Freight metadata",
+			obj: &kargoapi.Promotion{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "fake-namespace",
+				},
+				Spec: kargoapi.PromotionSpec{
+					Stage: fakeStage.Name,
+					Steps: []kargoapi.PromotionStep{
+						{
+							Uses: "argocd-update",
+							Vars: []kargoapi.ExpressionVariable{
+								{
+									Name:  "app",
+									Value: "${{ freightMetadata('fake-freight').app }}",
+								},
+							},
+							Config: &apiextensionsv1.JSON{
+								Raw: []byte(`{"apps":[{"namespace":"fake-namespace","name":"${{ vars.app }}"}]}`),
+							},
+						},
+					},
+				},
+				Status: kargoapi.PromotionStatus{
+					Phase:       kargoapi.PromotionPhaseRunning,
+					CurrentStep: 0,
+				},
+			},
+			expected: []string{"fake-namespace:fake-app-from-metadata"},
+		},
+		{
 			name: "Promotion has argocd-wait step with app name",
 			obj: &kargoapi.Promotion{
 				ObjectMeta: metav1.ObjectMeta{
@@ -571,12 +602,25 @@ func TestRunningPromotionsByArgoCDApplications(t *testing.T) {
 				WithObjects(fakeStage.DeepCopy()).
 				Build()
 
+			freightStore := memory.NewStore(&kargoapi.Freight{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "fake-freight",
+					Namespace: fakeStage.Namespace,
+				},
+				Status: kargoapi.FreightStatus{
+					Metadata: map[string]apiextensionsv1.JSON{
+						"app": {Raw: []byte(`"fake-app-from-metadata"`)},
+					},
+				},
+			})
+
 			require.Equal(
 				t,
 				testCase.expected,
 				RunningPromotionsByArgoCDApplications(
 					t.Context(),
 					c,
+					freightStore,
 					testCase.shardName,
 					false,
 				)(testCase.obj),
@@ -939,145 +983,6 @@ func TestPromotionRequestsByStage(t *testing.T) {
 	t.Run("not a PromotionRequest", func(t *testing.T) {
 		require.Nil(t, PromotionRequestsByStage(&kargoapi.Promotion{}))
 	})
-}
-
-func TestFreightByWarehouse(t *testing.T) {
-	testCases := []struct {
-		name     string
-		freight  *kargoapi.Freight
-		expected []string
-	}{
-		{
-			name:     "Freight has no Warehouse origin",
-			freight:  &kargoapi.Freight{},
-			expected: nil,
-		},
-		{
-			name: "Freight has a Warehouse origin",
-			freight: &kargoapi.Freight{
-				Origin: kargoapi.FreightOrigin{
-					Kind: kargoapi.FreightOriginKindWarehouse,
-					Name: "fake-warehouse",
-				},
-			},
-			expected: []string{"fake-warehouse"},
-		},
-	}
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			require.Equal(
-				t,
-				testCase.expected,
-				FreightByWarehouse(testCase.freight),
-			)
-		})
-	}
-}
-
-func TestFreightByCurrentStages(t *testing.T) {
-	testCases := []struct {
-		name     string
-		freight  *kargoapi.Freight
-		expected []string
-	}{
-		{
-			name:     "Freight is not currently in use by any Stages",
-			freight:  &kargoapi.Freight{},
-			expected: []string{},
-		},
-		{
-			name: "Freight is currently in use by a Stage",
-			freight: &kargoapi.Freight{
-				Status: kargoapi.FreightStatus{
-					CurrentlyIn: map[string]kargoapi.CurrentStage{"fake-stage": {}},
-				},
-			},
-			expected: []string{"fake-stage"},
-		},
-	}
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Run(testCase.name, func(t *testing.T) {
-				require.Equal(
-					t,
-					testCase.expected,
-					FreightByCurrentStages(testCase.freight),
-				)
-			})
-		})
-	}
-}
-
-func TestFreightByVerifiedStages(t *testing.T) {
-	testCases := []struct {
-		name     string
-		freight  *kargoapi.Freight
-		expected []string
-	}{
-		{
-			name:     "Freight is not verified in any Stages",
-			freight:  &kargoapi.Freight{},
-			expected: []string{},
-		},
-		{
-			name: "Freight is verified in a Stage",
-			freight: &kargoapi.Freight{
-				Status: kargoapi.FreightStatus{
-					VerifiedIn: map[string]kargoapi.VerifiedStage{
-						"fake-stage": {},
-					},
-				},
-			},
-			expected: []string{"fake-stage"},
-		},
-	}
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Run(testCase.name, func(t *testing.T) {
-				require.Equal(
-					t,
-					testCase.expected,
-					FreightByVerifiedStages(testCase.freight),
-				)
-			})
-		})
-	}
-}
-
-func TestFreightApprovedForStages(t *testing.T) {
-	testCases := []struct {
-		name     string
-		freight  *kargoapi.Freight
-		expected []string
-	}{
-		{
-			name:     "Freight is not approved for any Stages",
-			freight:  &kargoapi.Freight{},
-			expected: []string{},
-		},
-		{
-			name: "Freight is approved for a Stage",
-			freight: &kargoapi.Freight{
-				Status: kargoapi.FreightStatus{
-					ApprovedFor: map[string]kargoapi.ApprovedStage{
-						"fake-stage": {},
-					},
-				},
-			},
-			expected: []string{"fake-stage"},
-		},
-	}
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Run(testCase.name, func(t *testing.T) {
-				require.Equal(
-					t,
-					testCase.expected,
-					FreightApprovedForStages(testCase.freight),
-				)
-			})
-		})
-	}
 }
 
 func TestStagesByFreight(t *testing.T) {

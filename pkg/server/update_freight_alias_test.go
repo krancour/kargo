@@ -11,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/freight/memory"
 	"github.com/akuity/kargo/pkg/server/config"
 )
 
@@ -33,6 +34,8 @@ func Test_server_patchFreightAliasHandler(t *testing.T) {
 		Alias: testOldAlias,
 	}
 	testBaseURL := "/v1beta1/projects/" + testProject.Name + "/freight/"
+	byNameStore := memory.NewStore(testFreight)
+	byOldAliasStore := memory.NewStore(testFreight)
 	testRESTEndpoint(
 		t, &config.ServerConfig{},
 		http.MethodPatch, testBaseURL+testFreight.Name+"/alias?newAlias="+testNewAlias,
@@ -51,9 +54,20 @@ func Test_server_patchFreightAliasHandler(t *testing.T) {
 				},
 			},
 			{
-				name: "new alias already in use by another piece of freight",
-				clientBuilder: fake.NewClientBuilder().WithObjects(
-					testProject,
+				name:          "not authorized to patch Freight",
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject),
+				freightStore:  memory.NewStore(testFreight),
+				serverSetup: func(_ *testing.T, s *server) {
+					s.authorizeFn = denyFreightFn("patch", "")
+				},
+				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
+					require.Equal(t, http.StatusForbidden, w.Code)
+				},
+			},
+			{
+				name:          "new alias already in use by another piece of freight",
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject),
+				freightStore: memory.NewStore(
 					testFreight,
 					&kargoapi.Freight{
 						ObjectMeta: metav1.ObjectMeta{
@@ -69,55 +83,39 @@ func Test_server_patchFreightAliasHandler(t *testing.T) {
 				},
 			},
 			{
-				name: "updates alias by name",
-				clientBuilder: fake.NewClientBuilder().WithObjects(
-					testProject,
-					testFreight,
-				),
-				assertions: func(t *testing.T, w *httptest.ResponseRecorder, c client.Client) {
+				name:          "updates alias by name",
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject),
+				freightStore:  byNameStore,
+				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
 					require.Equal(t, http.StatusOK, w.Code)
 
-					// Verify the Freight was updated in the cluster
-					freight := &kargoapi.Freight{}
-					err := c.Get(
-						t.Context(),
-						client.ObjectKey{Namespace: testProject.Name, Name: testFreight.Name},
-						freight,
-					)
+					// Verify the Freight was updated in the store
+					freight, err := byNameStore.Get(t.Context(), testProject.Name, testFreight.Name)
 					require.NoError(t, err)
 					require.Equal(t, testNewAlias, freight.Labels[kargoapi.LabelKeyAlias])
 					require.Equal(t, testNewAlias, freight.Alias)
 				},
 			},
 			{
-				name: "updates alias by old alias",
-				url:  testBaseURL + testOldAlias + "/alias?newAlias=" + testNewAlias,
-				clientBuilder: fake.NewClientBuilder().WithObjects(
-					testProject,
-					testFreight,
-				),
-				assertions: func(t *testing.T, w *httptest.ResponseRecorder, c client.Client) {
+				name:          "updates alias by old alias",
+				url:           testBaseURL + testOldAlias + "/alias?newAlias=" + testNewAlias,
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject),
+				freightStore:  byOldAliasStore,
+				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
 					require.Equal(t, http.StatusOK, w.Code)
 
-					// Verify the Freight was updated
-					freight := &kargoapi.Freight{}
-					err := c.Get(
-						t.Context(),
-						client.ObjectKey{Namespace: testProject.Name, Name: testFreight.Name},
-						freight,
-					)
+					// Verify the Freight was updated in the store
+					freight, err := byOldAliasStore.Get(t.Context(), testProject.Name, testFreight.Name)
 					require.NoError(t, err)
 					require.Equal(t, testNewAlias, freight.Labels[kargoapi.LabelKeyAlias])
 					require.Equal(t, testNewAlias, freight.Alias)
 				},
 			},
 			{
-				name: "newAlias query parameter is required",
-				url:  testBaseURL + testFreight.Name + "/alias",
-				clientBuilder: fake.NewClientBuilder().WithObjects(
-					testProject,
-					testFreight,
-				),
+				name:          "newAlias query parameter is required",
+				url:           testBaseURL + testFreight.Name + "/alias",
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject),
+				freightStore:  memory.NewStore(testFreight),
 				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
 					require.Equal(t, http.StatusBadRequest, w.Code)
 				},

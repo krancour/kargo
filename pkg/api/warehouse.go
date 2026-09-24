@@ -8,12 +8,12 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/freight"
 )
 
 // GetWarehouse returns a pointer to the Warehouse resource specified by the
@@ -104,7 +104,7 @@ type ListWarehouseFreightOptions struct {
 // originated from a Warehouse.
 func ListFreightFromWarehouse(
 	ctx context.Context,
-	c client.Client,
+	store freight.Store,
 	w *kargoapi.Warehouse,
 	opts *ListWarehouseFreightOptions,
 ) ([]kargoapi.Freight, error) {
@@ -112,67 +112,37 @@ func ListFreightFromWarehouse(
 		opts = &ListWarehouseFreightOptions{}
 	}
 
-	// Common selectors we'll use a few times in the code that follows:
+	// Common base query criteria we'll use a few times in the code that
+	// follows:
+	base := freight.ListOptions{Warehouse: w.Name, CurrentlyIn: opts.CurrentlyIn}
 
-	// Selects Freight from a specific Warehouse
-	warehouseSelector := fields.OneTermEqualSelector("warehouse", w.Name)
-
-	// Selects Freight currently used by a specific Stage
-	var currentlyInSelector fields.Selector
-	if opts.CurrentlyIn != "" {
-		currentlyInSelector = fields.OneTermEqualSelector("currentlyIn", opts.CurrentlyIn)
-	}
-
-	// Build a list of fields.Selectors we'll use to make multiple queries whose
-	// results we will merge and de-dupe.
-	fieldSelectors := make([]fields.Selector, 0)
+	// Build a list of queries whose results we will merge and de-dupe.
+	var queries []freight.ListOptions
 	if opts.ApprovedFor == "" && len(opts.VerifiedIn) == 0 {
 		// Just list all Freight resources that originated from the Warehouse
-		sels := make([]fields.Selector, 1, 2)
-		sels[0] = warehouseSelector
-		if currentlyInSelector != nil {
-			sels = append(sels, currentlyInSelector)
-		}
-		fieldSelectors = append(fieldSelectors, fields.AndSelectors(sels...))
+		queries = append(queries, base)
 	}
 	if opts.ApprovedFor != "" {
 		// List all Freight resources that are approved for the specified Stage
-		sels := make([]fields.Selector, 2, 3)
-		sels[0] = warehouseSelector
-		sels[1] = fields.OneTermEqualSelector("approvedFor", opts.ApprovedFor)
-		if currentlyInSelector != nil {
-			sels = append(sels, currentlyInSelector)
-		}
-		fieldSelectors = append(fieldSelectors, fields.AndSelectors(sels...))
+		q := base
+		q.ApprovedFor = opts.ApprovedFor
+		queries = append(queries, q)
 	}
 
-	// Construct selectors for listing Freight using the configured AvailabilityStrategy
-	// semantics.
+	// Construct queries for listing Freight using the configured
+	// AvailabilityStrategy semantics.
 	switch opts.AvailabilityStrategy {
 	case kargoapi.FreightAvailabilityStrategyAll:
 		// Query for Freight that is verified in ALL the VerifiedIn stages.
-		sels := make([]fields.Selector, 1, len(opts.VerifiedIn)+2)
-		sels[0] = warehouseSelector
-		for _, stage := range opts.VerifiedIn {
-			sels = append(
-				sels,
-				fields.OneTermEqualSelector("verifiedIn", stage),
-			)
-		}
-		if currentlyInSelector != nil {
-			sels = append(sels, currentlyInSelector)
-		}
-		fieldSelectors = append(fieldSelectors, fields.AndSelectors(sels...))
+		q := base
+		q.VerifiedIn = opts.VerifiedIn
+		queries = append(queries, q)
 	case kargoapi.FreightAvailabilityStrategyOneOf, "":
 		// Query for Freight that is verified in ANY of the VerifiedIn stages.
 		for _, stage := range opts.VerifiedIn {
-			sels := make([]fields.Selector, 2, 3)
-			sels[0] = warehouseSelector
-			sels[1] = fields.OneTermEqualSelector("verifiedIn", stage)
-			if currentlyInSelector != nil {
-				sels = append(sels, currentlyInSelector)
-			}
-			fieldSelectors = append(fieldSelectors, fields.AndSelectors(sels...))
+			q := base
+			q.VerifiedIn = []string{stage}
+			queries = append(queries, q)
 		}
 	default:
 		return nil, fmt.Errorf(
@@ -181,17 +151,10 @@ func ListFreightFromWarehouse(
 		)
 	}
 
-	var freight []kargoapi.Freight
-	for _, fs := range fieldSelectors {
-		res := &kargoapi.FreightList{}
-		if err := c.List(
-			ctx,
-			res,
-			&client.ListOptions{
-				Namespace:     w.Namespace,
-				FieldSelector: fs,
-			},
-		); err != nil {
+	var result []kargoapi.Freight
+	for _, q := range queries {
+		items, err := store.List(ctx, w.Namespace, q)
+		if err != nil {
 			return nil, fmt.Errorf(
 				"error listing Freight for Warehouse %q in namespace %q: %w",
 				w.Name,
@@ -199,25 +162,25 @@ func ListFreightFromWarehouse(
 				err,
 			)
 		}
-		freight = append(freight, res.Items...)
+		result = append(result, items...)
 	}
 
 	// Sort and de-dupe
-	slices.SortFunc(freight, func(lhs, rhs kargoapi.Freight) int {
+	slices.SortFunc(result, func(lhs, rhs kargoapi.Freight) int {
 		return strings.Compare(lhs.Name, rhs.Name)
 	})
-	freight = slices.CompactFunc(freight, func(lhs, rhs kargoapi.Freight) bool {
+	result = slices.CompactFunc(result, func(lhs, rhs kargoapi.Freight) bool {
 		return lhs.Name == rhs.Name
 	})
 
 	if len(opts.VerifiedIn) == 0 || opts.RequiredSoakTime == nil {
 		// Nothing left to do
-		return freight, nil
+		return result, nil
 	}
 
 	// Filter out Freight whose soak time has not yet elapsed
-	filtered := make([]kargoapi.Freight, 0, len(freight))
-	for _, f := range freight {
+	filtered := make([]kargoapi.Freight, 0, len(result))
+	for _, f := range result {
 		if opts.ApprovedFor != "" {
 			if f.IsApprovedFor(opts.ApprovedFor) {
 				filtered = append(filtered, f)

@@ -1382,6 +1382,29 @@ webhooksServer:
     #   ...
     #   -----END CERTIFICATE-----
 
+## @section Database Parameters
+postgres:
+  ## @param postgres.enabled Whether to install a single-node Postgres for Freight storage. Disable and set `database.url` to bring your own.
+  enabled: true
+  ## @param postgres.image Postgres container image.
+  image: postgres:17-alpine
+  ## @param postgres.storage Size of the persistent volume claim backing the bundled Postgres.
+  storage: 1Gi
+  ## @param postgres.annotations Annotations for bundled Postgres resources.
+  annotations: {}
+
+  ## ServiceAccount specific settings
+  serviceAccount:
+    ## @param postgres.serviceAccount.labels Additional labels to add to the Postgres ServiceAccount.
+    labels: {}
+    ## @param postgres.serviceAccount.annotations Additional annotations to add to the Postgres ServiceAccount.
+    annotations: {}
+    # foo: bar
+    # another: value
+database:
+  ## @param database.url Postgres connection URL used by the API server, controller, webhooks server and garbage collector. Overrides the bundled Postgres when set.
+  url: ""
+
 ## @param extraObjects An array describing additional, arbitrary Kubernetes resources to include when rendering this chart. Items in the array may be YAML objects or strings. Either may be templated. Templates will be evaluated against the same set of values as the rest of the chart.
 extraObjects: []
 # - apiVersion: v1

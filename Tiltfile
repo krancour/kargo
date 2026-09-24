@@ -128,6 +128,13 @@ k8s_resource(
 )
 
 k8s_resource(
+  workload = 'kargo-postgres',
+  new_name = 'postgres',
+  labels = ['kargo'],
+  objects = ['kargo-postgres:serviceaccount']
+)
+
+k8s_resource(
   workload = 'kargo-api',
   new_name = 'api',
   port_forwards = [
@@ -145,7 +152,7 @@ k8s_resource(
     'kargo-api-rollouts:clusterrole',
     'kargo-api-rollouts:clusterrolebinding'
   ],
-  resource_deps=['back-end-compile','dex-server']
+  resource_deps=['back-end-compile','dex-server','postgres']
 )
 
 k8s_resource(
@@ -169,7 +176,7 @@ k8s_resource(
     'kargo-shared-resources-controller-reader:role',
     'kargo-test-gpg-signing-key:secret'
   ],
-  resource_deps=['back-end-compile', 'credential-helper-compile', ]
+  resource_deps=['back-end-compile', 'credential-helper-compile', 'postgres']
 )
 
 k8s_resource(
@@ -209,7 +216,7 @@ k8s_resource(
     'kargo-garbage-collector:configmap',
     'kargo-garbage-collector:serviceaccount'
   ],
-  resource_deps=['back-end-compile']
+  resource_deps=['back-end-compile', 'postgres']
 )
 
 k8s_resource(
@@ -222,7 +229,7 @@ k8s_resource(
     'kargo-management-controller:configmap',
     'kargo-management-controller:serviceaccount'
   ],
-  resource_deps=['back-end-compile']
+  resource_deps=['back-end-compile', 'postgres']
 )
 
 k8s_resource(
@@ -252,7 +259,7 @@ k8s_resource(
     'kargo-webhooks-server-ns-controller:clusterrole',
     'kargo-webhooks-server-ns-controller:clusterrolebinding'
   ],
-  resource_deps=['back-end-compile', 'ensure-cert-manager']
+  resource_deps=['back-end-compile', 'ensure-cert-manager', 'postgres']
 )
 
 k8s_resource(

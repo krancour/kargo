@@ -246,6 +246,7 @@ func (s *server) setupRESTRouter(ctx context.Context) *gin.Engine {
 			project.DELETE("/warehouses/:warehouse", s.deleteWarehouse)
 
 			// Freight
+			project.POST("/freight", s.createFreight)
 			project.GET("/freight", s.queryFreight)
 			project.GET("/freight/:freight-name-or-alias", s.getFreight)
 			project.GET("/freight/:freight-name-or-alias/links", s.getFreightLinks)

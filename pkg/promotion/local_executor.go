@@ -8,6 +8,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/pkg/credentials"
+	"github.com/akuity/kargo/pkg/freight"
 )
 
 // LocalStepExecutor is a concrete implementation of StepExecutor that
@@ -16,6 +17,7 @@ type LocalStepExecutor struct {
 	registry StepRunnerRegistry
 
 	kargoClient     client.Client
+	freightStore    freight.Store
 	argoCDClient    client.Client
 	credsDB         credentials.Database
 	gitUserResolver GitUserResolver
@@ -26,13 +28,16 @@ type LocalStepExecutor struct {
 // execute steps in the promotion process.
 func NewLocalStepExecutor(
 	registry StepRunnerRegistry,
-	kargoClient, argoCDClient client.Client,
+	kargoClient client.Client,
+	freightStore freight.Store,
+	argoCDClient client.Client,
 	credsDB credentials.Database,
 	gitUserResolver GitUserResolver,
 ) *LocalStepExecutor {
 	return &LocalStepExecutor{
 		registry:        registry,
 		kargoClient:     kargoClient,
+		freightStore:    freightStore,
 		argoCDClient:    argoCDClient,
 		credsDB:         credsDB,
 		gitUserResolver: gitUserResolver,
@@ -58,6 +63,7 @@ func (e *LocalStepExecutor) ExecuteStep(
 		switch capability {
 		case StepCapabilityAccessControlPlane:
 			capabilities.KargoClient = e.kargoClient
+			capabilities.FreightStore = e.freightStore
 		case StepCapabilityAccessArgoCD:
 			capabilities.ArgoCDClient = e.argoCDClient
 		case StepCapabilityAccessCredentials:

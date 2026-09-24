@@ -144,6 +144,27 @@ tests:
           path: data.OIDC_ISSUER_URL
           value: https://idp.example.com
 
+  - it: computes DATABASE_URL from the bundled Postgres by default
+    asserts:
+      - equal:
+          path: data.DATABASE_URL
+          value: postgres://postgres@kargo-postgres.NAMESPACE.svc:5432/postgres?sslmode=disable
+
+  - it: uses database.url when set
+    set:
+      database.url: postgres://custom/db
+    asserts:
+      - equal:
+          path: data.DATABASE_URL
+          value: postgres://custom/db
+
+  - it: fails when postgres is disabled and database.url is not set
+    set:
+      postgres.enabled: false
+    asserts:
+      - failedTemplate:
+          errorPattern: set database\.url when postgres\.enabled is false
+
 ---
 suite: api/secret.yaml
 values:

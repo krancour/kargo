@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/freight/memory"
 	"github.com/akuity/kargo/pkg/promotion/metrics"
 )
 
@@ -717,6 +718,7 @@ func TestLocalOrchestrator_ExecuteSteps(t *testing.T) {
 			orchestrator := NewLocalOrchestrator(
 				registry,
 				fake.NewClientBuilder().Build(),
+				memory.NewStore(),
 				fake.NewClientBuilder().Build(),
 				nil,
 				nil,

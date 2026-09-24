@@ -9,6 +9,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	libFreight "github.com/akuity/kargo/pkg/freight"
 	"github.com/akuity/kargo/pkg/indexer"
 	"github.com/akuity/kargo/pkg/logging"
 )
@@ -66,15 +67,8 @@ func (c *collector) cleanWarehouseFreight(
 		"warehouse", warehouse,
 	)
 
-	freight := kargoapi.FreightList{}
-	if err := c.listFreightFn(
-		ctx,
-		&freight,
-		client.InNamespace(project),
-		client.MatchingFields{
-			indexer.FreightByWarehouseField: warehouse,
-		},
-	); err != nil {
+	freight, err := c.listFreightFn(ctx, project, libFreight.ListOptions{Warehouse: warehouse})
+	if err != nil {
 		return fmt.Errorf(
 			"error listing Freight from Warehouse %q in Project %q: %w",
 			warehouse,
@@ -83,18 +77,18 @@ func (c *collector) cleanWarehouseFreight(
 		)
 	}
 
-	if len(freight.Items) <= c.cfg.MaxRetainedFreight {
+	if len(freight) <= c.cfg.MaxRetainedFreight {
 		return nil // Done
 	}
 
 	// Sort by discovery/creation timestamp descending
-	slices.SortFunc(freight.Items, func(lhs, rhs kargoapi.Freight) int {
+	slices.SortFunc(freight, func(lhs, rhs kargoapi.Freight) int {
 		return rhs.EffectiveDiscoveredAt().Compare(lhs.EffectiveDiscoveredAt())
 	})
 
 	// Step through all Freight and find the oldest that is still in use
 	oldestInUseIndex := -1
-	for i, f := range freight.Items {
+	for i, f := range freight {
 		stages := kargoapi.StageList{}
 		if err := c.listStagesFn(
 			ctx,
@@ -121,18 +115,18 @@ func (c *collector) cleanWarehouseFreight(
 	}
 
 	firstToDeleteIndex := oldestInUseIndex + c.cfg.MaxRetainedFreight + 1
-	if firstToDeleteIndex >= len(freight.Items) {
+	if firstToDeleteIndex >= len(freight) {
 		return nil // Done
 	}
 
 	var deleteErrCount int
-	for i := firstToDeleteIndex; i < len(freight.Items); i++ {
-		f := freight.Items[i]
+	for i := firstToDeleteIndex; i < len(freight); i++ {
+		f := freight[i]
 		if time.Since(f.EffectiveDiscoveredAt()) < c.cfg.MinFreightDeletionAge {
 			continue // Not old enough
 		}
 		freightLogger := logger.WithValues("freight", f.Name)
-		if err := c.deleteFreightFn(ctx, &f); err != nil {
+		if err := c.deleteFreightFn(ctx, project, f.Name); err != nil {
 			freightLogger.Error(err, "error deleting Freight")
 			deleteErrCount++
 		} else {

@@ -13,7 +13,34 @@ tests:
           value: MutatingWebhookConfiguration
         lengthEqual:
           path: webhooks
-          count: 4
+          count: 3
+
+  - it: does not register a webhook for freight (validated in Postgres instead)
+    asserts:
+      - documentSelector:
+          path: kind
+          value: MutatingWebhookConfiguration
+        lengthEqual:
+          path: webhooks
+          count: 3
+      - documentSelector:
+          path: kind
+          value: MutatingWebhookConfiguration
+        equal:
+          path: webhooks[0].name
+          value: promotion.kargo.akuity.io
+      - documentSelector:
+          path: kind
+          value: ValidatingWebhookConfiguration
+        lengthEqual:
+          path: webhooks
+          count: 11
+      - documentSelector:
+          path: kind
+          value: ValidatingWebhookConfiguration
+        equal:
+          path: webhooks[2].name
+          value: project.kargo.akuity.io
 
   - it: is not rendered when webhook registration is disabled
     set:
@@ -91,6 +118,20 @@ tests:
       - equal:
           path: data.METRICS_BIND_ADDRESS
           value: ":9090"
+
+  - it: computes DATABASE_URL from the bundled Postgres by default
+    asserts:
+      - equal:
+          path: data.DATABASE_URL
+          value: postgres://postgres@kargo-postgres.NAMESPACE.svc:5432/postgres?sslmode=disable
+
+  - it: uses database.url when set
+    set:
+      database.url: postgres://custom/db
+    asserts:
+      - equal:
+          path: data.DATABASE_URL
+          value: postgres://custom/db
 
 ---
 suite: kubernetes-webhooks-server/deployment.yaml

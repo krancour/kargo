@@ -9,11 +9,11 @@ import (
 	"connectrpc.com/connect"
 	"github.com/gin-gonic/gin"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/freight"
 	libhttp "github.com/akuity/kargo/pkg/http"
 	"github.com/akuity/kargo/pkg/server/validation"
 )
@@ -150,52 +150,60 @@ func bindJSONOrError(c *gin.Context, target any) bool {
 	return true
 }
 
-// getFreightByNameOrAliasForGin resolves a Freight resource by name or alias.
+// authorizeFreight checks the caller may perform verb on Freight in project.
+// Freight lives outside the Kubernetes API server, so the authorizing client
+// cannot check this implicitly. Returns true if authorized, or false if an
+// error was added to the gin context.
+func (s *server) authorizeFreight(
+	c *gin.Context,
+	verb string,
+	project string,
+	name string,
+) bool {
+	if err := s.authorizeFn(
+		c.Request.Context(),
+		verb,
+		freightGVR,
+		"",
+		client.ObjectKey{Namespace: project, Name: name},
+	); err != nil {
+		_ = c.Error(err)
+		return false
+	}
+	return true
+}
+
+// getFreightByNameOrAliasForGin resolves a piece of Freight by name or alias.
 // It first tries to get by name, and if not found, tries to find by alias.
 // Returns the Freight if found, or nil with an error added to the gin context
-// if not found or an error occurred.
+// if the caller is not authorized, the Freight was not found, or an error
+// occurred.
 func (s *server) getFreightByNameOrAliasForGin(
 	c *gin.Context,
 	project string,
 	nameOrAlias string,
 ) *kargoapi.Freight {
+	if !s.authorizeFreight(c, "get", project, nameOrAlias) {
+		return nil
+	}
 	ctx := c.Request.Context()
-
-	// Try getting by name first
-	freight := &kargoapi.Freight{}
-	err := s.client.Get(
-		ctx,
-		client.ObjectKey{Name: nameOrAlias, Namespace: project},
-		freight,
-	)
-	if err == nil {
-		return freight
+	f, err := s.freightStore.Get(ctx, project, nameOrAlias)
+	if errors.Is(err, freight.ErrNotFound) {
+		f, err = s.freightStore.GetByAlias(ctx, project, nameOrAlias)
 	}
-	if !apierrors.IsNotFound(err) {
+	if err != nil {
+		if errors.Is(err, freight.ErrNotFound) {
+			_ = c.Error(libhttp.ErrorStr(
+				fmt.Sprintf(
+					"Freight with name or alias %q not found in project %q",
+					nameOrAlias, project,
+				),
+				http.StatusNotFound,
+			))
+			return nil
+		}
 		_ = c.Error(err)
 		return nil
 	}
-
-	// Try getting by alias
-	list := &kargoapi.FreightList{}
-	if err := s.client.List(
-		ctx,
-		list,
-		client.InNamespace(project),
-		client.MatchingLabels{kargoapi.LabelKeyAlias: nameOrAlias},
-	); err != nil {
-		_ = c.Error(err)
-		return nil
-	}
-	if len(list.Items) == 0 {
-		_ = c.Error(libhttp.ErrorStr(
-			fmt.Sprintf(
-				"Freight with name or alias %q not found in project %q",
-				nameOrAlias, project,
-			),
-			http.StatusNotFound,
-		))
-		return nil
-	}
-	return &list.Items[0]
+	return f
 }

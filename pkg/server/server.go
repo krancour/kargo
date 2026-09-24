@@ -25,6 +25,7 @@ import (
 	"github.com/akuity/kargo/pkg/api"
 	rollouts "github.com/akuity/kargo/pkg/api/stubs/rollouts"
 	"github.com/akuity/kargo/pkg/event"
+	"github.com/akuity/kargo/pkg/freight"
 	httputil "github.com/akuity/kargo/pkg/http"
 	"github.com/akuity/kargo/pkg/logging"
 	"github.com/akuity/kargo/pkg/server/config"
@@ -38,10 +39,11 @@ import (
 var ui embed.FS
 
 type server struct {
-	cfg     config.ServerConfig
-	client  kubernetes.Client
-	rolesDB rbac.RolesDatabase
-	sender  event.Sender
+	cfg          config.ServerConfig
+	client       kubernetes.Client
+	freightStore freight.Store
+	rolesDB      rbac.RolesDatabase
+	sender       event.Sender
 
 	// The following behaviors are overridable for testing purposes:
 
@@ -65,7 +67,7 @@ type server struct {
 	) (*kargoapi.Stage, error)
 	getFreightByNameOrAliasFn func(
 		ctx context.Context,
-		c client.Client,
+		store freight.Store,
 		project string,
 		name string,
 		alias string,
@@ -85,41 +87,6 @@ type server struct {
 		*kargoapi.Stage,
 		kargoapi.FreightOrigin,
 	) ([]kargoapi.Stage, error)
-
-	// QueryFreight API:
-	listFreightFn func(
-		context.Context,
-		client.ObjectList,
-		...client.ListOption,
-	) error
-	getAvailableFreightForStageFn func(
-		context.Context,
-		*kargoapi.Stage,
-	) ([]kargoapi.Freight, error)
-	getFreightFromWarehousesFn func(
-		ctx context.Context,
-		project string,
-		warehouses []string,
-	) ([]kargoapi.Freight, error)
-	getVerifiedFreightFn func(
-		ctx context.Context,
-		project string,
-		upstreams []string,
-	) ([]kargoapi.Freight, error)
-
-	// Freight aliasing:
-	patchFreightAliasFn func(
-		ctx context.Context,
-		freight *kargoapi.Freight,
-		alias string,
-	) error
-
-	// Freight approval:
-	patchFreightStatusFn func(
-		ctx context.Context,
-		freight *kargoapi.Freight,
-		newStatus kargoapi.FreightStatus,
-	) error
 
 	// Rollouts integration:
 	getAnalysisTemplateFn func(
@@ -157,14 +124,16 @@ type Server interface {
 func NewServer(
 	cfg config.ServerConfig,
 	kubeClient kubernetes.Client,
+	freightStore freight.Store,
 	rolesDB rbac.RolesDatabase,
 	sender event.Sender,
 ) Server {
 	s := &server{
-		cfg:     cfg,
-		client:  kubeClient,
-		rolesDB: rolesDB,
-		sender:  sender,
+		cfg:          cfg,
+		client:       kubeClient,
+		freightStore: freightStore,
+		rolesDB:      rolesDB,
+		sender:       sender,
 	}
 
 	s.validateProjectExistsFn = s.validateProjectExists
@@ -174,12 +143,6 @@ func NewServer(
 	s.isFreightAvailableFn = s.isFreightAvailable
 	s.createPromotionFn = kubeClient.Create
 	s.findDownstreamStagesFn = s.findDownstreamStages
-	s.listFreightFn = kubeClient.List
-	s.getAvailableFreightForStageFn = s.getAvailableFreightForStage
-	s.getFreightFromWarehousesFn = s.getFreightFromWarehouses
-	s.getVerifiedFreightFn = s.getVerifiedFreight
-	s.patchFreightAliasFn = s.patchFreightAlias
-	s.patchFreightStatusFn = s.patchFreightStatus
 	s.authorizeFn = kubeClient.Authorize
 	s.getAnalysisTemplateFn = rollouts.GetAnalysisTemplate
 	s.getClusterAnalysisTemplateFn = rollouts.GetClusterAnalysisTemplate

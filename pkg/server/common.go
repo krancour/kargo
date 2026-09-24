@@ -24,6 +24,8 @@ import (
 
 const trueStr = "true"
 
+var freightGVR = kargoapi.GroupVersion.WithResource("freights")
+
 // RefreshResourceType represents the type of Kargo resource to refresh. It is
 // exported for use by the CLI, which uses it to identify the resource type
 // requested by the user and to determine how to build the corresponding
@@ -80,6 +82,12 @@ var (
 		Version: kargoapi.GroupVersion.Version,
 		Kind:    "Freight",
 	}
+
+	errFreightViaGenericEndpoint = libhttp.ErrorStr(
+		"Freight cannot be created or updated through the generic resource "+
+			"endpoints; use POST /v1beta1/projects/{project}/freight",
+		http.StatusBadRequest,
+	)
 
 	errSecretManagementDisabled = libhttp.ErrorStr(
 		"secret management is not enabled",

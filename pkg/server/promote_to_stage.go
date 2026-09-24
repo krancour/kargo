@@ -2,17 +2,17 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/pkg/api"
 	"github.com/akuity/kargo/pkg/event"
+	libFreight "github.com/akuity/kargo/pkg/freight"
 	libhttp "github.com/akuity/kargo/pkg/http"
 	"github.com/akuity/kargo/pkg/logging"
 	"github.com/akuity/kargo/pkg/server/user"
@@ -161,14 +161,10 @@ func (s *server) promoteToStage(c *gin.Context) {
 			return
 		}
 		if s.sender != nil && promotion.Spec.Freight != "" {
-			freight := &kargoapi.Freight{}
-			if err = s.client.Get(
-				ctx,
-				client.ObjectKey{Namespace: promotion.Namespace, Name: promotion.Spec.Freight},
-				freight,
-			); err != nil {
+			freight, getErr := s.freightStore.Get(ctx, promotion.Namespace, promotion.Spec.Freight)
+			if getErr != nil {
 				logging.LoggerFromContext(ctx).Error(
-					err,
+					getErr,
 					"error getting resolved Freight for Promotion created event",
 				)
 			} else {
@@ -179,11 +175,17 @@ func (s *server) promoteToStage(c *gin.Context) {
 		return
 	}
 
+	nameOrAlias := req.Freight
+	if nameOrAlias == "" {
+		nameOrAlias = req.FreightAlias
+	}
+	if !s.authorizeFreight(c, "get", project, nameOrAlias) {
+		return
+	}
 	var freight *kargoapi.Freight
 	if req.Freight != "" {
-		freight = &kargoapi.Freight{}
-		if err = s.client.Get(ctx, client.ObjectKey{Namespace: project, Name: req.Freight}, freight); err != nil {
-			if apierrors.IsNotFound(err) {
+		if freight, err = s.freightStore.Get(ctx, project, req.Freight); err != nil {
+			if errors.Is(err, libFreight.ErrNotFound) {
 				_ = c.Error(libhttp.ErrorStr(
 					fmt.Sprintf("Freight %q not found in project %q", req.Freight, project),
 					http.StatusNotFound,
@@ -194,24 +196,17 @@ func (s *server) promoteToStage(c *gin.Context) {
 			return
 		}
 	} else {
-		list := &kargoapi.FreightList{}
-		if err = s.client.List(
-			ctx,
-			list,
-			client.InNamespace(project),
-			client.MatchingLabels{kargoapi.LabelKeyAlias: req.FreightAlias},
-		); err != nil {
+		if freight, err = s.freightStore.GetByAlias(ctx, project, req.FreightAlias); err != nil {
+			if errors.Is(err, libFreight.ErrNotFound) {
+				_ = c.Error(libhttp.ErrorStr(
+					fmt.Sprintf("Freight with alias %q not found in project %q", req.FreightAlias, project),
+					http.StatusNotFound,
+				))
+				return
+			}
 			_ = c.Error(err)
 			return
 		}
-		if len(list.Items) == 0 {
-			_ = c.Error(libhttp.ErrorStr(
-				fmt.Sprintf("Freight with alias %q not found in project %q", req.FreightAlias, project),
-				http.StatusNotFound,
-			))
-			return
-		}
-		freight = &list.Items[0]
 	}
 
 	if !stage.IsFreightAvailable(freight) {

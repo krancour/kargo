@@ -1667,6 +1667,112 @@ export function useQueryFreightsRest<
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+export type createFreightResponse201 = {
+  data: Freight;
+  status: 201;
+};
+
+export type createFreightResponseSuccess = createFreightResponse201 & {
+  headers: Headers;
+};
+export type createFreightResponse = createFreightResponseSuccess;
+
+export const getCreateFreightUrl = (project: string) => {
+  return `/v1beta1/projects/${project}/freight`;
+};
+
+/**
+ * Create a Freight resource from an explicit set of artifacts that
+ * the origin Warehouse subscribes to. Kargo assigns the name and,
+ * when omitted, the alias.
+ * @summary Create Freight
+ */
+export const createFreight = async (
+  project: string,
+  freight: Freight,
+  options?: Parameters<typeof customFetch>[1]
+): Promise<createFreightResponse> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit['headers']>
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return customFetch<createFreightResponse>(getCreateFreightUrl(project), {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(freight)
+  });
+};
+
+export const getCreateFreightMutationKey = () => ['createFreight'] as const;
+
+export const getCreateFreightMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createFreight>>,
+    TError,
+    CreateFreightMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createFreight>>,
+  TError,
+  CreateFreightMutationVariables,
+  TContext
+> => {
+  const mutationKey = getCreateFreightMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createFreight>>,
+    CreateFreightMutationVariables
+  > = (props) => {
+    const { project, data } = props ?? {};
+
+    return createFreight(project, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateFreightMutationResult = NonNullable<Awaited<ReturnType<typeof createFreight>>>;
+export type CreateFreightMutationBody = Freight;
+export type CreateFreightMutationError = ErrorType<unknown>;
+export type CreateFreightMutationVariables = { project: string; data: Freight };
+
+/**
+ * @summary Create Freight
+ */
+export const useCreateFreight = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createFreight>>,
+      TError,
+      CreateFreightMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof createFreight>>,
+  TError,
+  CreateFreightMutationVariables,
+  TContext
+> => {
+  return useMutation(getCreateFreightMutationOptions(options), queryClient);
+};
 export type getFreightResponse200 = {
   data: Freight;
   status: 200;

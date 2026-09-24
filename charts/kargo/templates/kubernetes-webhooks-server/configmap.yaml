@@ -10,6 +10,7 @@ metadata:
     {{- include "kargo.kubernetesWebhooksServer.labels" . | nindent 4 }}
   {{- include "kargo.annotations" (dict "root" . "annotations" .Values.webhooksServer.annotations) | nindent 2 }}
 data:
+  DATABASE_URL: {{ include "kargo.databaseURL" . | quote }}
   KARGO_NAMESPACE: {{ include "kargo.dataNamespace" . }}
   LOG_LEVEL: {{ quote .Values.webhooksServer.logLevel }}
   LOG_FORMAT: {{ quote .Values.webhooksServer.logFormat }}

@@ -7,17 +7,17 @@ import (
 
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/freight"
+	"github.com/akuity/kargo/pkg/freight/memory"
 )
 
+// TestGenerateFreightID is a smoke test confirming that GenerateFreightID
+// delegates to freight.GenerateID.
 func TestGenerateFreightID(t *testing.T) {
-	freight := kargoapi.Freight{
+	f := &kargoapi.Freight{
 		Origin: kargoapi.FreightOrigin{
 			Kind: "fake-kind",
 			Name: "fake-name",
@@ -28,120 +28,102 @@ func TestGenerateFreightID(t *testing.T) {
 				ID:      "fake-commit-id",
 			},
 		},
-		Images: []kargoapi.Image{
-			{
-				RepoURL: "fake-image-repo",
-				Tag:     "fake-image-tag",
-			},
-		},
-		Charts: []kargoapi.Chart{
-			{
-				RepoURL: "fake-chart-repo",
-				Name:    "fake-chart",
-				Version: "fake-chart-version",
-			},
-		},
 	}
-	id := GenerateFreightID(&freight)
-	expected := id
-	// Doing this any number of times should yield the same ID
-	for i := 0; i < 100; i++ {
-		require.Equal(t, expected, GenerateFreightID(&freight))
-	}
-	// Changing anything should change the result
-	freight.Commits[0].ID = "a-different-fake-commit"
-	require.NotEqual(t, expected, GenerateFreightID(&freight))
-}
-
-// TODO(krancour): If we move our actual indexers to this package, we can use
-// them here instead of duplicating them for the sake of avoiding an import
-// cycle.
-const freightByCurrentStagesField = "currentlyIn"
-
-func freightByCurrentStagesIndexer(obj client.Object) []string {
-	freight, ok := obj.(*kargoapi.Freight)
-	if !ok {
-		return nil
-	}
-	currentStages := make([]string, 0, len(freight.Status.CurrentlyIn))
-	for stage := range freight.Status.CurrentlyIn {
-		currentStages = append(currentStages, stage)
-	}
-	return currentStages
+	require.Equal(t, freight.GenerateID(f), GenerateFreightID(f))
 }
 
 func TestGetFreight(t *testing.T) {
-	scheme := k8sruntime.NewScheme()
-	require.NoError(t, kargoapi.SchemeBuilder.AddToScheme(scheme))
-
 	testCases := []struct {
 		name       string
-		client     client.Client
+		store      *memory.Store
 		assertions func(*testing.T, *kargoapi.Freight, error)
 	}{
 		{
-			name:   "not found",
-			client: fake.NewClientBuilder().WithScheme(scheme).Build(),
-			assertions: func(t *testing.T, freight *kargoapi.Freight, err error) {
-				require.NoError(t, err)
-				require.Nil(t, freight)
+			name: "error",
+			store: func() *memory.Store {
+				s := memory.NewStore()
+				s.Hooks.Get = func(context.Context, string, string) error {
+					return errors.New("something went wrong")
+				}
+				return s
+			}(),
+			assertions: func(t *testing.T, f *kargoapi.Freight, err error) {
+				require.ErrorContains(t, err, "something went wrong")
+				require.Nil(t, f)
 			},
 		},
-
+		{
+			name:  "not found",
+			store: memory.NewStore(),
+			assertions: func(t *testing.T, f *kargoapi.Freight, err error) {
+				require.NoError(t, err)
+				require.Nil(t, f)
+			},
+		},
 		{
 			name: "found",
-			client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+			store: memory.NewStore(
 				&kargoapi.Freight{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "fake-freight",
 						Namespace: "fake-namespace",
 					},
 				},
-			).Build(),
-			assertions: func(t *testing.T, freight *kargoapi.Freight, err error) {
+			),
+			assertions: func(t *testing.T, f *kargoapi.Freight, err error) {
 				require.NoError(t, err)
-				require.Equal(t, "fake-freight", freight.Name)
-				require.Equal(t, "fake-namespace", freight.Namespace)
+				require.Equal(t, "fake-freight", f.Name)
+				require.Equal(t, "fake-namespace", f.Namespace)
 			},
 		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			freight, err := GetFreight(
+			f, err := GetFreight(
 				t.Context(),
-				testCase.client,
+				testCase.store,
 				types.NamespacedName{
 					Namespace: "fake-namespace",
 					Name:      "fake-freight",
 				},
 			)
-			testCase.assertions(t, freight, err)
+			testCase.assertions(t, f, err)
 		})
 	}
 }
 
 func TestGetFreightByAlias(t *testing.T) {
-	scheme := k8sruntime.NewScheme()
-	require.NoError(t, kargoapi.SchemeBuilder.AddToScheme(scheme))
-
 	testCases := []struct {
 		name       string
-		client     client.Client
+		store      *memory.Store
 		assertions func(*testing.T, *kargoapi.Freight, error)
 	}{
 		{
-			name:   "not found",
-			client: fake.NewClientBuilder().WithScheme(scheme).Build(),
-			assertions: func(t *testing.T, freight *kargoapi.Freight, err error) {
-				require.NoError(t, err)
-				require.Nil(t, freight)
+			name: "error",
+			store: func() *memory.Store {
+				s := memory.NewStore()
+				s.Hooks.GetByAlias = func(context.Context, string, string) error {
+					return errors.New("something went wrong")
+				}
+				return s
+			}(),
+			assertions: func(t *testing.T, f *kargoapi.Freight, err error) {
+				require.ErrorContains(t, err, "something went wrong")
+				require.Nil(t, f)
 			},
 		},
-
+		{
+			name:  "not found",
+			store: memory.NewStore(),
+			assertions: func(t *testing.T, f *kargoapi.Freight, err error) {
+				require.NoError(t, err)
+				require.Nil(t, f)
+			},
+		},
 		{
 			name: "found",
-			client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+			store: memory.NewStore(
 				&kargoapi.Freight{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "fake-freight",
@@ -150,25 +132,26 @@ func TestGetFreightByAlias(t *testing.T) {
 							kargoapi.LabelKeyAlias: "fake-alias",
 						},
 					},
+					Alias: "fake-alias",
 				},
-			).Build(),
-			assertions: func(t *testing.T, freight *kargoapi.Freight, err error) {
+			),
+			assertions: func(t *testing.T, f *kargoapi.Freight, err error) {
 				require.NoError(t, err)
-				require.Equal(t, "fake-freight", freight.Name)
-				require.Equal(t, "fake-namespace", freight.Namespace)
+				require.Equal(t, "fake-freight", f.Name)
+				require.Equal(t, "fake-namespace", f.Namespace)
 			},
 		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			freight, err := GetFreightByAlias(
+			f, err := GetFreightByAlias(
 				t.Context(),
-				testCase.client,
+				testCase.store,
 				"fake-namespace",
 				"fake-alias",
 			)
-			testCase.assertions(t, freight, err)
+			testCase.assertions(t, f, err)
 		})
 	}
 }
@@ -183,32 +166,28 @@ func TestListFreightByCurrentStage(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name        string
-		objects     []client.Object
-		interceptor interceptor.Funcs
-		assertions  func(*testing.T, []kargoapi.Freight, error)
+		name       string
+		store      *memory.Store
+		assertions func(*testing.T, []kargoapi.Freight, error)
 	}{
 		{
 			name: "error listing Freight",
-			interceptor: interceptor.Funcs{
-				List: func(
-					context.Context,
-					client.WithWatch,
-					client.ObjectList,
-					...client.ListOption,
-				) error {
+			store: func() *memory.Store {
+				s := memory.NewStore()
+				s.Hooks.List = func(context.Context, string, freight.ListOptions) error {
 					return errors.New("something went wrong")
-				},
-			},
-			assertions: func(t *testing.T, freight []kargoapi.Freight, err error) {
+				}
+				return s
+			}(),
+			assertions: func(t *testing.T, fs []kargoapi.Freight, err error) {
 				require.ErrorContains(t, err, "error listing Freight")
 				require.ErrorContains(t, err, "something went wrong")
-				require.Nil(t, freight)
+				require.Nil(t, fs)
 			},
 		},
 		{
 			name: "success",
-			objects: []client.Object{
+			store: memory.NewStore(
 				&kargoapi.Freight{ // This should be returned
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
@@ -227,110 +206,20 @@ func TestListFreightByCurrentStage(t *testing.T) {
 						CurrentlyIn: map[string]kargoapi.CurrentStage{"wrong-stage": {}},
 					},
 				},
-			},
-			assertions: func(t *testing.T, freight []kargoapi.Freight, err error) {
+			),
+			assertions: func(t *testing.T, fs []kargoapi.Freight, err error) {
 				require.NoError(t, err)
-				require.Len(t, freight, 1)
-				require.Equal(t, testProject, freight[0].Namespace)
-				require.Equal(t, "fake-freight-1", freight[0].Name)
+				require.Len(t, fs, 1)
+				require.Equal(t, testProject, fs[0].Namespace)
+				require.Equal(t, "fake-freight-1", fs[0].Name)
 			},
 		},
 	}
 
-	testScheme := k8sruntime.NewScheme()
-	err := kargoapi.AddToScheme(testScheme)
-	require.NoError(t, err)
-
 	for _, testCase := range testCases {
-		c := fake.NewClientBuilder().WithScheme(testScheme).
-			WithScheme(testScheme).
-			WithIndex(&kargoapi.Freight{}, freightByCurrentStagesField, freightByCurrentStagesIndexer).
-			WithObjects(testCase.objects...).
-			WithInterceptorFuncs(testCase.interceptor).
-			Build()
-
 		t.Run(testCase.name, func(t *testing.T) {
-			freight, err := ListFreightByCurrentStage(t.Context(), c, testStage)
-			testCase.assertions(t, freight, err)
+			fs, err := ListFreightByCurrentStage(t.Context(), testCase.store, testStage)
+			testCase.assertions(t, fs, err)
 		})
 	}
-}
-
-// TestSubscriptionNameAffectsFreightID verifies that a non-empty SubscriptionName
-// on a GitCommit, Image, or Chart causes a distinct Freight ID to be generated,
-// while an empty SubscriptionName preserves backward-compatible byte-identical IDs.
-func TestSubscriptionNameAffectsFreightID(t *testing.T) {
-	t.Run("git commit SubscriptionName produces distinct ID", func(t *testing.T) {
-		base := kargoapi.Freight{
-			Commits: []kargoapi.GitCommit{{
-				RepoURL: "https://github.com/example/repo",
-				ID:      "abc123def456abc123def456abc123def456abc123",
-			}},
-		}
-		named := kargoapi.Freight{
-			Commits: []kargoapi.GitCommit{{
-				RepoURL:          "https://github.com/example/repo",
-				ID:               "abc123def456abc123def456abc123def456abc123",
-				SubscriptionName: "my-sub",
-			}},
-		}
-		namedSame := kargoapi.Freight{
-			Commits: []kargoapi.GitCommit{{
-				RepoURL:          "https://github.com/example/repo",
-				ID:               "abc123def456abc123def456abc123def456abc123",
-				SubscriptionName: "my-sub",
-			}},
-		}
-		idBase := GenerateFreightID(&base)
-		idNamed := GenerateFreightID(&named)
-		idNamedSame := GenerateFreightID(&namedSame)
-		require.NotEqual(t, idBase, idNamed,
-			"non-empty SubscriptionName must produce a distinct Freight ID")
-		require.Equal(t, idNamed, idNamedSame,
-			"same SubscriptionName must produce the same Freight ID")
-	})
-
-	t.Run("image SubscriptionName produces distinct ID", func(t *testing.T) {
-		base := kargoapi.Freight{
-			Images: []kargoapi.Image{{
-				RepoURL: "example.com/myimage",
-				Tag:     "v1.2.3",
-				Digest:  "sha256:deadbeef",
-			}},
-		}
-		named := kargoapi.Freight{
-			Images: []kargoapi.Image{{
-				RepoURL:          "example.com/myimage",
-				Tag:              "v1.2.3",
-				Digest:           "sha256:deadbeef",
-				SubscriptionName: "img-sub",
-			}},
-		}
-		idBase := GenerateFreightID(&base)
-		idNamed := GenerateFreightID(&named)
-		require.NotEqual(t, idBase, idNamed,
-			"non-empty image SubscriptionName must produce a distinct Freight ID")
-	})
-
-	t.Run("chart SubscriptionName produces distinct ID", func(t *testing.T) {
-		base := kargoapi.Freight{
-			Charts: []kargoapi.Chart{{
-				RepoURL: "https://charts.example.com",
-				Name:    "mychart",
-				Version: "1.0.0",
-			}},
-		}
-		named := kargoapi.Freight{
-			Charts: []kargoapi.Chart{{
-				RepoURL:          "https://charts.example.com",
-				Name:             "mychart",
-				Version:          "1.0.0",
-				SubscriptionName: "chart-sub",
-			}},
-		}
-		idBase := GenerateFreightID(&base)
-		idNamed := GenerateFreightID(&named)
-		require.NotEqual(t, idBase, idNamed,
-			"non-empty chart SubscriptionName must produce a distinct Freight ID")
-	})
 }

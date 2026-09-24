@@ -494,6 +494,40 @@ func Test_server_updateResources(t *testing.T) {
 	)
 }
 
+func Test_server_updateResources_rejectsFreight(t *testing.T) {
+	testFreight := &kargoapi.Freight{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: kargoapi.GroupVersion.String(),
+			Kind:       "Freight",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "fake-freight",
+			Namespace: "fake-project",
+		},
+	}
+	assertRejected := func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Contains(t, w.Body.String(), "/v1beta1/projects/{project}/freight")
+	}
+	testRESTEndpoint(
+		t, &config.ServerConfig{},
+		http.MethodPut, "/v1beta1/resources",
+		[]restTestCase{
+			{
+				name:       "Freight manifest is rejected on update",
+				body:       mustJSONBody(testFreight),
+				assertions: assertRejected,
+			},
+			{
+				name:       "Freight manifest is rejected on upsert",
+				url:        "/v1beta1/resources?upsert=true",
+				body:       mustJSONBody(testFreight),
+				assertions: assertRejected,
+			},
+		},
+	)
+}
+
 // Test_server_updateResources_clusterScopedNamespaceSpoofing is the
 // updateResources (PUT .../resources?upsert=true) counterpart to
 // Test_server_createResources_clusterScopedNamespaceSpoofing in
@@ -510,7 +544,7 @@ func Test_server_updateResources_clusterScopedNamespaceSpoofing(t *testing.T) {
 
 	// capturedClient is reassigned by each serverSetup before assertions reads
 	// it. Test cases are run sequentially, so this is safe (see the same
-	// pattern used for the freight event recorder in create_resource_test.go).
+	// pattern used for the event recorder in create_freight_test.go).
 	var capturedClient client.WithWatch
 
 	testRESTEndpoint(

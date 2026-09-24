@@ -296,35 +296,11 @@ func newDefaultCluster(
 	}
 	if err = cluster.GetFieldIndexer().IndexField(
 		ctx,
-		&kargoapi.Freight{},
-		indexer.FreightByWarehouseField,
-		indexer.FreightByWarehouse,
+		&kargoapi.Stage{},
+		indexer.StagesByFreightField,
+		indexer.StagesByFreight,
 	); err != nil {
-		return nil, fmt.Errorf("error indexing Freight by Warehouse: %w", err)
-	}
-	if err = cluster.GetFieldIndexer().IndexField(
-		ctx,
-		&kargoapi.Freight{},
-		indexer.FreightByCurrentStagesField,
-		indexer.FreightByCurrentStages,
-	); err != nil {
-		return nil, fmt.Errorf("error indexing Freight by Stages in which it is currently in use: %w", err)
-	}
-	if err = cluster.GetFieldIndexer().IndexField(
-		ctx,
-		&kargoapi.Freight{},
-		indexer.FreightByVerifiedStagesField,
-		indexer.FreightByVerifiedStages,
-	); err != nil {
-		return nil, fmt.Errorf("error indexing Freight by Stages in which it has been verified: %w", err)
-	}
-	if err = cluster.GetFieldIndexer().IndexField(
-		ctx,
-		&kargoapi.Freight{},
-		indexer.FreightApprovedForStagesField,
-		indexer.FreightApprovedForStages,
-	); err != nil {
-		return nil, fmt.Errorf("error indexing Freight by Stages for which it has been approved: %w", err)
+		return nil, fmt.Errorf("error indexing Stages by Freight: %w", err)
 	}
 	if err = cluster.GetFieldIndexer().IndexField(
 		ctx,

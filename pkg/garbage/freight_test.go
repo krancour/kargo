@@ -11,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	libFreight "github.com/akuity/kargo/pkg/freight"
 )
 
 func TestCleanProjectFreight(t *testing.T) {
@@ -104,10 +105,10 @@ func TestCleanWarehouseFreight(t *testing.T) {
 			collector: &collector{
 				listFreightFn: func(
 					context.Context,
-					client.ObjectList,
-					...client.ListOption,
-				) error {
-					return errors.New("something went wrong")
+					string,
+					libFreight.ListOptions,
+				) ([]kargoapi.Freight, error) {
+					return nil, errors.New("something went wrong")
 				},
 			},
 			assertions: func(t *testing.T, err error) {
@@ -122,14 +123,11 @@ func TestCleanWarehouseFreight(t *testing.T) {
 					MaxRetainedFreight: 2,
 				},
 				listFreightFn: func(
-					_ context.Context,
-					objList client.ObjectList,
-					_ ...client.ListOption,
-				) error {
-					freight, ok := objList.(*kargoapi.FreightList)
-					require.True(t, ok)
-					freight.Items = []kargoapi.Freight{{}}
-					return nil
+					context.Context,
+					string,
+					libFreight.ListOptions,
+				) ([]kargoapi.Freight, error) {
+					return []kargoapi.Freight{{}}, nil
 				},
 			},
 			assertions: func(t *testing.T, err error) {
@@ -143,14 +141,11 @@ func TestCleanWarehouseFreight(t *testing.T) {
 					MaxRetainedFreight: 1,
 				},
 				listFreightFn: func(
-					_ context.Context,
-					objList client.ObjectList,
-					_ ...client.ListOption,
-				) error {
-					freight, ok := objList.(*kargoapi.FreightList)
-					require.True(t, ok)
-					freight.Items = []kargoapi.Freight{{}, {}}
-					return nil
+					context.Context,
+					string,
+					libFreight.ListOptions,
+				) ([]kargoapi.Freight, error) {
+					return []kargoapi.Freight{{}, {}}, nil
 				},
 				listStagesFn: func(
 					context.Context,
@@ -173,14 +168,12 @@ func TestCleanWarehouseFreight(t *testing.T) {
 					MinFreightDeletionAge: time.Minute,
 				},
 				listFreightFn: func(
-					_ context.Context,
-					objList client.ObjectList,
-					_ ...client.ListOption,
-				) error {
-					freight, ok := objList.(*kargoapi.FreightList)
-					require.True(t, ok)
+					context.Context,
+					string,
+					libFreight.ListOptions,
+				) ([]kargoapi.Freight, error) {
 					now := metav1.Now()
-					freight.Items = []kargoapi.Freight{
+					return []kargoapi.Freight{
 						{
 							ObjectMeta: metav1.ObjectMeta{
 								CreationTimestamp: metav1.NewTime(now.Add(-1 * time.Hour)),
@@ -191,8 +184,7 @@ func TestCleanWarehouseFreight(t *testing.T) {
 								CreationTimestamp: metav1.NewTime(now.Add(-2 * time.Hour)),
 							},
 						},
-					}
-					return nil
+					}, nil
 				},
 				listStagesFn: func(
 					context.Context,
@@ -204,8 +196,8 @@ func TestCleanWarehouseFreight(t *testing.T) {
 				},
 				deleteFreightFn: func(
 					context.Context,
-					client.Object,
-					...client.DeleteOption,
+					string,
+					string,
 				) error {
 					return errors.New("something went wrong")
 				},
@@ -224,14 +216,12 @@ func TestCleanWarehouseFreight(t *testing.T) {
 					MinFreightDeletionAge: time.Minute,
 				},
 				listFreightFn: func(
-					_ context.Context,
-					objList client.ObjectList,
-					_ ...client.ListOption,
-				) error {
-					freight, ok := objList.(*kargoapi.FreightList)
-					require.True(t, ok)
+					context.Context,
+					string,
+					libFreight.ListOptions,
+				) ([]kargoapi.Freight, error) {
 					now := metav1.Now()
-					freight.Items = []kargoapi.Freight{
+					return []kargoapi.Freight{
 						{
 							ObjectMeta: metav1.ObjectMeta{
 								CreationTimestamp: metav1.NewTime(now.Add(-1 * time.Hour)),
@@ -242,8 +232,7 @@ func TestCleanWarehouseFreight(t *testing.T) {
 								CreationTimestamp: metav1.NewTime(now.Add(-2 * time.Hour)),
 							},
 						},
-					}
-					return nil
+					}, nil
 				},
 				listStagesFn: func(
 					context.Context,
@@ -255,8 +244,8 @@ func TestCleanWarehouseFreight(t *testing.T) {
 				},
 				deleteFreightFn: func(
 					context.Context,
-					client.Object,
-					...client.DeleteOption,
+					string,
+					string,
 				) error {
 					return nil
 				},

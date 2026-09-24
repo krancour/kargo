@@ -24,12 +24,14 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/pkg/component"
 	"github.com/akuity/kargo/pkg/conditions"
+	"github.com/akuity/kargo/pkg/freight"
+	"github.com/akuity/kargo/pkg/freight/memory"
 	"github.com/akuity/kargo/pkg/kubernetes"
 )
 
 func TestNewReconciler(t *testing.T) {
 	testCfg := ReconcilerConfig{}
-	r := newReconciler(fake.NewClientBuilder().Build(), testCfg)
+	r := newReconciler(fake.NewClientBuilder().Build(), memory.NewStore(), testCfg)
 	require.Equal(t, testCfg, r.cfg)
 	require.NotNil(t, r.client)
 	require.NotNil(t, r.getProjectFn)
@@ -49,6 +51,7 @@ func TestNewReconciler(t *testing.T) {
 	require.NotNil(t, r.createRoleBindingFn)
 	require.NotNil(t, r.createClusterRoleFn)
 	require.NotNil(t, r.createClusterRoleBindingFn)
+	require.NotNil(t, r.deleteProjectFreightFn)
 }
 
 func TestReconciler_Reconcile(t *testing.T) {
@@ -117,6 +120,7 @@ func TestReconciler_Reconcile(t *testing.T) {
 				) (bool, error) {
 					return false, nil
 				},
+				deleteProjectFreightFn: func(context.Context, string) error { return nil },
 				getNamespaceFn: func(
 					_ context.Context,
 					_ types.NamespacedName,
@@ -541,6 +545,7 @@ func TestReconciler_cleanupProject(t *testing.T) {
 				) error {
 					return apierrors.NewNotFound(schema.GroupResource{}, "test")
 				},
+				deleteProjectFreightFn: func(context.Context, string) error { return nil },
 				getNamespaceFn: func(
 					context.Context,
 					types.NamespacedName,
@@ -591,6 +596,7 @@ func TestReconciler_cleanupProject(t *testing.T) {
 					}
 					return nil
 				},
+				deleteProjectFreightFn: func(context.Context, string) error { return nil },
 				getNamespaceFn: func(
 					context.Context,
 					types.NamespacedName,
@@ -633,6 +639,7 @@ func TestReconciler_cleanupProject(t *testing.T) {
 				) error {
 					return nil
 				},
+				deleteProjectFreightFn: func(context.Context, string) error { return nil },
 				getNamespaceFn: func(
 					context.Context,
 					types.NamespacedName,
@@ -669,6 +676,7 @@ func TestReconciler_cleanupProject(t *testing.T) {
 				) error {
 					return nil
 				},
+				deleteProjectFreightFn: func(context.Context, string) error { return nil },
 				getNamespaceFn: func(
 					context.Context,
 					types.NamespacedName,
@@ -711,6 +719,7 @@ func TestReconciler_cleanupProject(t *testing.T) {
 				) error {
 					return nil
 				},
+				deleteProjectFreightFn: func(context.Context, string) error { return nil },
 				getNamespaceFn: func(
 					context.Context,
 					types.NamespacedName,
@@ -758,6 +767,7 @@ func TestReconciler_cleanupProject(t *testing.T) {
 				) error {
 					return nil
 				},
+				deleteProjectFreightFn: func(context.Context, string) error { return nil },
 				getNamespaceFn: func(
 					_ context.Context,
 					_ types.NamespacedName,
@@ -804,6 +814,7 @@ func TestReconciler_cleanupProject(t *testing.T) {
 				) error {
 					return nil
 				},
+				deleteProjectFreightFn: func(context.Context, string) error { return nil },
 				getNamespaceFn: func(
 					_ context.Context,
 					_ types.NamespacedName,
@@ -857,6 +868,7 @@ func TestReconciler_cleanupProject(t *testing.T) {
 				) error {
 					return nil
 				},
+				deleteProjectFreightFn: func(context.Context, string) error { return nil },
 				getNamespaceFn: func(
 					_ context.Context,
 					_ types.NamespacedName,
@@ -910,6 +922,7 @@ func TestReconciler_cleanupProject(t *testing.T) {
 				) error {
 					return nil
 				},
+				deleteProjectFreightFn: func(context.Context, string) error { return nil },
 				getNamespaceFn: func(
 					_ context.Context,
 					_ types.NamespacedName,
@@ -957,6 +970,7 @@ func TestReconciler_cleanupProject(t *testing.T) {
 				) error {
 					return nil
 				},
+				deleteProjectFreightFn: func(context.Context, string) error { return nil },
 				getNamespaceFn: func(
 					_ context.Context,
 					_ types.NamespacedName,
@@ -1001,6 +1015,131 @@ func TestReconciler_cleanupProject(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			err := testCase.reconciler.cleanupProject(t.Context(), testCase.project)
 			testCase.assertions(t, err)
+		})
+	}
+}
+
+func TestReconciler_cleanupProject_deletesFreight(t *testing.T) {
+	const projectName = "test-project"
+	noopDelete := func(context.Context, client.Object, ...client.DeleteOption) error {
+		return nil
+	}
+	nsNotFound := func(context.Context, types.NamespacedName, client.Object, ...client.GetOption) error {
+		return apierrors.NewNotFound(schema.GroupResource{}, projectName)
+	}
+	nsFound := func(_ context.Context, _ types.NamespacedName, obj client.Object, _ ...client.GetOption) error {
+		ns, ok := obj.(*corev1.Namespace)
+		require.True(t, ok)
+		ns.Name = projectName
+		return nil
+	}
+	nsFoundKept := func(_ context.Context, _ types.NamespacedName, obj client.Object, _ ...client.GetOption) error {
+		ns, ok := obj.(*corev1.Namespace)
+		require.True(t, ok)
+		ns.Name = projectName
+		ns.Annotations = map[string]string{
+			kargoapi.AnnotationKeyKeepNamespace: kargoapi.AnnotationValueTrue,
+		}
+		return nil
+	}
+	newSeed := func() []*kargoapi.Freight {
+		return []*kargoapi.Freight{
+			{ObjectMeta: metav1.ObjectMeta{Namespace: projectName, Name: "a"}},
+			{ObjectMeta: metav1.ObjectMeta{Namespace: "other-project", Name: "b"}},
+		}
+	}
+
+	testCases := []struct {
+		name           string
+		getNamespaceFn func(context.Context, types.NamespacedName, client.Object, ...client.GetOption) error
+		storeErr       error
+		assertions     func(t *testing.T, err error, store *memory.Store, projectFinalizerRemoved bool)
+	}{
+		{
+			name:           "Freight deleted when namespace exists",
+			getNamespaceFn: nsFound,
+			assertions: func(t *testing.T, err error, store *memory.Store, removed bool) {
+				require.NoError(t, err)
+				require.True(t, removed)
+				_, err = store.Get(t.Context(), projectName, "a")
+				require.ErrorIs(t, err, freight.ErrNotFound)
+				_, err = store.Get(t.Context(), "other-project", "b")
+				require.NoError(t, err)
+			},
+		},
+		{
+			name:           "Freight deleted when namespace not found",
+			getNamespaceFn: nsNotFound,
+			assertions: func(t *testing.T, err error, store *memory.Store, removed bool) {
+				require.NoError(t, err)
+				require.True(t, removed)
+				_, err = store.Get(t.Context(), projectName, "a")
+				require.ErrorIs(t, err, freight.ErrNotFound)
+				_, err = store.Get(t.Context(), "other-project", "b")
+				require.NoError(t, err)
+			},
+		},
+		{
+			name:           "Freight kept when keep-namespace annotation is set",
+			getNamespaceFn: nsFoundKept,
+			assertions: func(t *testing.T, err error, store *memory.Store, removed bool) {
+				require.NoError(t, err)
+				require.True(t, removed)
+				_, err = store.Get(t.Context(), projectName, "a")
+				require.NoError(t, err)
+			},
+		},
+		{
+			name:           "store error keeps the Project finalizer on the normal path",
+			getNamespaceFn: nsFound,
+			storeErr:       errors.New("something went wrong"),
+			assertions: func(t *testing.T, err error, store *memory.Store, removed bool) {
+				require.ErrorContains(t, err, `error deleting Freight of Project "test-project"`)
+				require.False(t, removed)
+				_, err = store.Get(t.Context(), projectName, "a")
+				require.NoError(t, err)
+			},
+		},
+		{
+			name:           "store error keeps the Project finalizer",
+			getNamespaceFn: nsNotFound,
+			storeErr:       errors.New("something went wrong"),
+			assertions: func(t *testing.T, err error, store *memory.Store, removed bool) {
+				require.ErrorContains(t, err, `error deleting Freight of Project "test-project"`)
+				require.ErrorContains(t, err, "something went wrong")
+				require.False(t, removed)
+				_, err = store.Get(t.Context(), projectName, "a")
+				require.NoError(t, err)
+			},
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			store := memory.NewStore(newSeed()...)
+			if testCase.storeErr != nil {
+				store.Hooks.DeleteProject = func(context.Context, string) error {
+					return testCase.storeErr
+				}
+			}
+			var projectFinalizerRemoved bool
+			r := &reconciler{
+				deleteClusterRoleBindingFn: noopDelete,
+				deleteClusterRoleFn:        noopDelete,
+				deleteProjectFreightFn:     store.DeleteProject,
+				getNamespaceFn:             testCase.getNamespaceFn,
+				deleteNamespaceFn:          noopDelete,
+				removeFinalizerFn: func(_ context.Context, _ client.Client, obj client.Object) error {
+					if _, ok := obj.(*kargoapi.Project); ok {
+						projectFinalizerRemoved = true
+					}
+					return nil
+				},
+			}
+			err := r.cleanupProject(
+				t.Context(),
+				&kargoapi.Project{ObjectMeta: metav1.ObjectMeta{Name: projectName}},
+			)
+			testCase.assertions(t, err, store, projectFinalizerRemoved)
 		})
 	}
 }
@@ -1083,6 +1222,7 @@ func TestReconciler_cleanupProject_cleanupContributors(t *testing.T) {
 				) error {
 					return nil
 				},
+				deleteProjectFreightFn: func(context.Context, string) error { return nil },
 				getNamespaceFn: func(
 					context.Context,
 					types.NamespacedName,
@@ -1995,7 +2135,7 @@ func TestReconciler_ensureControllerPermissions(t *testing.T) {
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			r := newReconciler(testCase.client, cfg)
+			r := newReconciler(testCase.client, memory.NewStore(), cfg)
 			err = r.ensureControllerPermissions(t.Context(), testProject)
 			testCase.assertions(t, testCase.client, err)
 		})

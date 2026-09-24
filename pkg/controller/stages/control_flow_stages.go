@@ -2,11 +2,11 @@ package stages
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -21,6 +21,7 @@ import (
 	"github.com/akuity/kargo/pkg/controller"
 	"github.com/akuity/kargo/pkg/event"
 	k8sevent "github.com/akuity/kargo/pkg/event/kubernetes"
+	libFreight "github.com/akuity/kargo/pkg/freight"
 	"github.com/akuity/kargo/pkg/indexer"
 	"github.com/akuity/kargo/pkg/kargo"
 	"github.com/akuity/kargo/pkg/kubeclient"
@@ -34,6 +35,7 @@ type ControlFlowStageReconciler struct {
 	cfg            ReconcilerConfig
 	client         client.Client
 	eventSender    event.Sender
+	freightStore   libFreight.Store
 	shardPredicate controller.ResponsibleFor[kargoapi.Stage]
 }
 
@@ -42,9 +44,11 @@ type ControlFlowStageReconciler struct {
 // controller manager.
 func NewControlFlowStageReconciler(
 	cfg ReconcilerConfig,
+	freightStore libFreight.Store,
 ) *ControlFlowStageReconciler {
 	return &ControlFlowStageReconciler{
-		cfg: cfg,
+		cfg:          cfg,
+		freightStore: freightStore,
 		shardPredicate: controller.ResponsibleFor[kargoapi.Stage]{
 			IsDefaultController: cfg.IsDefaultController,
 			ShardName:           cfg.ShardName,
@@ -65,52 +69,6 @@ func (r *ControlFlowStageReconciler) SetupWithManager(
 	r.eventSender = k8sevent.NewEventSender(
 		libEvent.NewRecorder(ctx, mgr.GetScheme(), mgr.GetClient(), r.cfg.Name()),
 	)
-
-	// This index is used to find all Freight that are directly available from
-	// a Warehouse. It is used to find Freight that can be sourced directly from
-	// the Warehouse for the control flow Stage.
-	if err := sharedIndexer.IndexField(
-		ctx,
-		&kargoapi.Freight{},
-		indexer.FreightByWarehouseField,
-		indexer.FreightByWarehouse,
-	); err != nil {
-		return fmt.Errorf("error setting up index for Freight by Warehouse: %w", err)
-	}
-
-	if err := sharedIndexer.IndexField(
-		ctx,
-		&kargoapi.Freight{},
-		indexer.FreightByCurrentStagesField,
-		indexer.FreightByCurrentStages,
-	); err != nil {
-		return fmt.Errorf("error setting up index for Freight by current Stages: %w", err)
-	}
-
-	// This index is used to find and watch all Freight that have been verified
-	// in a specific Stage (upstream) to which the control flow Stage is the
-	// downstream consumer.
-	if err := sharedIndexer.IndexField(
-		ctx,
-		&kargoapi.Freight{},
-		indexer.FreightByVerifiedStagesField,
-		indexer.FreightByVerifiedStages,
-	); err != nil {
-		return fmt.Errorf("error setting up index for Freight by verified Stages: %w", err)
-	}
-
-	// This index is solely used to garbage collect any Freight that was
-	// to a Stage before it became a control flow Stage. It is not used for
-	// the actual reconciliation process beyond facilitating the garbage
-	// collection of related objects when the Stage is deleted.
-	if err := sharedIndexer.IndexField(
-		ctx,
-		&kargoapi.Freight{},
-		indexer.FreightApprovedForStagesField,
-		indexer.FreightApprovedForStages,
-	); err != nil {
-		return fmt.Errorf("error setting up index for Freight approved for Stages: %w", err)
-	}
 
 	// This index is used by a watch on Stages to find all Stages that have a
 	// specific Stage as an upstream Stage.
@@ -287,7 +245,7 @@ func (r *ControlFlowStageReconciler) reconcile(
 
 	// Get the available Freight for the Stage.
 	logger.Debug("getting available Freight")
-	freight, err := api.ListFreightAvailableToStage(ctx, r.client, stage)
+	freight, err := api.ListFreightAvailableToStage(ctx, r.client, r.freightStore, stage)
 	if err != nil {
 		conditions.Set(
 			&newStatus,
@@ -402,24 +360,27 @@ func (r *ControlFlowStageReconciler) markFreightVerifiedForStage(
 		// Skip Freight that has already been verified in this Stage.
 		//
 		// TODO(hidde + krancour): It would be better to filter out Freight that has
-		// already been verified in this Stage at retrieval time, but the fake
-		// client does not support != field selectors, so we would need a "real"
-		// Kubernetes API server to test it. Until we (finally) make use of testenv,
-		// this will have to do.
+		// already been verified in this Stage at retrieval time, but that needs a
+		// "key absent" filter that freight.ListOptions does not offer yet.
 		if f.IsVerifiedIn(stage.Name) {
 			continue
 		}
 
 		// Verify the Freight.
-		newStatus := f.Status.DeepCopy()
-		if newStatus.VerifiedIn == nil {
-			newStatus.VerifiedIn = make(map[string]kargoapi.VerifiedStage)
-		}
-		newStatus.AddVerifiedStage(stage.Name, finishTime)
-		if err := kubeclient.PatchStatus(ctx, r.client, &f, func(status *kargoapi.FreightStatus) {
-			*status = *newStatus
-		}); err != nil {
-			if client.IgnoreNotFound(err) != nil {
+		updated, err := r.freightStore.UpdateStatus(
+			ctx,
+			f.Namespace,
+			f.Name,
+			func(status *kargoapi.FreightStatus) error {
+				if status.VerifiedIn == nil {
+					status.VerifiedIn = make(map[string]kargoapi.VerifiedStage)
+				}
+				status.AddVerifiedStage(stage.Name, finishTime)
+				return nil
+			},
+		)
+		if err != nil {
+			if !errors.Is(err, libFreight.ErrNotFound) {
 				logger.Error(
 					err,
 					"failed to mark Freight as verified in Stage",
@@ -436,7 +397,7 @@ func (r *ControlFlowStageReconciler) markFreightVerifiedForStage(
 			"Freight verification succeeded",
 			api.FormatEventControllerActor(r.cfg.Name()),
 			stage.Name,
-			&f,
+			updated,
 		)
 		evt := &event.FreightVerificationSucceeded{
 			Common:  common,
@@ -507,18 +468,12 @@ func (r *ControlFlowStageReconciler) handleDelete(ctx context.Context, stage *ka
 // been verified in the given Stage. It removes the Stage from the VerifiedIn
 // map of each Freight.
 func (r *ControlFlowStageReconciler) clearVerifications(ctx context.Context, stage *kargoapi.Stage) error {
-	verified := kargoapi.FreightList{}
-	if err := r.client.List(
+	verified, err := r.freightStore.List(
 		ctx,
-		&verified,
-		client.InNamespace(stage.Namespace),
-		client.MatchingFieldsSelector{
-			Selector: fields.OneTermEqualSelector(
-				indexer.FreightByVerifiedStagesField,
-				stage.Name,
-			),
-		},
-	); err != nil {
+		stage.Namespace,
+		libFreight.ListOptions{VerifiedIn: []string{stage.Name}},
+	)
+	if err != nil {
 		return fmt.Errorf(
 			"error listing Freight verified in Stage %q in namespace %q: %w",
 			stage.Name,
@@ -528,16 +483,16 @@ func (r *ControlFlowStageReconciler) clearVerifications(ctx context.Context, sta
 	}
 
 	var errs []error
-	for _, f := range verified.Items {
-		newStatus := *f.Status.DeepCopy()
-		if newStatus.VerifiedIn == nil {
-			continue
-		}
-		delete(newStatus.VerifiedIn, stage.Name)
-
-		if err := kubeclient.PatchStatus(ctx, r.client, &f, func(status *kargoapi.FreightStatus) {
-			*status = newStatus
-		}); client.IgnoreNotFound(err) != nil {
+	for _, f := range verified {
+		if _, err = r.freightStore.UpdateStatus(
+			ctx,
+			f.Namespace,
+			f.Name,
+			func(status *kargoapi.FreightStatus) error {
+				delete(status.VerifiedIn, stage.Name)
+				return nil
+			},
+		); err != nil && !errors.Is(err, libFreight.ErrNotFound) {
 			errs = append(errs, fmt.Errorf(
 				"error clearing verification status of Freight %q in namespace %q: %w",
 				f.Name, f.Namespace, err,
@@ -551,18 +506,12 @@ func (r *ControlFlowStageReconciler) clearVerifications(ctx context.Context, sta
 // approved for the given Stage. It removes the Stage from the ApprovedFor map
 // of each Freight.
 func (r *ControlFlowStageReconciler) clearApprovals(ctx context.Context, stage *kargoapi.Stage) error {
-	approved := kargoapi.FreightList{}
-	if err := r.client.List(
+	approved, err := r.freightStore.List(
 		ctx,
-		&approved,
-		client.InNamespace(stage.Namespace),
-		client.MatchingFieldsSelector{
-			Selector: fields.OneTermEqualSelector(
-				indexer.FreightApprovedForStagesField,
-				stage.Name,
-			),
-		},
-	); err != nil {
+		stage.Namespace,
+		libFreight.ListOptions{ApprovedFor: stage.Name},
+	)
+	if err != nil {
 		return fmt.Errorf("error listing Freight approved for Stage %q in namespace %q: %w",
 			stage.Name,
 			stage.Namespace,
@@ -571,16 +520,16 @@ func (r *ControlFlowStageReconciler) clearApprovals(ctx context.Context, stage *
 	}
 
 	var errs []error
-	for _, f := range approved.Items {
-		newStatus := *f.Status.DeepCopy()
-		if newStatus.ApprovedFor == nil {
-			continue
-		}
-		delete(newStatus.ApprovedFor, stage.Name)
-
-		if err := kubeclient.PatchStatus(ctx, r.client, &f, func(status *kargoapi.FreightStatus) {
-			*status = newStatus
-		}); client.IgnoreNotFound(err) != nil {
+	for _, f := range approved {
+		if _, err = r.freightStore.UpdateStatus(
+			ctx,
+			f.Namespace,
+			f.Name,
+			func(status *kargoapi.FreightStatus) error {
+				delete(status.ApprovedFor, stage.Name)
+				return nil
+			},
+		); err != nil && !errors.Is(err, libFreight.ErrNotFound) {
 			errs = append(errs, fmt.Errorf(
 				"error clearing approval status of Freight %q in namespace %q: %w",
 				f.Name, f.Namespace, err,

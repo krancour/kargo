@@ -2,14 +2,13 @@ package builtin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/xeipuuv/gojsonschema"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
-	"github.com/akuity/kargo/pkg/api"
+	"github.com/akuity/kargo/pkg/freight"
 	"github.com/akuity/kargo/pkg/promotion"
 	"github.com/akuity/kargo/pkg/x/promotion/runner/builtin"
 )
@@ -33,7 +32,7 @@ func init() {
 // setFreightAlias is an implementation of the promotion.StepRunner interface
 // that updates aliases of Freight resources.
 type freightAliasSetter struct {
-	kargoClient  client.Client
+	freightStore freight.Store
 	schemaLoader gojsonschema.JSONLoader
 }
 
@@ -47,7 +46,7 @@ func (s *freightAliasSetter) convert(cfg promotion.Config) (builtin.SetFreightAl
 // interface that updates alias on Freight resources.
 func newSetFreightAlias(caps promotion.StepRunnerCapabilities) promotion.StepRunner {
 	return &freightAliasSetter{
-		kargoClient:  caps.KargoClient,
+		freightStore: caps.FreightStore,
 		schemaLoader: getConfigSchemaLoader(stepKindSetFreightAlias),
 	}
 }
@@ -72,15 +71,15 @@ func (s *freightAliasSetter) run(
 	stepCtx *promotion.StepContext,
 	cfg builtin.SetFreightAliasConfig,
 ) (promotion.StepResult, error) {
-	freight, err := api.GetFreight(
-		ctx,
-		s.kargoClient,
-		types.NamespacedName{
-			Namespace: stepCtx.Project,
-			Name:      cfg.Name,
-		},
-	)
+	f, err := s.freightStore.Get(ctx, stepCtx.Project, cfg.Name)
 	if err != nil {
+		if errors.Is(err, freight.ErrNotFound) {
+			return promotion.StepResult{
+				Status: kargoapi.PromotionStepStatusFailed,
+			}, &promotion.TerminalError{
+				Err: fmt.Errorf("freight %q not found in project %q", cfg.Name, stepCtx.Project),
+			}
+		}
 		return promotion.StepResult{
 			Status: kargoapi.PromotionStepStatusFailed,
 		}, &promotion.TerminalError{
@@ -88,30 +87,12 @@ func (s *freightAliasSetter) run(
 		}
 	}
 
-	if freight == nil {
+	// Alias uniqueness is enforced by the Store.
+	if _, err = s.freightStore.UpdateAlias(ctx, stepCtx.Project, f.Name, cfg.Alias); err != nil {
 		return promotion.StepResult{
 			Status: kargoapi.PromotionStepStatusFailed,
 		}, &promotion.TerminalError{
-			Err: fmt.Errorf("freight %q not found in project %q", cfg.Name, stepCtx.Project),
-		}
-	}
-
-	patchBytes := []byte(
-		fmt.Sprintf(
-			`{"metadata":{"labels":{%q:%q}},"alias":%q}`,
-			kargoapi.LabelKeyAlias,
-			cfg.Alias,
-			cfg.Alias,
-		),
-	)
-	patch := client.RawPatch(types.MergePatchType, patchBytes)
-
-	// Alias uniqueness is enforced by the admission webhook.
-	if err := s.kargoClient.Patch(ctx, freight, patch); err != nil {
-		return promotion.StepResult{
-			Status: kargoapi.PromotionStepStatusFailed,
-		}, &promotion.TerminalError{
-			Err: fmt.Errorf("failed to patch alias for Freight %q in project %q: %w", freight.Name, stepCtx.Project, err),
+			Err: fmt.Errorf("failed to update alias for Freight %q in project %q: %w", f.Name, stepCtx.Project, err),
 		}
 	}
 
@@ -119,8 +100,8 @@ func (s *freightAliasSetter) run(
 		Status: kargoapi.PromotionStepStatusSucceeded,
 		Message: fmt.Sprintf(
 			"updated alias of Freight %q from %q to %q",
-			freight.Name,
-			freight.Alias,
+			f.Name,
+			f.Alias,
 			cfg.Alias,
 		),
 	}, nil

@@ -1,24 +1,23 @@
 package server
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/gin-gonic/gin"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/fields"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/pkg/api"
+	libFreight "github.com/akuity/kargo/pkg/freight"
 	libhttp "github.com/akuity/kargo/pkg/http"
-	"github.com/akuity/kargo/pkg/indexer"
 	"github.com/akuity/kargo/pkg/logging"
 )
 
@@ -28,11 +27,9 @@ type freightGroupList struct {
 
 type queryFreightsResponse struct {
 	Groups map[string]freightGroupList `json:"groups"`
-	// ResourceVersion is the Kubernetes list resourceVersion clients use to
-	// seed a follow-up Freight watch so the API server does not replay every
-	// existing Freight as an ADDED event. It is empty for the stage-scoped
-	// query, whose result is assembled from multiple sources rather than a
-	// single watchable namespace list.
+	// ResourceVersion is an opaque token returned for compatibility with
+	// clients that seed a watch from a list. The Freight watch streams from
+	// connect time and ignores it.
 	ResourceVersion string `json:"resourceVersion,omitempty"`
 }
 
@@ -46,86 +43,6 @@ const (
 	// TODO: KR: Maybe we should add OrderBySemVer since charts are always
 	// semantically versioned and images sometimes are.
 )
-
-func (s *server) getAvailableFreightForStage(
-	ctx context.Context,
-	stage *kargoapi.Stage,
-) ([]kargoapi.Freight, error) {
-	return api.ListFreightAvailableToStage(ctx, s.client, stage)
-}
-
-func (s *server) getFreightFromWarehouses(
-	ctx context.Context,
-	project string,
-	warehouses []string,
-) ([]kargoapi.Freight, error) {
-	var allFreight []kargoapi.Freight
-	for _, warehouse := range warehouses {
-		var freight kargoapi.FreightList
-		if err := s.listFreightFn(
-			ctx,
-			&freight,
-			&client.ListOptions{
-				Namespace: project,
-				FieldSelector: fields.OneTermEqualSelector(
-					indexer.FreightByWarehouseField,
-					warehouse,
-				),
-			},
-		); err != nil {
-			return nil, fmt.Errorf(
-				"error listing Freight for Warehouse %q in namespace %q: %w",
-				warehouse,
-				project,
-				err,
-			)
-		}
-		allFreight = append(allFreight, freight.Items...)
-	}
-	return allFreight, nil
-}
-
-func (s *server) getVerifiedFreight(
-	ctx context.Context,
-	project string,
-	upstreams []string,
-) ([]kargoapi.Freight, error) {
-	var verifiedFreight []kargoapi.Freight
-	for _, upstream := range upstreams {
-		var freight kargoapi.FreightList
-		if err := s.listFreightFn(
-			ctx,
-			&freight,
-			&client.ListOptions{
-				Namespace: project,
-				FieldSelector: fields.OneTermEqualSelector(
-					indexer.FreightByVerifiedStagesField,
-					upstream,
-				),
-			},
-		); err != nil {
-			return nil, fmt.Errorf(
-				"error listing Freight verified in Stage %q in namespace %q: %w",
-				upstream,
-				project,
-				err,
-			)
-		}
-		verifiedFreight = append(verifiedFreight, freight.Items...)
-	}
-	if len(verifiedFreight) == 0 {
-		return nil, nil
-	}
-	// De-dupe the verified Freight
-	slices.SortFunc(verifiedFreight, func(lhs, rhs kargoapi.Freight) int {
-		return strings.Compare(lhs.Name, rhs.Name)
-	})
-	verifiedFreight = slices.CompactFunc(verifiedFreight, func(lhs, rhs kargoapi.Freight) bool {
-		return lhs.Name == rhs.Name
-	})
-
-	return verifiedFreight, nil
-}
 
 // groupFreightByImageRepo groups freight by image repository URL.
 func groupFreightByImageRepo(
@@ -280,6 +197,10 @@ func (s *server) queryFreight(c *gin.Context) {
 		return
 	}
 
+	if !s.authorizeFreight(c, "list", project, "") {
+		return
+	}
+
 	var freight []kargoapi.Freight
 	var resourceVersion string
 	var err error
@@ -299,37 +220,24 @@ func (s *server) queryFreight(c *gin.Context) {
 			_ = c.Error(err)
 			return
 		}
-		freight, err = api.ListFreightAvailableToStage(ctx, s.client, stage)
+		freight, err = api.ListFreightAvailableToStage(ctx, s.client, s.freightStore, stage)
 		if err != nil {
 			_ = c.Error(fmt.Errorf("get available freight for stage: %w", err))
 			return
 		}
-		// The stage-availability list is assembled from multiple sources rather
-		// than a single watchable namespace list, so ResourceVersion is left
-		// empty and clients fall back to an unseeded watch for this view.
-
-	case len(origins) > 0:
-		// Get freight from specific warehouses. The seed list goes through the
-		// uncached reader for a watchable ResourceVersion, then origins are
-		// filtered in-process (see filterFreightByOrigins) to match the
-		// unfiltered follow-up watch.
-		freightList := &kargoapi.FreightList{}
-		if err = s.listForWatchSeed(ctx, "freights", freightList, client.InNamespace(project)); err != nil {
-			_ = c.Error(fmt.Errorf("list freight: %w", err))
-			return
-		}
-		freight = filterFreightByOrigins(freightList.Items, origins)
-		resourceVersion = normalizeListResourceVersion(freightList.ResourceVersion)
 
 	default:
-		// Get all freight in the project
-		freightList := &kargoapi.FreightList{}
-		if err = s.listForWatchSeed(ctx, "freights", freightList, client.InNamespace(project)); err != nil {
+		// Get all freight in the project, or only that from specific
+		// warehouses if origins were specified
+		if freight, err = s.freightStore.List(
+			ctx,
+			project,
+			libFreight.ListOptions{Origins: origins},
+		); err != nil {
 			_ = c.Error(fmt.Errorf("list freight: %w", err))
 			return
 		}
-		freight = freightList.Items
-		resourceVersion = normalizeListResourceVersion(freightList.ResourceVersion)
+		resourceVersion = strconv.FormatInt(time.Now().UnixMilli(), 10)
 	}
 
 	// Split the Freight into groups using the generic functions
@@ -358,27 +266,23 @@ func (s *server) queryFreight(c *gin.Context) {
 	})
 }
 
-// watchFreight streams Freight changes through the REST SSE endpoint, seeding
-// the watch from the provided resourceVersion so the API server does not replay
-// every existing Freight as an ADDED event.
-func (s *server) watchFreight(c *gin.Context, project string, origins []string, resourceVersion string) {
+// watchFreight streams Freight changes through the REST SSE endpoint. Only
+// changes made after the watch starts are streamed; existing Freight is never
+// replayed, so the resourceVersion argument is accepted for API compatibility
+// but otherwise ignored.
+func (s *server) watchFreight(c *gin.Context, project string, origins []string, _ string) {
 	ctx := c.Request.Context()
 	logger := logging.LoggerFromContext(ctx)
 
-	w, err := s.client.Watch(
-		ctx,
-		&kargoapi.FreightList{},
-		buildWatchListOptions(project, resourceVersion)...,
-	)
+	if !s.authorizeFreight(c, "watch", project, "") {
+		return
+	}
+
+	events, err := s.freightStore.Watch(ctx, project)
 	if err != nil {
-		if SendSSEWatchStartError(c, err) {
-			return
-		}
-		logger.Error(err, "failed to start watch")
 		_ = c.Error(fmt.Errorf("watch freight: %w", err))
 		return
 	}
-	defer w.Stop()
 
 	keepaliveTicker := time.NewTicker(30 * time.Second)
 	defer keepaliveTicker.Stop()
@@ -396,19 +300,10 @@ func (s *server) watchFreight(c *gin.Context, project string, origins []string, 
 				return
 			}
 
-		case e, ok := <-w.ResultChan():
+		case e, ok := <-events:
 			if !ok {
 				logger.Debug("watch channel closed")
 				return
-			}
-			if watchErr := ErrorFromWatchEvent(e); watchErr != nil {
-				SendSSEWatchError(c, watchErr)
-				return
-			}
-
-			freight, ok := ConvertWatchEventObject(c, e, (*kargoapi.Freight)(nil))
-			if !ok {
-				continue
 			}
 
 			eventType := e.Type
@@ -416,34 +311,16 @@ func (s *server) watchFreight(c *gin.Context, project string, origins []string, 
 				var send bool
 				eventType, send = FilteredWatchEventType(
 					e.Type,
-					slices.Contains(origins, freight.Origin.Name),
+					slices.Contains(origins, e.Object.Origin.Name),
 				)
 				if !send {
 					continue
 				}
 			}
 
-			if !SendSSEWatchEvent(c, eventType, freight) {
+			if !SendSSEWatchEvent(c, eventType, e.Object) {
 				return
 			}
 		}
 	}
-}
-
-// filterFreightByOrigins returns Freight whose origin Warehouse is one of the
-// provided origins.
-//
-// Origin filtering is done in-process rather than via the FreightByWarehouse
-// field index because the watch-seed list goes through listForWatchSeed's
-// uncached reader, which cannot serve controller-runtime field indexes. This
-// over-fetches the whole namespace, but it matches the (also unfiltered)
-// follow-up watch and keeps the returned ResourceVersion watchable.
-func filterFreightByOrigins(freight []kargoapi.Freight, origins []string) []kargoapi.Freight {
-	filtered := make([]kargoapi.Freight, 0, len(freight))
-	for _, f := range freight {
-		if slices.Contains(origins, f.Origin.Name) {
-			filtered = append(filtered, f)
-		}
-	}
-	return filtered
 }

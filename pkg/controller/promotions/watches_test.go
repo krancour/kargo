@@ -22,6 +22,7 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/pkg/controller"
 	argocd "github.com/akuity/kargo/pkg/controller/argocd/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/freight/memory"
 	"github.com/akuity/kargo/pkg/indexer"
 	"github.com/akuity/kargo/pkg/kubernetes"
 )
@@ -386,7 +387,8 @@ func TestUpdatedArgoCDAppHandler_Update(t *testing.T) {
 				WithInterceptorFuncs(tt.interceptor)
 
 			u := &UpdatedArgoCDAppHandler[*argocd.Application]{
-				kargoClient: c.Build(),
+				kargoClient:  c.Build(),
+				freightStore: memory.NewStore(),
 			}
 
 			wq := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
@@ -782,7 +784,10 @@ func newSelectorAppHandler(
 			},
 		).
 		Build()
-	return &UpdatedArgoCDAppHandler[*argocd.Application]{kargoClient: c}
+	return &UpdatedArgoCDAppHandler[*argocd.Application]{
+		kargoClient:  c,
+		freightStore: memory.NewStore(),
+	}
 }
 
 func newTestWorkqueue() workqueue.TypedRateLimitingInterface[reconcile.Request] {

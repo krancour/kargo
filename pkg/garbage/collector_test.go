@@ -10,12 +10,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/akuity/kargo/pkg/freight/memory"
 )
 
 func TestNewCollector(t *testing.T) {
 	watchClient := fake.NewClientBuilder().Build()
 	testCfg := CollectorConfigFromEnv()
-	c, ok := NewCollector(watchClient, testCfg).(*collector)
+	c, ok := NewCollector(watchClient, memory.NewStore(), testCfg).(*collector)
 	require.True(t, ok)
 	require.Equal(t, testCfg, c.cfg)
 	require.NotNil(t, c.cleanProjectsFn)

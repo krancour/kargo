@@ -1,16 +1,16 @@
 package builtin
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	libFreight "github.com/akuity/kargo/pkg/freight"
+	"github.com/akuity/kargo/pkg/freight/memory"
 	"github.com/akuity/kargo/pkg/promotion"
 	"github.com/akuity/kargo/pkg/x/promotion/runner/builtin"
 )
@@ -91,9 +91,6 @@ func Test_setFreightAlias_convert(t *testing.T) {
 }
 
 func Test_setFreightAlias_run(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, kargoapi.AddToScheme(scheme))
-
 	const (
 		testFreight  = "freight-id-1"
 		otherFreight = "freight-id-2"
@@ -102,104 +99,151 @@ func Test_setFreightAlias_run(t *testing.T) {
 		alias        = "new-alias"
 	)
 
+	newTestFreight := func() *kargoapi.Freight {
+		return &kargoapi.Freight{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testFreight,
+				Namespace: testProject,
+				Labels: map[string]string{
+					kargoapi.LabelKeyAlias: oldAlias,
+				},
+			},
+			Alias: oldAlias,
+		}
+	}
+
 	tests := []struct {
 		name       string
-		client     client.Client
+		store      func() *memory.Store
 		cfg        builtin.SetFreightAliasConfig
-		assertions func(t2 *testing.T, result promotion.StepResult, client2 client.Client, err error)
+		assertions func(*testing.T, promotion.StepResult, *memory.Store, error)
 	}{
 		{
-			name:   "freight not found",
-			client: fake.NewClientBuilder().WithScheme(scheme).Build(),
+			name:  "freight not found",
+			store: func() *memory.Store { return memory.NewStore() },
 			cfg: builtin.SetFreightAliasConfig{
 				Name:  testFreight,
 				Alias: alias,
 			},
-			assertions: func(t *testing.T, res promotion.StepResult, _ client.Client, err error) {
+			assertions: func(t *testing.T, res promotion.StepResult, _ *memory.Store, err error) {
 				require.ErrorContains(t, err, "not found")
 				require.ErrorContains(t, err, testFreight)
 				require.Equal(t, kargoapi.PromotionStepStatusFailed, res.Status)
+				var terminalErr *promotion.TerminalError
+				require.ErrorAs(t, err, &terminalErr)
 			},
 		},
 		{
-			name: "patch error",
-			client: fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(
-					&kargoapi.Freight{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:            testFreight,
-							Namespace:       testProject,
-							ResourceVersion: "invalid", // forces patch failure
-						},
-						Alias: oldAlias,
-					},
-				).
-				Build(),
+			name: "get error",
+			store: func() *memory.Store {
+				s := memory.NewStore(newTestFreight())
+				s.Hooks.Get = func(context.Context, string, string) error {
+					return errors.New("something went wrong")
+				}
+				return s
+			},
 			cfg: builtin.SetFreightAliasConfig{
 				Name:  testFreight,
 				Alias: alias,
 			},
-			assertions: func(t *testing.T, res promotion.StepResult, _ client.Client, err error) {
-				require.ErrorContains(t, err, "failed to patch alias")
+			assertions: func(t *testing.T, res promotion.StepResult, _ *memory.Store, err error) {
+				require.ErrorContains(t, err, "failed to fetch Freight")
 				require.ErrorContains(t, err, testFreight)
+				require.ErrorContains(t, err, "something went wrong")
 				require.Equal(t, kargoapi.PromotionStepStatusFailed, res.Status)
+				var terminalErr *promotion.TerminalError
+				require.ErrorAs(t, err, &terminalErr)
 			},
 		},
 		{
-			name: "successful alias update",
-			client: fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(
+			name: "update error",
+			store: func() *memory.Store {
+				s := memory.NewStore(newTestFreight())
+				s.Hooks.UpdateAlias = func(context.Context, string, string, string) error {
+					return errors.New("something went wrong")
+				}
+				return s
+			},
+			cfg: builtin.SetFreightAliasConfig{
+				Name:  testFreight,
+				Alias: alias,
+			},
+			assertions: func(t *testing.T, res promotion.StepResult, _ *memory.Store, err error) {
+				require.ErrorContains(t, err, "failed to update alias")
+				require.ErrorContains(t, err, testFreight)
+				require.ErrorContains(t, err, "something went wrong")
+				require.Equal(t, kargoapi.PromotionStepStatusFailed, res.Status)
+				var terminalErr *promotion.TerminalError
+				require.ErrorAs(t, err, &terminalErr)
+			},
+		},
+		{
+			name: "alias conflict",
+			store: func() *memory.Store {
+				return memory.NewStore(
+					newTestFreight(),
 					&kargoapi.Freight{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      testFreight,
+							Name:      otherFreight,
 							Namespace: testProject,
 							Labels: map[string]string{
-								kargoapi.LabelKeyAlias: oldAlias,
+								kargoapi.LabelKeyAlias: alias,
 							},
 						},
-						Alias: oldAlias,
+						Alias: alias,
 					},
-				).
-				Build(),
+				)
+			},
 			cfg: builtin.SetFreightAliasConfig{
 				Name:  testFreight,
 				Alias: alias,
 			},
-			assertions: func(t *testing.T, res promotion.StepResult, c client.Client, err error) {
+			assertions: func(t *testing.T, res promotion.StepResult, s *memory.Store, err error) {
+				require.ErrorContains(t, err, "failed to update alias")
+				require.Equal(t, kargoapi.PromotionStepStatusFailed, res.Status)
+				var terminalErr *promotion.TerminalError
+				require.ErrorAs(t, err, &terminalErr)
+				require.ErrorIs(t, terminalErr.Err, libFreight.ErrAliasConflict)
+
+				// The Freight's alias is unchanged
+				f, getErr := s.Get(t.Context(), testProject, testFreight)
+				require.NoError(t, getErr)
+				require.Equal(t, oldAlias, f.Alias)
+				require.Equal(t, oldAlias, f.Labels[kargoapi.LabelKeyAlias])
+			},
+		},
+		{
+			name:  "successful alias update",
+			store: func() *memory.Store { return memory.NewStore(newTestFreight()) },
+			cfg: builtin.SetFreightAliasConfig{
+				Name:  testFreight,
+				Alias: alias,
+			},
+			assertions: func(t *testing.T, res promotion.StepResult, s *memory.Store, err error) {
 				require.NoError(t, err)
 				require.Equal(t, kargoapi.PromotionStepStatusSucceeded, res.Status)
+				require.Contains(t, res.Message, oldAlias)
+				require.Contains(t, res.Message, alias)
 
-				freight := &kargoapi.Freight{}
-				err = c.Get(
-					t.Context(),
-					types.NamespacedName{
-						Name:      testFreight,
-						Namespace: testProject,
-					},
-					freight,
-				)
+				f, err := s.Get(t.Context(), testProject, testFreight)
 				require.NoError(t, err)
-
-				require.Equal(t, alias, freight.Alias)
-				require.Equal(t, alias, freight.Labels[kargoapi.LabelKeyAlias])
+				require.Equal(t, alias, f.Alias)
+				require.Equal(t, alias, f.Labels[kargoapi.LabelKeyAlias])
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			step := &freightAliasSetter{
-				kargoClient: tt.client,
-			}
+			store := tt.store()
+			step := &freightAliasSetter{freightStore: store}
 
 			stepCtx := &promotion.StepContext{
 				Project: testProject,
 			}
 
 			res, err := step.run(t.Context(), stepCtx, tt.cfg)
-			tt.assertions(t, res, tt.client, err)
+			tt.assertions(t, res, store, err)
 		})
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	k8sevent "github.com/akuity/kargo/pkg/event/kubernetes"
+	"github.com/akuity/kargo/pkg/freight/memory"
 	fakeevent "github.com/akuity/kargo/pkg/kubernetes/event/fake"
 	"github.com/akuity/kargo/pkg/server/config"
 	"github.com/akuity/kargo/pkg/server/kubernetes"
@@ -38,10 +39,12 @@ func TestNewServer(t *testing.T) {
 	)
 	require.NoError(t, err)
 	testSender := k8sevent.NewEventSender(fakeevent.NewEventRecorder(0))
+	testFreightStore := memory.NewStore()
 
 	s, ok := NewServer(
 		testServerConfig,
 		testClient,
+		testFreightStore,
 		rbac.NewKubernetesRolesDatabase(
 			testClient,
 			testClient,
@@ -53,6 +56,7 @@ func TestNewServer(t *testing.T) {
 	require.True(t, ok)
 	require.NotNil(t, s)
 	require.Same(t, testClient, s.client)
+	require.Same(t, testFreightStore, s.freightStore)
 	require.NotNil(t, testClient, s.rolesDB)
 	require.Same(t, testSender, s.sender)
 	require.Equal(t, testServerConfig, s.cfg)
@@ -63,12 +67,6 @@ func TestNewServer(t *testing.T) {
 	require.NotNil(t, s.isFreightAvailableFn)
 	require.NotNil(t, s.createPromotionFn)
 	require.NotNil(t, s.findDownstreamStagesFn)
-	require.NotNil(t, s.listFreightFn)
-	require.NotNil(t, s.getAvailableFreightForStageFn)
-	require.NotNil(t, s.getFreightFromWarehousesFn)
-	require.NotNil(t, s.getVerifiedFreightFn)
-	require.NotNil(t, s.patchFreightAliasFn)
-	require.NotNil(t, s.patchFreightStatusFn)
 	require.NotNil(t, s.authorizeFn)
 	require.NotNil(t, s.getAnalysisRunFn)
 }

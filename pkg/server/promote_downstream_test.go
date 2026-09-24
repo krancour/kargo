@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/freight/memory"
 	"github.com/akuity/kargo/pkg/server/config"
 )
 
@@ -36,6 +37,7 @@ func Test_server_promoteDownstream(t *testing.T) {
 				kargoapi.LabelKeyAlias: "fake-alias",
 			},
 		},
+		Alias: "fake-alias",
 		Origin: kargoapi.FreightOrigin{
 			Kind: kargoapi.FreightOriginKindWarehouse,
 			Name: testWarehouse.Name,
@@ -144,8 +146,52 @@ func Test_server_promoteDownstream(t *testing.T) {
 				},
 			},
 			{
+				name:          "Freight not found by alias",
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject, testStage),
+				freightStore:  memory.NewStore(testFreight),
+				body: mustJSONBody(promoteDownstreamRequest{
+					FreightAlias: "nonexistent-alias",
+				}),
+				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
+					require.Equal(t, http.StatusNotFound, w.Code)
+					require.Contains(t, w.Body.String(), "nonexistent-alias")
+				},
+			},
+			{
+				name:          "not authorized to get Freight",
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject, testStage),
+				freightStore:  memory.NewStore(testFreight),
+				serverSetup: func(_ *testing.T, s *server) {
+					s.authorizeFn = func(
+						_ context.Context,
+						verb string,
+						gvr schema.GroupVersionResource,
+						_ string,
+						key client.ObjectKey,
+					) error {
+						if gvr == freightGVR {
+							require.Equal(t, "get", verb)
+							require.Equal(t, testFreight.Name, key.Name)
+							return apierrors.NewForbidden(
+								gvr.GroupResource(),
+								key.Name,
+								errors.New("not authorized"),
+							)
+						}
+						return nil
+					}
+				},
+				body: mustJSONBody(promoteDownstreamRequest{
+					Freight: testFreight.Name,
+				}),
+				assertions: func(t *testing.T, w *httptest.ResponseRecorder, _ client.Client) {
+					require.Equal(t, http.StatusForbidden, w.Code)
+				},
+			},
+			{
 				name:          "No downstream stages",
-				clientBuilder: fake.NewClientBuilder().WithObjects(testProject, testStage, testFreight),
+				clientBuilder: fake.NewClientBuilder().WithObjects(testProject, testStage),
+				freightStore:  memory.NewStore(testFreight),
 				body: mustJSONBody(promoteDownstreamRequest{
 					Freight: testFreight.Name,
 				}),
@@ -154,12 +200,12 @@ func Test_server_promoteDownstream(t *testing.T) {
 				},
 			},
 			{
-				name: "not authorized to promote to a downstream stage",
+				name:         "not authorized to promote to a downstream stage",
+				freightStore: memory.NewStore(testFreight),
 				clientBuilder: fake.NewClientBuilder().WithObjects(
 					testProject,
 					testStage,
 					testDownstreamStage,
-					testFreight,
 				),
 				serverSetup: func(_ *testing.T, s *server) {
 					s.authorizeFn = func(
@@ -184,12 +230,12 @@ func Test_server_promoteDownstream(t *testing.T) {
 				},
 			},
 			{
-				name: "successfully promotes downstream",
+				name:         "successfully promotes downstream",
+				freightStore: memory.NewStore(testFreight),
 				clientBuilder: fake.NewClientBuilder().WithObjects(
 					testProject,
 					testStage,
 					testDownstreamStage,
-					testFreight,
 				),
 				serverSetup: func(_ *testing.T, s *server) {
 					s.authorizeFn = func(
@@ -218,12 +264,44 @@ func Test_server_promoteDownstream(t *testing.T) {
 				},
 			},
 			{
-				name: "target-aware downstream Stage yields a PromotionRequest",
+				name:         "successfully promotes downstream by alias",
+				freightStore: memory.NewStore(testFreight),
+				clientBuilder: fake.NewClientBuilder().WithObjects(
+					testProject,
+					testStage,
+					testDownstreamStage,
+				),
+				serverSetup: func(_ *testing.T, s *server) {
+					s.authorizeFn = func(
+						context.Context,
+						string,
+						schema.GroupVersionResource,
+						string,
+						client.ObjectKey,
+					) error {
+						return nil
+					}
+				},
+				body: mustJSONBody(promoteDownstreamRequest{
+					FreightAlias: testFreight.Alias,
+				}),
+				assertions: func(t *testing.T, w *httptest.ResponseRecorder, c client.Client) {
+					require.Equal(t, http.StatusCreated, w.Code)
+
+					promos := &kargoapi.PromotionList{}
+					err := c.List(t.Context(), promos, client.InNamespace(testProject.Name))
+					require.NoError(t, err)
+					require.Len(t, promos.Items, 1)
+					require.Equal(t, testFreight.Name, promos.Items[0].Spec.Freight)
+				},
+			},
+			{
+				name:         "target-aware downstream Stage yields a PromotionRequest",
+				freightStore: memory.NewStore(testFreight),
 				clientBuilder: fake.NewClientBuilder().WithObjects(
 					testProject,
 					testStage,
 					testTargetAwareDownstreamStage,
-					testFreight,
 					testDownstreamTarget,
 				),
 				serverSetup: func(_ *testing.T, s *server) {

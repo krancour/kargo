@@ -16,6 +16,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/freight"
+	"github.com/akuity/kargo/pkg/freight/memory"
 )
 
 func TestGetStage(t *testing.T) {
@@ -362,8 +364,10 @@ func TestListFreightAvailableToStage(t *testing.T) {
 	testCases := []struct {
 		name        string
 		reqs        []kargoapi.FreightRequest
-		objects     []client.Object
+		warehouses  []client.Object
+		seed        []*kargoapi.Freight
 		interceptor interceptor.Funcs
+		listHookErr error
 		assertions  func(*testing.T, []kargoapi.Freight, error)
 	}{
 		{
@@ -396,7 +400,7 @@ func TestListFreightAvailableToStage(t *testing.T) {
 		{
 			name: "error listing Freight",
 			reqs: []kargoapi.FreightRequest{{Origin: testWarehouse1Origin}},
-			objects: []client.Object{
+			warehouses: []client.Object{
 				&kargoapi.Warehouse{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
@@ -404,16 +408,7 @@ func TestListFreightAvailableToStage(t *testing.T) {
 					},
 				},
 			},
-			interceptor: interceptor.Funcs{
-				List: func(
-					context.Context,
-					client.WithWatch,
-					client.ObjectList,
-					...client.ListOption,
-				) error {
-					return errors.New("something went wrong")
-				},
-			},
+			listHookErr: errors.New("something went wrong"),
 			assertions: func(t *testing.T, _ []kargoapi.Freight, err error) {
 				require.ErrorContains(t, err, "error listing Freight for Warehouse")
 				require.ErrorContains(t, err, "something went wrong")
@@ -434,7 +429,7 @@ func TestListFreightAvailableToStage(t *testing.T) {
 					},
 				},
 			},
-			objects: []client.Object{
+			warehouses: []client.Object{
 				&kargoapi.Warehouse{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
@@ -447,21 +442,23 @@ func TestListFreightAvailableToStage(t *testing.T) {
 						Name:      testWarehouse2,
 					},
 				},
-				&kargoapi.Freight{ // Available because Freight is requested directly from this Warehouse
+			},
+			seed: []*kargoapi.Freight{
+				{ // Available because Freight is requested directly from this Warehouse
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-1",
 					},
 					Origin: testWarehouse1Origin,
 				},
-				&kargoapi.Freight{ // Not available because Freight is not verified in upstream Stage
+				{ // Not available because Freight is not verified in upstream Stage
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-2",
 					},
 					Origin: testWarehouse2Origin,
 				},
-				&kargoapi.Freight{ // Not available because verification time not recorded
+				{ // Not available because verification time not recorded
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-3",
@@ -473,7 +470,7 @@ func TestListFreightAvailableToStage(t *testing.T) {
 						},
 					},
 				},
-				&kargoapi.Freight{ // Not available because soak time has not elapsed
+				{ // Not available because soak time has not elapsed
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-4",
@@ -486,7 +483,7 @@ func TestListFreightAvailableToStage(t *testing.T) {
 						},
 					},
 				},
-				&kargoapi.Freight{ // Available because soak time has elapsed
+				{ // Available because soak time has elapsed
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testProject,
 						Name:      "fake-freight-5",
@@ -501,11 +498,11 @@ func TestListFreightAvailableToStage(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, freight []kargoapi.Freight, err error) {
+			assertions: func(t *testing.T, result []kargoapi.Freight, err error) {
 				require.NoError(t, err)
-				require.Len(t, freight, 2)
-				require.Equal(t, "fake-freight-1", freight[0].Name)
-				require.Equal(t, "fake-freight-5", freight[1].Name)
+				require.Len(t, result, 2)
+				require.Equal(t, "fake-freight-1", result[0].Name)
+				require.Equal(t, "fake-freight-5", result[1].Name)
 			},
 		},
 	}
@@ -517,13 +514,16 @@ func TestListFreightAvailableToStage(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			c := fake.NewClientBuilder().WithScheme(testScheme).
-				WithScheme(testScheme).
-				WithIndex(&kargoapi.Freight{}, warehouseField, warehouseIndexer).
-				WithIndex(&kargoapi.Freight{}, approvedField, approvedForIndexer).
-				WithIndex(&kargoapi.Freight{}, verifiedInField, verifiedInIndexer).
-				WithObjects(testCase.objects...).
+				WithObjects(testCase.warehouses...).
 				WithInterceptorFuncs(testCase.interceptor).
 				Build()
+
+			store := memory.NewStore(testCase.seed...)
+			if testCase.listHookErr != nil {
+				store.Hooks.List = func(context.Context, string, freight.ListOptions) error {
+					return testCase.listHookErr
+				}
+			}
 
 			stage := &kargoapi.Stage{
 				ObjectMeta: metav1.ObjectMeta{
@@ -534,10 +534,10 @@ func TestListFreightAvailableToStage(t *testing.T) {
 					RequestedFreight: testCase.reqs,
 				},
 			}
-			freight, err := ListFreightAvailableToStage(
-				t.Context(), c, stage,
+			result, err := ListFreightAvailableToStage(
+				t.Context(), c, store, stage,
 			)
-			testCase.assertions(t, freight, err)
+			testCase.assertions(t, result, err)
 		})
 	}
 }

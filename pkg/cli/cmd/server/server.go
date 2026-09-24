@@ -12,6 +12,7 @@ import (
 	"github.com/akuity/kargo/pkg/cli/option"
 	"github.com/akuity/kargo/pkg/cli/templates"
 	k8sevent "github.com/akuity/kargo/pkg/event/kubernetes"
+	pgfreight "github.com/akuity/kargo/pkg/freight/postgres"
 	fakeevent "github.com/akuity/kargo/pkg/kubernetes/event/fake"
 	"github.com/akuity/kargo/pkg/server"
 	apiconfig "github.com/akuity/kargo/pkg/server/config"
@@ -96,6 +97,11 @@ func (o *serverOptions) run(ctx context.Context) error {
 		return fmt.Errorf("error creating Kubernetes client: %w", err)
 	}
 
+	freightStore, err := pgfreight.NewStore(ctx, pgfreight.ConfigFromEnv())
+	if err != nil {
+		return fmt.Errorf("error connecting to the Freight database: %w", err)
+	}
+
 	l, err := net.Listen("tcp", o.address)
 	if err != nil {
 		return fmt.Errorf("start local server: %w", err)
@@ -108,6 +114,7 @@ func (o *serverOptions) run(ctx context.Context) error {
 			KargoNamespace: o.kargoNamespace,
 		},
 		client,
+		freightStore,
 		rbac.NewKubernetesRolesDatabase(client, client, rbac.RolesDatabaseConfigFromEnv()),
 		k8sevent.NewEventSender(&fakeevent.EventRecorder{}),
 	)

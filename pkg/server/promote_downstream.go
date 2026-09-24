@@ -14,6 +14,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/pkg/api"
+	libFreight "github.com/akuity/kargo/pkg/freight"
 	libhttp "github.com/akuity/kargo/pkg/http"
 	"github.com/akuity/kargo/pkg/server/user"
 )
@@ -100,11 +101,18 @@ func (s *server) promoteDownstream(c *gin.Context) {
 	}
 
 	// Get the Freight by name or alias
+	nameOrAlias := req.Freight
+	if nameOrAlias == "" {
+		nameOrAlias = req.FreightAlias
+	}
+	if !s.authorizeFreight(c, "get", project, nameOrAlias) {
+		return
+	}
+	var err error
 	var freight *kargoapi.Freight
 	if req.Freight != "" {
-		freight = &kargoapi.Freight{}
-		if err := s.client.Get(ctx, client.ObjectKey{Namespace: project, Name: req.Freight}, freight); err != nil {
-			if apierrors.IsNotFound(err) {
+		if freight, err = s.freightStore.Get(ctx, project, req.Freight); err != nil {
+			if errors.Is(err, libFreight.ErrNotFound) {
 				_ = c.Error(libhttp.ErrorStr(
 					fmt.Sprintf("Freight %q not found in project %q", req.Freight, project),
 					http.StatusNotFound,
@@ -115,25 +123,17 @@ func (s *server) promoteDownstream(c *gin.Context) {
 			return
 		}
 	} else {
-		// Search by alias
-		list := &kargoapi.FreightList{}
-		if err := s.client.List(
-			ctx,
-			list,
-			client.InNamespace(project),
-			client.MatchingLabels{kargoapi.LabelKeyAlias: req.FreightAlias},
-		); err != nil {
+		if freight, err = s.freightStore.GetByAlias(ctx, project, req.FreightAlias); err != nil {
+			if errors.Is(err, libFreight.ErrNotFound) {
+				_ = c.Error(libhttp.ErrorStr(
+					fmt.Sprintf("Freight with alias %q not found in project %q", req.FreightAlias, project),
+					http.StatusNotFound,
+				))
+				return
+			}
 			_ = c.Error(err)
 			return
 		}
-		if len(list.Items) == 0 {
-			_ = c.Error(libhttp.ErrorStr(
-				fmt.Sprintf("Freight with alias %q not found in project %q", req.FreightAlias, project),
-				http.StatusNotFound,
-			))
-			return
-		}
-		freight = &list.Items[0]
 	}
 
 	// Find downstream stages

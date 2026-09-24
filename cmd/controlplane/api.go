@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	k8sevent "github.com/akuity/kargo/pkg/event/kubernetes"
+	pgfreight "github.com/akuity/kargo/pkg/freight/postgres"
 	"github.com/akuity/kargo/pkg/kubernetes/event"
 	"github.com/akuity/kargo/pkg/logging"
 	"github.com/akuity/kargo/pkg/os"
@@ -95,6 +96,11 @@ func (o *apiOptions) run(ctx context.Context) error {
 		return fmt.Errorf("error creating Kubernetes client for Kargo API server: %w", err)
 	}
 
+	freightStore, err := pgfreight.NewStore(ctx, pgfreight.ConfigFromEnv())
+	if err != nil {
+		return fmt.Errorf("error connecting to the Freight database: %w", err)
+	}
+
 	if serverCfg.RolloutsIntegrationEnabled {
 		var exists bool
 		if exists, err = argoRolloutsExists(ctx, restCfg); !exists || err != nil {
@@ -145,6 +151,7 @@ func (o *apiOptions) run(ctx context.Context) error {
 	srv := server.NewServer(
 		serverCfg,
 		kubeClient,
+		freightStore,
 		rbac.NewKubernetesRolesDatabase(
 			kubeClient,
 			kubeClient.InternalClient(),

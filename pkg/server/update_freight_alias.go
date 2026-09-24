@@ -1,37 +1,15 @@
 package server
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	libFreight "github.com/akuity/kargo/pkg/freight"
 	libhttp "github.com/akuity/kargo/pkg/http"
 )
-
-func (s *server) patchFreightAlias(
-	ctx context.Context,
-	freight *kargoapi.Freight,
-	alias string,
-) error {
-	patchBytes := []byte(
-		fmt.Sprintf(
-			`{"metadata":{"labels":{%q:%q}},"alias":%q}`,
-			kargoapi.LabelKeyAlias,
-			alias,
-			alias,
-		),
-	)
-	patch := client.RawPatch(types.MergePatchType, patchBytes)
-	if err := s.client.Patch(ctx, freight, patch); err != nil {
-		return fmt.Errorf("patch label: %w", err)
-	}
-	return nil
-}
 
 // @id PatchFreightAlias
 // @Summary Patch a Freight resource's alias
@@ -64,41 +42,22 @@ func (s *server) patchFreightAliasHandler(c *gin.Context) {
 		return
 	}
 
-	// Make sure this alias isn't already used by some other piece of Freight
-	freightList := kargoapi.FreightList{}
-	if err := s.client.List(
-		ctx,
-		&freightList,
-		client.InNamespace(project),
-		client.MatchingLabels{kargoapi.LabelKeyAlias: newAlias},
-	); err != nil {
-		_ = c.Error(err)
-		return
-	}
-	if len(freightList.Items) > 1 ||
-		(len(freightList.Items) == 1 && freightList.Items[0].Name != freight.Name) {
-		_ = c.Error(libhttp.ErrorStr(
-			fmt.Sprintf(
-				"alias %q already used by another piece of Freight in namespace %q",
-				newAlias,
-				project,
-			),
-			http.StatusConflict,
-		))
+	if !s.authorizeFreight(c, "patch", project, freight.Name) {
 		return
 	}
 
-	// Proceed with the update using patch
-	patchBytes := []byte(
-		fmt.Sprintf(
-			`{"metadata":{"labels":{%q:%q}},"alias":%q}`,
-			kargoapi.LabelKeyAlias,
-			newAlias,
-			newAlias,
-		),
-	)
-	patch := client.RawPatch(types.MergePatchType, patchBytes)
-	if err := s.client.Patch(ctx, freight, patch); err != nil {
+	if _, err := s.freightStore.UpdateAlias(ctx, project, freight.Name, newAlias); err != nil {
+		if errors.Is(err, libFreight.ErrAliasConflict) {
+			_ = c.Error(libhttp.ErrorStr(
+				fmt.Sprintf(
+					"alias %q already used by another piece of Freight in namespace %q",
+					newAlias,
+					project,
+				),
+				http.StatusConflict,
+			))
+			return
+		}
 		_ = c.Error(err)
 		return
 	}

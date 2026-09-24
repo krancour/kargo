@@ -10,6 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/freight/memory"
 )
 
 func TestPromotionSelectorsMatchApp(t *testing.T) {
@@ -22,6 +23,17 @@ func TestPromotionSelectorsMatchApp(t *testing.T) {
 		`{"matchExpressions":[{"key":"env","operator":"In","values":["prod"]}]}}]}`
 	templatedConfig := `{"apps":[{"namespace":"argocd","selector":` +
 		`{"matchLabels":{"stage":"${{ ctx.stage }}"}}}]}`
+	freightMetadataConfig := `{"apps":[{"namespace":"argocd","selector":` +
+		`{"matchLabels":{"app":"${{ freightMetadata('fake-freight').app }}"}}}]}`
+
+	freightStore := memory.NewStore(&kargoapi.Freight{
+		ObjectMeta: metav1.ObjectMeta{Name: "fake-freight", Namespace: project},
+		Status: kargoapi.FreightStatus{
+			Metadata: map[string]apiextensionsv1.JSON{
+				"app": {Raw: []byte(`"foo"`)},
+			},
+		},
+	})
 
 	promoWithStep := func(config string) *kargoapi.Promotion {
 		return &kargoapi.Promotion{
@@ -83,6 +95,13 @@ func TestPromotionSelectorsMatchApp(t *testing.T) {
 			expected:     true,
 		},
 		{
+			name:         "templated matchLabels value resolves against Freight metadata",
+			promo:        promoWithStep(freightMetadataConfig),
+			appNamespace: "argocd",
+			appLabels:    map[string]string{"app": "foo"},
+			expected:     true,
+		},
+		{
 			name:         "name-based entry is ignored",
 			promo:        promoWithStep(`{"apps":[{"namespace":"argocd","name":"some-app"}]}`),
 			appNamespace: "argocd",
@@ -109,6 +128,7 @@ func TestPromotionSelectorsMatchApp(t *testing.T) {
 				promotionSelectorsMatchApp(
 					t.Context(),
 					c,
+					freightStore,
 					testCase.promo,
 					testCase.appNamespace,
 					testCase.appLabels,
@@ -122,6 +142,7 @@ func TestPromotionSelectorsMatchApp(t *testing.T) {
 		require.False(t, promotionSelectorsMatchApp(
 			t.Context(),
 			c,
+			freightStore,
 			promoWithStep(`{"apps":[{"namespace":"argocd","selector":{"matchLabels":{"app":"foo"}}}]}`),
 			"argocd",
 			map[string]string{"app": "foo"},

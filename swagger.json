@@ -981,6 +981,52 @@
             "BearerAuth": []
           }
         ]
+      },
+      "post": {
+        "description": "Create a Freight resource from an explicit set of artifacts that\nthe origin Warehouse subscribes to. Kargo assigns the name and,\nwhen omitted, the alias.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Core",
+          "Project-Level"
+        ],
+        "summary": "Create Freight",
+        "operationId": "CreateFreight",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Project name",
+            "name": "project",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "Only alias, origin, commits, images, charts and artifacts are honored",
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Freight"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created Freight",
+            "schema": {
+              "$ref": "#/definitions/Freight"
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
       }
     },
     "/v1beta1/projects/{project}/freight/{freight-name-or-alias}": {
@@ -9493,7 +9539,7 @@
           }
         },
         "resourceVersion": {
-          "description": "ResourceVersion is the Kubernetes list resourceVersion clients use to\nseed a follow-up Freight watch so the API server does not replay every\nexisting Freight as an ADDED event. It is empty for the stage-scoped\nquery, whose result is assembled from multiple sources rather than a\nsingle watchable namespace list.",
+          "description": "ResourceVersion is an opaque token returned for compatibility with\nclients that seed a watch from a list. The Freight watch streams from\nconnect time and ignores it.",
           "type": "string"
         }
       }

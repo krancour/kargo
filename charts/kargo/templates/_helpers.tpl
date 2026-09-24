@@ -246,6 +246,26 @@ app.kubernetes.io/component: controller
 app.kubernetes.io/component: dex-server
 {{- end -}}
 
+{{- define "kargo.postgres.labels" -}}
+app.kubernetes.io/component: postgres
+{{- end -}}
+
+{{/*
+kargo.databaseURL returns the Postgres connection URL used by the API server,
+controller, webhooks server and garbage collector: database.url when set,
+otherwise the bundled Postgres's in-cluster address when postgres.enabled is
+true. Fails the render when neither is available.
+*/}}
+{{- define "kargo.databaseURL" -}}
+{{- if .Values.database.url -}}
+{{- .Values.database.url -}}
+{{- else if .Values.postgres.enabled -}}
+postgres://postgres@kargo-postgres.{{ .Release.Namespace }}.svc:5432/postgres?sslmode=disable
+{{- else -}}
+{{- fail "set database.url when postgres.enabled is false" -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "kargo.externalWebhooksServer.labels" -}}
 app.kubernetes.io/component: external-webhooks-server
 {{- end -}}

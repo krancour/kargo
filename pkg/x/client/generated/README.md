@@ -73,6 +73,7 @@ Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
 *CoreAPI* | [**AbortPromotion**](docs/CoreAPI.md#abortpromotion) | **Post** /v1beta1/projects/{project}/promotions/{promotion}/abort | Abort a Promotion
 *CoreAPI* | [**ApproveFreight**](docs/CoreAPI.md#approvefreight) | **Post** /v1beta1/projects/{project}/freight/{freight-name-or-alias}/approve | Approve Freight for promotion to a Stage
+*CoreAPI* | [**CreateFreight**](docs/CoreAPI.md#createfreight) | **Post** /v1beta1/projects/{project}/freight | Create Freight
 *CoreAPI* | [**CreateProjectConfigMap**](docs/CoreAPI.md#createprojectconfigmap) | **Post** /v1beta1/projects/{project}/configmaps | Create a project-level ConfigMap
 *CoreAPI* | [**CreateSharedConfigMap**](docs/CoreAPI.md#createsharedconfigmap) | **Post** /v1beta1/shared/configmaps | Create a shared ConfigMap
 *CoreAPI* | [**CreateSystemConfigMap**](docs/CoreAPI.md#createsystemconfigmap) | **Post** /v1beta1/system/configmaps | Create a system-level ConfigMap

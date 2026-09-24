@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/pkg/freight"
 	"github.com/akuity/kargo/pkg/server/user"
 )
 
@@ -148,6 +149,7 @@ func AuthorizedStages(value string) ([]types.NamespacedName, error) {
 func ListFreightAvailableToStage(
 	ctx context.Context,
 	c client.Client,
+	store freight.Store,
 	s *kargoapi.Stage,
 ) ([]kargoapi.Freight, error) {
 	var availableFreight []kargoapi.Freight
@@ -190,7 +192,7 @@ func ListFreightAvailableToStage(
 			}
 		}
 		freightFromWarehouse, err := ListFreightFromWarehouse(
-			ctx, c, warehouse, listOpts,
+			ctx, store, warehouse, listOpts,
 		)
 		if err != nil {
 			return nil, err

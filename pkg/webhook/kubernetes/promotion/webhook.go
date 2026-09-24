@@ -22,6 +22,7 @@ import (
 	"github.com/akuity/kargo/pkg/api"
 	kargoEvent "github.com/akuity/kargo/pkg/event"
 	k8sevent "github.com/akuity/kargo/pkg/event/kubernetes"
+	libFreight "github.com/akuity/kargo/pkg/freight"
 	"github.com/akuity/kargo/pkg/kubernetes"
 	libEvent "github.com/akuity/kargo/pkg/kubernetes/event"
 	"github.com/akuity/kargo/pkg/logging"
@@ -44,8 +45,9 @@ var (
 )
 
 type webhook struct {
-	client  client.Client
-	decoder admission.Decoder
+	client       client.Client
+	freightStore libFreight.Store
+	decoder      admission.Decoder
 
 	sender kargoEvent.Sender
 
@@ -53,13 +55,14 @@ type webhook struct {
 
 	getFreightFn func(
 		context.Context,
-		client.Client,
+		libFreight.Store,
 		types.NamespacedName,
 	) (*kargoapi.Freight, error)
 
 	listFreightAvailableToStageFn func(
 		context.Context,
 		client.Client,
+		libFreight.Store,
 		*kargoapi.Stage,
 	) ([]kargoapi.Freight, error)
 
@@ -107,10 +110,12 @@ func SetupWebhookWithManager(
 	ctx context.Context,
 	cfg libWebhook.Config,
 	mgr ctrl.Manager,
+	freightStore libFreight.Store,
 ) error {
 	w := newWebhook(
 		cfg,
 		mgr.GetClient(),
+		freightStore,
 		admission.NewDecoder(mgr.GetScheme()),
 		k8sevent.NewEventSender(libEvent.NewRecorder(ctx, mgr.GetScheme(), mgr.GetClient(), "promotion-webhook")),
 	)
@@ -120,13 +125,15 @@ func SetupWebhookWithManager(
 func newWebhook(
 	cfg libWebhook.Config,
 	kubeClient client.Client,
+	freightStore libFreight.Store,
 	decoder admission.Decoder,
 	sender kargoEvent.Sender,
 ) *webhook {
 	w := &webhook{
-		client:  kubeClient,
-		decoder: decoder,
-		sender:  sender,
+		client:       kubeClient,
+		freightStore: freightStore,
+		decoder:      decoder,
+		sender:       sender,
 	}
 	w.getFreightFn = api.GetFreight
 	w.listFreightAvailableToStageFn = api.ListFreightAvailableToStage
@@ -371,7 +378,7 @@ func (w *webhook) resolveOriginToFreight(
 	promo *kargoapi.Promotion,
 	stage *kargoapi.Stage,
 ) (*kargoapi.Freight, error) {
-	availableFreight, err := w.listFreightAvailableToStageFn(ctx, w.client, stage)
+	availableFreight, err := w.listFreightAvailableToStageFn(ctx, w.client, w.freightStore, stage)
 	if err != nil {
 		return nil, apierrors.NewInternalError(
 			fmt.Errorf("list available freight: %w", err),
@@ -478,7 +485,7 @@ func (w *webhook) syncHoldAnnotations(
 	if !enabled {
 		return
 	}
-	freight, err := w.getFreightFn(ctx, w.client, types.NamespacedName{
+	freight, err := w.getFreightFn(ctx, w.freightStore, types.NamespacedName{
 		Namespace: promo.Namespace,
 		Name:      promo.Spec.Freight,
 	})
@@ -491,7 +498,7 @@ func (w *webhook) syncHoldAnnotations(
 	}
 	origin := freight.Origin
 
-	availableFreight, err := w.listFreightAvailableToStageFn(ctx, w.client, stage)
+	availableFreight, err := w.listFreightAvailableToStageFn(ctx, w.client, w.freightStore, stage)
 	if err != nil {
 		logger.Error(err, "skipping auto-promotion intent annotation")
 		return
@@ -582,7 +589,7 @@ func (w *webhook) ValidateCreate(
 		return nil, apierrors.NewInvalid(promotionGroupKind, promo.Name, errs)
 	}
 
-	freight, err := w.getFreightFn(ctx, w.client, types.NamespacedName{
+	freight, err := w.getFreightFn(ctx, w.freightStore, types.NamespacedName{
 		Namespace: promo.Namespace,
 		Name:      promo.Spec.Freight,
 	})

@@ -12,6 +12,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/pkg/credentials"
+	"github.com/akuity/kargo/pkg/freight"
 	"github.com/akuity/kargo/pkg/health"
 	"github.com/akuity/kargo/pkg/promotion/metrics"
 )
@@ -20,19 +21,22 @@ import (
 // executes steps locally using the provided StepExecutor and StepRunner
 // registry.
 type LocalOrchestrator struct {
-	executor  StepExecutor
-	registry  StepRunnerRegistry
-	client    client.Client
-	credsDB   credentials.Database
-	cacheFunc ExprDataCacheFn
-	metrics   *metrics.StepMetrics
+	executor     StepExecutor
+	registry     StepRunnerRegistry
+	client       client.Client
+	freightStore freight.Store
+	credsDB      credentials.Database
+	cacheFunc    ExprDataCacheFn
+	metrics      *metrics.StepMetrics
 }
 
 // NewLocalOrchestrator creates a new LocalOrchestrator instance with the
 // provided client, step runner registry, and cache function.
 func NewLocalOrchestrator(
 	registry StepRunnerRegistry,
-	kargoClient, argoCDClient client.Client,
+	kargoClient client.Client,
+	freightStore freight.Store,
+	argoCDClient client.Client,
 	credsDB credentials.Database,
 	gitUserResolver GitUserResolver,
 	cacheFunc ExprDataCacheFn,
@@ -41,15 +45,17 @@ func NewLocalOrchestrator(
 		executor: NewLocalStepExecutor(
 			registry,
 			kargoClient,
+			freightStore,
 			argoCDClient,
 			credsDB,
 			gitUserResolver,
 		),
-		registry:  registry,
-		client:    kargoClient,
-		credsDB:   credsDB,
-		cacheFunc: cacheFunc,
-		metrics:   metrics.NewStepMetrics(),
+		registry:     registry,
+		client:       kargoClient,
+		freightStore: freightStore,
+		credsDB:      credsDB,
+		cacheFunc:    cacheFunc,
+		metrics:      metrics.NewStepMetrics(),
 	}
 }
 
@@ -102,7 +108,7 @@ func (o *LocalOrchestrator) ExecuteSteps(
 			// Continue execution if the context is still active.
 		}
 
-		processor := NewStepEvaluator(o.client, o.credsDB, o.newCache())
+		processor := NewStepEvaluator(o.client, o.freightStore, o.credsDB, o.newCache())
 
 		// Only evaluate the "if" conditio when the step has not yet started.
 		// If the step has already started (on a previous reconciliation), we

@@ -11,6 +11,7 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/pkg/component"
 	"github.com/akuity/kargo/pkg/credentials"
+	"github.com/akuity/kargo/pkg/freight/memory"
 )
 
 func TestNewLocalStepExecutor(t *testing.T) {
@@ -24,12 +25,14 @@ func TestNewLocalStepExecutor(t *testing.T) {
 	)
 
 	kargoClient := fake.NewClientBuilder().Build()
+	freightStore := memory.NewStore()
 	argoCDClient := fake.NewClientBuilder().Build()
 	credsDB := &credentials.FakeDB{}
 
 	executor := NewLocalStepExecutor(
 		registry,
 		kargoClient,
+		freightStore,
 		argoCDClient,
 		credsDB,
 		nil,
@@ -39,6 +42,7 @@ func TestNewLocalStepExecutor(t *testing.T) {
 	require.IsType(t, &LocalStepExecutor{}, executor)
 	require.Equal(t, registry, executor.registry)
 	require.Equal(t, kargoClient, executor.kargoClient)
+	require.Same(t, freightStore, executor.freightStore)
 	require.Equal(t, argoCDClient, executor.argoCDClient)
 	require.Equal(t, credsDB, executor.credsDB)
 }
@@ -190,9 +194,52 @@ func TestLocalStepExecutor_ExecuteStep(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			executor := NewLocalStepExecutor(tt.registry, nil, nil, nil, nil)
+			executor := NewLocalStepExecutor(tt.registry, nil, nil, nil, nil, nil)
 			result, err := executor.ExecuteStep(t.Context(), tt.request)
 			tt.assertions(t, result, err)
 		})
 	}
+}
+
+func TestLocalStepExecutor_ExecuteStep_capabilities(t *testing.T) {
+	kargoClient := fake.NewClientBuilder().Build()
+	freightStore := memory.NewStore()
+
+	var gotCaps StepRunnerCapabilities
+	registry := MustNewStepRunnerRegistry(
+		StepRunnerRegistration{
+			Name: "test-step",
+			Metadata: StepRunnerMetadata{
+				RequiredCapabilities: []StepRunnerCapability{
+					StepCapabilityAccessControlPlane,
+				},
+			},
+			Value: func(caps StepRunnerCapabilities) StepRunner {
+				gotCaps = caps
+				return &MockStepRunner{
+					RunResult: StepResult{
+						Status: kargoapi.PromotionStepStatusSucceeded,
+					},
+				}
+			},
+		},
+	)
+
+	executor := NewLocalStepExecutor(
+		registry,
+		kargoClient,
+		freightStore,
+		fake.NewClientBuilder().Build(),
+		&credentials.FakeDB{},
+		nil,
+	)
+	_, err := executor.ExecuteStep(
+		t.Context(),
+		StepExecutionRequest{Step: Step{Kind: "test-step"}},
+	)
+	require.NoError(t, err)
+	require.Equal(t, kargoClient, gotCaps.KargoClient)
+	require.Same(t, freightStore, gotCaps.FreightStore)
+	require.Nil(t, gotCaps.ArgoCDClient)
+	require.Nil(t, gotCaps.CredsDB)
 }
