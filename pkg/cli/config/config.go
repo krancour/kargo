@@ -72,6 +72,10 @@ type CLIConfig struct {
 	// and is reused by subsequent SSO logins to the same server unless
 	// overridden.
 	CallbackPort int `json:"callbackPort,omitempty"`
+	// UseDeviceCode indicates whether the user's last SSO login used the OAuth
+	// 2.0 device authorization grant instead of a callback to localhost. It is
+	// reused by subsequent logins that also reuse the stored auth method.
+	UseDeviceCode bool `json:"useDeviceCode,omitempty"`
 	// Project is the default Project for the command.
 	Project string `json:"project,omitempty"`
 }
@@ -166,6 +170,7 @@ func MaskedConfig(config CLIConfig) CLIConfig {
 		RefreshToken:          dataMask,
 		InsecureSkipTLSVerify: config.InsecureSkipTLSVerify,
 		CallbackPort:          config.CallbackPort,
+		UseDeviceCode:         config.UseDeviceCode,
 		Project:               config.Project,
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
@@ -98,15 +97,15 @@ func (o *hashPasswordOptions) getPassword() (string, error) {
 		}
 		return scanner.Text(), nil
 	default:
-		return promptForPassword()
+		return o.promptForPassword()
 	}
 }
 
 // promptForPassword prompts for the password twice and returns it if both
-// entries match. Prompts are written to stderr so that stdout carries only the
+// entries match. Prompts are written to o.ErrOut so that o.Out carries only the
 // hash, even when it is captured.
-func promptForPassword() (string, error) {
-	stdio := survey.WithStdio(os.Stdin, os.Stderr, os.Stderr)
+func (o *hashPasswordOptions) promptForPassword() (string, error) {
+	stdio := io.SurveyStdio(o.IOStreams)
 	var password, confirmation string
 	if err := survey.AskOne(
 		&survey.Password{Message: "Password"},

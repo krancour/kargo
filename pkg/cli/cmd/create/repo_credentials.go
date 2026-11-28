@@ -220,7 +220,11 @@ func (o *createRepoCredentialsOptions) run(ctx context.Context) error {
 		prompt := &survey.Password{
 			Message: "Repository password",
 		}
-		if err := survey.AskOne(prompt, &o.Password); err != nil {
+		if err := survey.AskOne(
+			prompt,
+			&o.Password,
+			io.SurveyStdio(o.IOStreams),
+		); err != nil {
 			return err
 		}
 	}

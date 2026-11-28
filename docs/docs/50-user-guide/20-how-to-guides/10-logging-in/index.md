@@ -85,13 +85,33 @@ its [CLI](../../05-cli/10-installation.md), you will need to log in first.
       kargo login https://kargo.example.com --sso
       ```
 
-      This will open your system's default web browser. Follow the instructions
-      to authenticate to your identity provider.
+      This will print a URL and open it in your system's default web browser. If
+      a browser doesn't open, open the URL yourself. Follow the instructions to
+      authenticate to your identity provider.
 
       When you have successfully authenticated, you will be redirected to a
       splash page that will indicate you may proceed with using the CLI.
 
       ![Kargo Splash Page](./img/splash.png)
+
+      If you're using the CLI in a remote environment, such as over SSH or in a
+      cloud development environment, add the `--device-code` flag instead:
+
+      ```shell
+      kargo login https://kargo.example.com --sso --device-code
+      ```
+
+      Instead of opening a browser, this will print a URL and a code. Open the
+      URL in a web browser on any device, enter or confirm the code as prompted,
+      and authenticate to your identity provider. The CLI will finish logging in
+      on its own.
+
+      :::info
+
+      `--device-code` works only if your identity provider supports it and is
+      configured to allow it. If it isn't, the command will fail with an error.
+
+      :::
 
     </TabItem>
     </Tabs>

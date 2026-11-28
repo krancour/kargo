@@ -51,7 +51,7 @@ func NewRootCommand(cfg clicfg.CLIConfig) *cobra.Command {
 	cmd.AddCommand(get.NewCommand(cfg, streams))
 	cmd.AddCommand(grant.NewCommand(cfg, streams))
 	cmd.AddCommand(hashpassword.NewCommand(streams))
-	cmd.AddCommand(login.NewCommand(cfg))
+	cmd.AddCommand(login.NewCommand(cfg, streams))
 	cmd.AddCommand(logs.NewCommand(cfg, streams))
 	cmd.AddCommand(logout.NewCommand())
 	cmd.AddCommand(refresh.NewCommand(cfg))

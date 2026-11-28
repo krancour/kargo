@@ -119,6 +119,7 @@ func TestMaskedConfig(t *testing.T) {
 		RefreshToken:          "secret",
 		InsecureSkipTLSVerify: true,
 		CallbackPort:          8085,
+		UseDeviceCode:         true,
 		Project:               "project",
 	}
 	maskedConfig := MaskedConfig(testConfig)
@@ -128,6 +129,7 @@ func TestMaskedConfig(t *testing.T) {
 	require.Equal(t, dataMask, maskedConfig.RefreshToken)
 	require.Equal(t, true, maskedConfig.InsecureSkipTLSVerify)
 	require.Equal(t, 8085, maskedConfig.CallbackPort)
+	require.True(t, maskedConfig.UseDeviceCode)
 	require.Equal(t, "project", maskedConfig.Project)
 }
 

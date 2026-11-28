@@ -10,6 +10,9 @@ const (
 	// AbortFlag is the flag name for the abort flag.
 	AbortFlag = "abort"
 
+	// AdminFlag is the flag name for the admin flag.
+	AdminFlag = "admin"
+
 	// AliasFlag is the flag name for the alias flag.
 	AliasFlag = "alias"
 	// AliasShortFlag is the short flag name for the alias flag.
@@ -27,6 +30,9 @@ const (
 
 	// ContainerFlag is the flag name for the container flag.
 	ContainerFlag = "container"
+
+	// DeviceCodeFlag is the flag name for the device-code flag.
+	DeviceCodeFlag = "device-code"
 
 	// DescriptionFlag is the flag name for the description flag.
 	DescriptionFlag = "description"
@@ -81,6 +87,9 @@ const (
 	// PasswordFlag is the flag name for the password flag.
 	PasswordFlag = "password"
 
+	// PortFlag is the flag name for the port flag.
+	PortFlag = "port"
+
 	// ProjectFlag is the flag name for the project flag.
 	ProjectFlag = "project"
 	// ProjectShortFlag is the short flag name for the project flag.
@@ -109,6 +118,9 @@ const (
 	// SharedFlag is the flag name for the shared flag.
 	SharedFlag = "shared"
 
+	// SSOFlag is the flag name for the sso flag.
+	SSOFlag = "sso"
+
 	// StageFlag is the flag name for the stage flag.
 	StageFlag = "stage"
 
@@ -134,6 +146,11 @@ const (
 // Abort adds the AbortFlag to the provided flag set.
 func Abort(fs *pflag.FlagSet, abort *bool, defaultAbort bool, usage string) {
 	fs.BoolVar(abort, AbortFlag, defaultAbort, usage)
+}
+
+// Admin adds the AdminFlag to the provided flag set.
+func Admin(fs *pflag.FlagSet, admin *bool, usage string) {
+	fs.BoolVar(admin, AdminFlag, false, usage)
 }
 
 // Alias adds the AliasFlag to the provided flag set.
@@ -170,6 +187,11 @@ func Container(fs *pflag.FlagSet, container *string, usage string) {
 // Description adds the DescriptionFlag to the provided flag set.
 func Description(fs *pflag.FlagSet, stage *string, usage string) {
 	fs.StringVar(stage, DescriptionFlag, "", usage)
+}
+
+// DeviceCode adds the DeviceCodeFlag to the provided flag set.
+func DeviceCode(fs *pflag.FlagSet, deviceCode *bool, usage string) {
+	fs.BoolVar(deviceCode, DeviceCodeFlag, false, usage)
 }
 
 // DownstreamFrom adds the DownstreamFromFlag to the provided flag set.
@@ -272,6 +294,11 @@ func Password(fs *pflag.FlagSet, password *string, usage string) {
 	fs.StringVar(password, PasswordFlag, "", usage)
 }
 
+// Port adds the PortFlag to the provided flag set.
+func Port(fs *pflag.FlagSet, port *int, usage string) {
+	fs.IntVar(port, PortFlag, 0, usage)
+}
+
 // Project adds the ProjectFlag and ProjectShortFlag to the provided flag set.
 func Project(fs *pflag.FlagSet, project *string, defaultProject, usage string) {
 	fs.StringVarP(project, ProjectFlag, ProjectShortFlag, defaultProject, usage)
@@ -314,6 +341,11 @@ func Role(fs *pflag.FlagSet, role *string, usage string) {
 // Shared adds the SharedFlag to the provided flag set.
 func Shared(fs *pflag.FlagSet, shared *bool, defaultShared bool, usage string) {
 	fs.BoolVar(shared, SharedFlag, defaultShared, usage)
+}
+
+// SSO adds the SSOFlag to the provided flag set.
+func SSO(fs *pflag.FlagSet, sso *bool, usage string) {
+	fs.BoolVar(sso, SSOFlag, false, usage)
 }
 
 // Stage adds the StageFlag to the provided flag set.

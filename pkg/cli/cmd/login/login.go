@@ -22,10 +22,13 @@ import (
 	"github.com/hashicorp/go-cleanhttp"
 	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"golang.org/x/oauth2"
+	"k8s.io/cli-runtime/pkg/genericiooptions"
 
 	"github.com/akuity/kargo/pkg/cli/client"
 	libConfig "github.com/akuity/kargo/pkg/cli/config"
+	"github.com/akuity/kargo/pkg/cli/io"
 	"github.com/akuity/kargo/pkg/cli/option"
 	"github.com/akuity/kargo/pkg/cli/templates"
 )
@@ -41,52 +44,71 @@ const (
 var assets embed.FS
 
 type loginOptions struct {
-	Config      libConfig.CLIConfig
-	InsecureTLS bool
-	UseAdmin    bool
-	UseSSO      bool
+	genericiooptions.IOStreams
+
+	ServerAddress string
+
+	UseAdmin bool
 	// #nosec G117 -- This struct binds to CLI flags and is not transmitted
 	// anywhere directly.
-	Password      string
+	Password string
+
+	UseSSO        bool
 	CallbackPort  int
-	ServerAddress string
+	UseDeviceCode bool
+
+	InsecureTLS bool
+
+	Config libConfig.CLIConfig
 }
 
 func NewCommand(
 	cfg libConfig.CLIConfig,
+	streams genericiooptions.IOStreams,
 ) *cobra.Command {
 	cmdOpts := &loginOptions{
-		Config: cfg,
+		Config:    cfg,
+		IOStreams: streams,
 	}
 
 	cmd := &cobra.Command{
-		Use:   "login [SERVER_ADDRESS] (--admin | --sso)",
+		Use:   "login [SERVER_ADDRESS (--admin | --sso)]",
 		Args:  option.MaximumNArgs(1),
 		Short: "Log in to a Kargo API server",
 		Example: templates.Example(`
-# Log in using SSO
-kargo login https://kargo.example.com --sso
-
-# Log in (again) using the last used server address and method
-kargo login
-
 # Log in using the admin user
 kargo login https://kargo.example.com --admin
 
+# Log in using SSO
+kargo login https://kargo.example.com --sso
+
+# Log in using SSO, completing authentication on another device
+kargo login https://kargo.example.com --sso --device-code
+
 # Log in using SSO and ignore cert warnings
 kargo login https://kargo.example.com --sso --insecure-skip-tls-verify
+
+# Log in again exactly as last time
+kargo login
 `),
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			// A login method must be specified unless we're falling back on a stored
-			// one, which only happens when no server address is specified and the
-			// stored method is one this command recognizes.
-			if len(args) == 1 || !slices.Contains(
-				[]string{authMethodAdmin, authMethodSSO},
-				cmdOpts.Config.AuthMethod,
-			) {
-				cmd.MarkFlagsOneRequired("admin", "sso")
+			// With a server address, the user chooses how to log in. Without one,
+			// the last login is repeated exactly, so the only flag allowed is
+			// --insecure-skip-tls-verify, which is never stored.
+			if len(args) == 1 {
+				cmd.MarkFlagsOneRequired(option.AdminFlag, option.SSOFlag)
+				return nil
 			}
-			return nil
+			var err error
+			cmd.Flags().Visit(func(f *pflag.Flag) {
+				if err == nil && f.Name != option.InsecureTLSFlag {
+					err = fmt.Errorf(
+						"--%s can only be used with a server address",
+						f.Name,
+					)
+				}
+			})
+			return err
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmdOpts.complete(args)
@@ -102,6 +124,9 @@ kargo login https://kargo.example.com --sso --insecure-skip-tls-verify
 	// Register the option flags on the command.
 	cmdOpts.addFlags(cmd)
 
+	// Set the input/output streams for the command.
+	io.SetIOStreams(cmd, cmdOpts.IOStreams)
+
 	return cmd
 }
 
@@ -109,57 +134,74 @@ kargo login https://kargo.example.com --sso --insecure-skip-tls-verify
 func (o *loginOptions) addFlags(cmd *cobra.Command) {
 	option.InsecureTLS(cmd.PersistentFlags(), &o.InsecureTLS)
 
-	cmd.Flags().BoolVar(&o.UseAdmin, "admin", false,
+	option.Admin(cmd.Flags(), &o.UseAdmin,
 		"Log in as the Kargo admin user. If set, --sso must not be set.")
-	cmd.Flags().StringVar(&o.Password, "password", "",
-		"Specify the password for non-interactive admin user login. Only used when --admin is specified.")
-	cmd.Flags().BoolVar(&o.UseSSO, "sso", false,
+	option.Password(cmd.Flags(), &o.Password,
+		"Specify the password for non-interactive admin user login. Requires --admin.")
+
+	option.SSO(cmd.Flags(), &o.UseSSO,
 		"Log in using OpenID Connect and the server's configured identity provider. "+
 			"If set, --admin must not be set.")
-	cmd.Flags().IntVar(&o.CallbackPort, "port", 0,
+	option.Port(cmd.Flags(), &o.CallbackPort,
 		"Port to use for the callback URL; 0 selects any available, unprivileged port. "+
-			"Only used when --sso is specified.")
+			"Requires --sso.")
+	option.DeviceCode(cmd.Flags(), &o.UseDeviceCode,
+		"Complete authentication in a web browser on any device, using the OAuth "+
+			"2.0 device authorization grant instead of a callback to localhost. "+
+			"Requires --sso. If set, --port must not be set.")
 
-	cmd.MarkFlagsMutuallyExclusive("admin", "sso")
+	// Only one authentication method can be used at a time.
+	cmd.MarkFlagsMutuallyExclusive(option.AdminFlag, option.SSOFlag)
+
+	// Admin login cannot be used with the port or device code flags.
+	cmd.MarkFlagsMutuallyExclusive(option.AdminFlag, option.PortFlag)
+	cmd.MarkFlagsMutuallyExclusive(option.AdminFlag, option.DeviceCodeFlag)
+
+	// SSO login cannot be used with the password flag.
+	cmd.MarkFlagsMutuallyExclusive(option.SSOFlag, option.PasswordFlag)
+	// And the device code flag cannot be used with the port flag.
+	cmd.MarkFlagsMutuallyExclusive(option.DeviceCodeFlag, option.PortFlag)
 }
 
-// complete sets the options from the command arguments.
+// complete sets the options from the command arguments. If no server address
+// is specified, it sets them from the stored configuration instead, so that the
+// last login is repeated exactly.
 func (o *loginOptions) complete(args []string) {
+	// If the server address was provided as a positional argument, use it.
 	if len(args) == 1 {
 		o.ServerAddress = normalizeURL(args[0])
+		return
 	}
-	// If a server address was not specified, but one is stored in the
-	// configuration, inherit it from the configuration. Only if doing so, also
-	// inherit other login options from the configuration.
-	if o.ServerAddress == "" && o.Config.APIAddress != "" {
-		o.ServerAddress = o.Config.APIAddress
-		if !o.UseAdmin && !o.UseSSO && o.Config.AuthMethod != "" {
-			switch o.Config.AuthMethod {
-			case authMethodAdmin:
-				o.UseAdmin = true
-			case authMethodSSO:
-				o.UseSSO = true
-			}
-		}
-		if o.CallbackPort == 0 {
-			o.CallbackPort = o.Config.CallbackPort
-		}
-		// Note: We deliberately do NOT inherit o.InsecureTLS from the stored config
-		// because we want to force the user to re-assess that choice each time they
-		// log in.
-	}
+
+	// If we get to here, no server address was provided as a positional argument,
+	// so we fall back to the stored configuration.
+	o.ServerAddress = o.Config.APIAddress
+	o.UseAdmin = o.Config.AuthMethod == authMethodAdmin
+	o.UseSSO = o.Config.AuthMethod == authMethodSSO
+	o.CallbackPort = o.Config.CallbackPort
+	o.UseDeviceCode = o.Config.UseDeviceCode
+	// Note: We deliberately do NOT inherit o.InsecureTLS from the stored config
+	// because we want to force the user to re-assess that choice each time they
+	// log in.
 }
 
-// validate performs validation of the options. If the options are invalid, an
-// error is returned.
+// validate performs validation of the options after complete has set them. If
+// the options are invalid, an error is returned.
 func (o *loginOptions) validate() error {
 	if o.ServerAddress == "" {
 		return errors.New("server address is required")
 	}
+	if !o.UseAdmin && !o.UseSSO {
+		return fmt.Errorf(
+			"no login method is stored; specify a server address and either --%s or --%s",
+			option.AdminFlag, option.SSOFlag,
+		)
+	}
 	return nil
 }
 
-// run logs in to the Kargo API server using the method specified by the options.
+// run logs in to the Kargo API server using the method specified by the
+// options.
 func (o *loginOptions) run(ctx context.Context) error {
 	var bearerToken, refreshToken string
 	var err error
@@ -173,7 +215,11 @@ func (o *loginOptions) run(ctx context.Context) error {
 			prompt := &survey.Password{
 				Message: "Admin user password",
 			}
-			if err = survey.AskOne(prompt, &o.Password); err != nil {
+			if err = survey.AskOne(
+				prompt,
+				&o.Password,
+				io.SurveyStdio(o.IOStreams),
+			); err != nil {
 				return err
 			}
 		}
@@ -182,9 +228,7 @@ func (o *loginOptions) run(ctx context.Context) error {
 		}
 	case o.UseSSO:
 		authMethod = authMethodSSO
-		if bearerToken, refreshToken, err = ssoLogin(
-			ctx, o.ServerAddress, o.CallbackPort, o.InsecureTLS,
-		); err != nil {
+		if bearerToken, refreshToken, err = o.ssoLogin(ctx); err != nil {
 			return err
 		}
 	default:
@@ -205,12 +249,13 @@ func (o *loginOptions) run(ctx context.Context) error {
 		o.Config = libConfig.NewDefaultCLIConfig()
 	}
 
-	o.Config.AuthMethod = authMethod
 	o.Config.APIAddress = o.ServerAddress
+	o.Config.AuthMethod = authMethod
+	o.Config.CallbackPort = o.CallbackPort
+	o.Config.UseDeviceCode = o.UseDeviceCode
 	o.Config.BearerToken = bearerToken
 	o.Config.RefreshToken = refreshToken
 	o.Config.InsecureSkipTLSVerify = o.InsecureTLS
-	o.Config.CallbackPort = o.CallbackPort
 
 	if err = libConfig.SaveCLIConfig(o.Config); err != nil {
 		return fmt.Errorf("error persisting configuration: %w", err)
@@ -267,16 +312,12 @@ func adminLogin(
 
 // ssoLogin performs a login using OpenID Connect. It first retrieves
 // non-sensitive configuration from the Kargo API server, then uses that
-// configuration to perform an authorization code flow with PKCE with the
-// identity provider specified by the API server. Upon success, it returns
-// the ID token and refresh token.
-func ssoLogin(
-	ctx context.Context,
-	serverAddress string,
-	callbackPort int,
-	insecureTLS bool,
-) (string, string, error) {
-	apiClient, err := client.GetClient(serverAddress, "", insecureTLS)
+// configuration to authenticate the user with the identity provider specified
+// by the API server. If o.UseDeviceCode is true, it uses the device
+// authorization grant. Otherwise, it uses an authorization code flow with PKCE.
+// Upon success, it returns the ID token and refresh token.
+func (o *loginOptions) ssoLogin(ctx context.Context) (string, string, error) {
+	apiClient, err := client.GetClient(o.ServerAddress, "", o.InsecureTLS)
 	if err != nil {
 		return "", "", err
 	}
@@ -299,7 +340,7 @@ func ssoLogin(
 	scopes := svrCfg.GetScopes()
 
 	httpClient := cleanhttp.DefaultClient()
-	if insecureTLS {
+	if o.InsecureTLS {
 		transport := cleanhttp.DefaultTransport()
 		transport.TLSClientConfig = &tls.Config{
 			InsecureSkipVerify: true, // nolint: gosec
@@ -326,27 +367,57 @@ func ssoLogin(
 		scopes = append(scopes, offlineAccessScope)
 	}
 
-	listener, err := net.Listen(
-		"tcp",
-		fmt.Sprintf("localhost:%d", callbackPort),
-	)
-	if err != nil {
-		return "", "", fmt.Errorf("error creating callback listener: %w", err)
-	}
-
 	oauthCfg := oauth2.Config{
 		ClientID: svrCfg.GetClientId(),
 		Endpoint: provider.Endpoint(),
 		Scopes:   scopes,
-		RedirectURL: fmt.Sprintf(
-			"http://localhost:%s/auth/callback",
-			strings.Split(listener.Addr().String(), ":")[1],
-		),
 	}
 	if svrCfg.GetCliClientId() != "" {
 		// There is an OIDC client ID specifically meant for CLI use
 		oauthCfg.ClientID = svrCfg.GetCliClientId()
 	}
+
+	var token *oauth2.Token
+	if o.UseDeviceCode {
+		token, err = o.deviceCodeLogin(ctx, oauthCfg)
+	} else {
+		token, err = o.authCodeLogin(ctx, oauthCfg, browser.OpenURL)
+	}
+	if err != nil {
+		return "", "", err
+	}
+
+	idToken, ok := token.Extra("id_token").(string)
+	if !ok {
+		return "", "", errors.New("no id_token in token response")
+	}
+
+	return idToken, token.RefreshToken, nil
+}
+
+// authCodeLogin performs an authorization code flow with PKCE. It writes the
+// identity provider's authorization URL to o.ErrOut and attempts to open it
+// with openBrowser, then receives the authorization code via a callback to a
+// temporary web server listening on localhost:o.CallbackPort. A CallbackPort
+// of 0 selects any available port. Upon success, it returns the token
+// response.
+func (o *loginOptions) authCodeLogin(
+	ctx context.Context,
+	oauthCfg oauth2.Config,
+	openBrowser func(string) error,
+) (*oauth2.Token, error) {
+	listener, err := net.Listen(
+		"tcp",
+		fmt.Sprintf("localhost:%d", o.CallbackPort),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating callback listener: %w", err)
+	}
+
+	oauthCfg.RedirectURL = fmt.Sprintf(
+		"http://localhost:%s/auth/callback",
+		strings.Split(listener.Addr().String(), ":")[1],
+	)
 
 	// Per the spec, this must be guessable with probability <= 2^(-128). The
 	// following call generates one of 52^24 random strings, ~= 2^136
@@ -355,7 +426,7 @@ func ssoLogin(
 	// See: https://www.rfc-editor.org/rfc/rfc6749#section-10.10
 	state, err := randString(24)
 	if err != nil {
-		return "", "", fmt.Errorf("error generating state: %w", err)
+		return nil, fmt.Errorf("error generating state: %w", err)
 	}
 
 	codeCh := make(chan string)
@@ -364,26 +435,32 @@ func ssoLogin(
 
 	codeVerifier, codeChallenge, err := createPCKEVerifierAndChallenge()
 	if err != nil {
-		return "", "", fmt.Errorf("error creating PCKE code verifier and code challenge: %w", err)
+		return nil, fmt.Errorf("error creating PCKE code verifier and code challenge: %w", err)
 	}
 	u := oauthCfg.AuthCodeURL(
 		state,
 		oauth2.SetAuthURLParam("code_challenge", codeChallenge),
 		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
 	)
-	if err = browser.OpenURL(u); err != nil {
-		return "", "", fmt.Errorf("error opening system default browser: %w", err)
-	}
+	_, _ = fmt.Fprintf(
+		o.ErrOut,
+		"To log in, open the following URL in a web browser on this machine if "+
+			"one doesn't open automatically:\n\n%s\n\n",
+		u,
+	)
+	// The user can open the URL themselves, so failing to open a browser is not
+	// an error.
+	_ = openBrowser(u)
 
 	var code string
 	select {
 	case code = <-codeCh:
 	case err = <-errCh:
-		return "", "", fmt.Errorf("error in callback handler: %w", err)
+		return nil, fmt.Errorf("error in callback handler: %w", err)
 	case <-time.After(5 * time.Minute):
-		return "", "", errors.New("timed out waiting for user to complete authentication")
+		return nil, errors.New("timed out waiting for user to complete authentication")
 	case <-ctx.Done():
-		return "", "", ctx.Err()
+		return nil, ctx.Err()
 	}
 
 	token, err := oauthCfg.Exchange(
@@ -392,18 +469,13 @@ func ssoLogin(
 		oauth2.SetAuthURLParam("code_verifier", codeVerifier),
 	)
 	if err != nil {
-		return "", "", fmt.Errorf("error exchanging auth code for token: %w", err)
-	}
-
-	idToken, ok := token.Extra("id_token").(string)
-	if !ok {
-		return "", "", errors.New("no id_token in token response")
+		return nil, fmt.Errorf("error exchanging auth code for token: %w", err)
 	}
 
 	// Slight delay to allow all assets used by the splash page to be served up
 	<-time.After(2 * time.Second)
 
-	return idToken, token.RefreshToken, nil
+	return token, nil
 }
 
 // receiveAuthCode runs a web server that serves the callback endpoint for
@@ -479,6 +551,67 @@ func receiveAuthCode(
 		case <-ctx.Done():
 		}
 	}
+}
+
+// deviceCodeLogin performs a device authorization grant. It requests a device
+// code from the identity provider, writes instructions for the user to
+// o.ErrOut, and polls the identity provider until the user completes
+// authentication in a web browser on any device or the device code expires.
+// Upon success, it returns the token response.
+func (o *loginOptions) deviceCodeLogin(
+	ctx context.Context,
+	oauthCfg oauth2.Config,
+) (*oauth2.Token, error) {
+	if oauthCfg.Endpoint.DeviceAuthURL == "" {
+		return nil, errors.New(
+			"identity provider does not support the device authorization grant",
+		)
+	}
+
+	deviceAuth, err := oauthCfg.DeviceAuth(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error requesting device authorization: %w", err)
+	}
+
+	o.writeDeviceAuthInstructions(deviceAuth)
+
+	token, err := oauthCfg.DeviceAccessToken(ctx, deviceAuth)
+	if err != nil {
+		// DeviceAccessToken stops polling when the device code expires. The
+		// caller's own context ending is reported as is.
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return nil, errors.New(
+				"timed out waiting for user to complete authentication",
+			)
+		}
+		return nil, fmt.Errorf("error waiting for device authorization: %w", err)
+	}
+
+	return token, nil
+}
+
+// writeDeviceAuthInstructions writes instructions for completing a device
+// authorization grant to o.ErrOut. The user code is always shown. When the
+// identity provider supplies a verification URL that already includes the user
+// code, the user is asked to confirm the code rather than enter it.
+func (o *loginOptions) writeDeviceAuthInstructions(
+	deviceAuth *oauth2.DeviceAuthResponse,
+) {
+	if deviceAuth.VerificationURIComplete != "" {
+		_, _ = fmt.Fprintf(
+			o.ErrOut,
+			"To log in, open the following URL in a web browser on any device "+
+				"and confirm that it shows the code %s:\n\n%s\n\n",
+			deviceAuth.UserCode, deviceAuth.VerificationURIComplete,
+		)
+		return
+	}
+	_, _ = fmt.Fprintf(
+		o.ErrOut,
+		"To log in, open the following URL in a web browser on any device "+
+			"and enter the code %s:\n\n%s\n\n",
+		deviceAuth.UserCode, deviceAuth.VerificationURI,
+	)
 }
 
 // createPCKEVerifierAndChallenge creates a PKCE code verifier and code

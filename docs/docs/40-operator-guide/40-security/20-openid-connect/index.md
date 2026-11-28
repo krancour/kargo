@@ -76,6 +76,16 @@ supports both OIDC and PKCE:
 
     If your IDP does not permit you to register multiple callback URLs, you
     may need to register two clients -- one each for the UI and the CLI.
+
+    :::
+
+    :::info
+
+    If your IDP supports the OAuth 2.0 device authorization grant, enable it for
+    the CLI's client. This lets users log in from remote environments where the
+    CLI can't complete an authorization code flow, using any device with a web
+    browser.
+
     :::
 
 **With an incompatible identity provider:**
